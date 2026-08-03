@@ -14,6 +14,52 @@
   font-size: 14px;
 }
 
+/* day mode */
+html[data-theme="light"] {
+  --bg: #f3f3f3;
+  --bg2: #e8e8e8;
+  --bg3: #ffffff;
+  --border: #c8c8c8;
+  --fg: #1f1f1f;
+  --fg-dim: #6e6e6e;
+  --accent: #0e639c;
+  --accent2: #1177bb;
+  --err: #c42b1c;
+  --warn: #9d7500;
+  --info: #1d6fd1;
+  --sugg: #2e7d32;
+}
+
+html[data-theme="light"] .statusbar {
+  background: var(--accent);
+  color: #fff;
+}
+
+html[data-theme="light"] .toolbar {
+  background: #f0f0f0;
+}
+
+html[data-theme="light"] .ai-msg.ai-user {
+  background: #dcebf7;
+}
+
+html[data-theme="light"] .ai-msg.ai-assistant,
+html[data-theme="light"] .ai-msg.ai-system {
+  background: #ffffff;
+}
+
+html[data-theme="light"] .log-viewer,
+html[data-theme="light"] .ai-diff,
+html[data-theme="light"] .ai-raw,
+html[data-theme="light"] .error-boundary pre {
+  background: #fafafa;
+  color: #1f1f1f;
+}
+
+html[data-theme="light"] .pdf-frame {
+  background: #fff;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -105,6 +151,43 @@ body {
   padding: 2px 6px;
   font-size: 12px;
   max-width: 150px;
+}
+
+.format-buttons {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.symbol-panel {
+  position: absolute;
+  top: 30px;
+  right: 8px;
+  z-index: 50;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 2px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+.symbol-btn {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  border-radius: 4px;
+  width: 30px;
+  height: 26px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.symbol-btn:hover {
+  border-color: var(--accent2);
+  background: rgba(17, 119, 187, 0.18);
 }
 
 .btn-mini {
@@ -650,6 +733,43 @@ body {
   flex: 1;
 }
 
+/* ---------- AI generate ---------- */
+.ai-generate {
+  border-top: 1px solid var(--border);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  background: var(--bg2);
+}
+
+.ai-generate-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 12.5px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.ai-generate-input:focus {
+  outline: none;
+  border-color: var(--accent2);
+}
+
+.ai-generate-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.ai-gen-result {
+  max-height: 180px;
+}
+
 /* ---------- modal ---------- */
 .modal-backdrop {
   position: fixed;
@@ -773,6 +893,18 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
+}
+
+.template-wrap {
+  position: relative;
+  display: block;
+}
+
+.template-del {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  padding: 0 5px;
 }
 
 .template-card {

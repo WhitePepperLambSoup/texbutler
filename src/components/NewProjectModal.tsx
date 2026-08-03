@@ -10,7 +10,7 @@ interface Props {
 
 /** New-project dialog: parent dir + name + built-in template picker. */
 export default function NewProjectModal({ open, onClose }: Props) {
-  const [templates, setTemplates] = useState<{ id: string; name: string }[]>([]);
+  const [templates, setTemplates] = useState<{ id: string; name: string; source: string }[]>([]);
   const [parent, setParent] = useState("");
   const [name, setName] = useState("my-latex-project");
   const [template, setTemplate] = useState("article");
@@ -20,7 +20,7 @@ export default function NewProjectModal({ open, onClose }: Props) {
 
   useEffect(() => {
     if (open) {
-      void api.templates().then(setTemplates).catch(() => setTemplates([]));
+      void api.listTemplates().then(setTemplates).catch(() => setTemplates([]));
     }
   }, [open]);
 
@@ -70,14 +70,27 @@ export default function NewProjectModal({ open, onClose }: Props) {
           <label>
             {t("newProject.template")}
             <div className="template-grid">
-              {templates.map((t) => (
-                <button
-                  key={t.id}
-                  className={`template-card ${template === t.id ? "template-active" : ""}`}
-                  onClick={() => setTemplate(t.id)}
-                >
-                  {t.name}
-                </button>
+              {templates.map((tp) => (
+                <span key={tp.id} className="template-wrap">
+                  <button
+                    className={`template-card ${template === tp.id ? "template-active" : ""}`}
+                    onClick={() => setTemplate(tp.id)}
+                  >
+                    {tp.name}
+                  </button>
+                  {tp.source === "user" && (
+                    <button
+                      className="btn-mini template-del"
+                      title="删除模板"
+                      onClick={async () => {
+                        await api.deleteTemplate(tp.id).catch((e) => window.alert(String(e)));
+                        void api.listTemplates().then(setTemplates).catch(() => undefined);
+                      }}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </span>
               ))}
             </div>
           </label>

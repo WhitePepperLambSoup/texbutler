@@ -108,6 +108,17 @@ export default function ProjectTree() {
           <button className="btn-mini" title={t("toolbar.new")} onClick={() => setNewOpen(true)}>
             {t("toolbar.new")}
           </button>
+          <button
+            className="btn-mini"
+            title="将当前项目保存为模板"
+            onClick={() => {
+              const nm = window.prompt("模板名称", "my-template");
+              if (!nm) return;
+              void api.saveTemplate(nm).then(() => window.alert("模板已保存")).catch((e) => window.alert(String(e)));
+            }}
+          >
+            ⭐
+          </button>
         </span>
       </div>
       {root ? (

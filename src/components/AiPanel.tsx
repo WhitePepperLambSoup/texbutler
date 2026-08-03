@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAiStore } from "../store/aiStore";
+import { api } from "../api";
+import { useProjectStore } from "../store/projectStore";
 import { useT } from "../i18n";
 
 /** Minimal markdown-ish rendering for AI messages (bold, inline code, breaks). */
@@ -19,6 +21,10 @@ export default function AiPanel() {
   const [expandedRaw, setExpandedRaw] = useState<number | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const t = useT();
+  const [genInput, setGenInput] = useState("");
+  const [genBusy, setGenBusy] = useState(false);
+  const [genResult, setGenResult] = useState<string | null>(null);
+  const { openPath } = useProjectStore();
 
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: "smooth" });
@@ -70,6 +76,72 @@ export default function AiPanel() {
           </button>
         </div>
       )}
+      <div className="ai-generate">
+        <textarea
+          className="ai-generate-input"
+          placeholder={t("ai.generatePlaceholder")}
+          value={genInput}
+          onChange={(e) => setGenInput(e.target.value)}
+          rows={2}
+        />
+        <div className="ai-generate-actions">
+          <button
+            className="btn-mini btn-primary"
+            disabled={genBusy || !genInput.trim()}
+            onClick={async () => {
+              setGenBusy(true);
+              setGenResult(null);
+              try {
+                const code = await api.aiGenerate(genInput.trim());
+                setGenResult(code);
+                useAiStore
+                  .getState()
+                  .pushMessage({
+                    role: "user",
+                    kind: "plain",
+                    text: `🧩 ${genInput.trim()}`,
+                  });
+              } catch (e) {
+                window.alert(String(e));
+              }
+              setGenBusy(false);
+            }}
+          >
+            {genBusy ? t("ai.busyFix") : t("ai.generate")}
+          </button>
+          {genResult != null && (
+            <>
+              <button
+                className="btn-mini"
+                onClick={() => {
+                  window.dispatchEvent(
+                    new CustomEvent("tb:insert-text", { detail: { text: genResult } })
+                  );
+                }}
+              >
+                {t("ai.insertEditor")}
+              </button>
+              <button
+                className="btn-mini"
+                onClick={async () => {
+                  const base = (openPath ?? "main.tex").replace(/\.tex$/, "");
+                  const fname = window.prompt("保存为文件（相对路径）", `${base}-ai.tex`);
+                  if (!fname) return;
+                  try {
+                    await api.writeFile(fname, genResult);
+                    window.alert(t("ai.savedFile", { f: fname }));
+                  } catch (e) {
+                    window.alert(String(e));
+                  }
+                }}
+              >
+                {t("ai.saveFile")}
+              </button>
+            </>
+          )}
+        </div>
+        {genResult != null && <pre className="ai-diff ai-gen-result">{genResult}</pre>}
+      </div>
     </div>
   );
 }

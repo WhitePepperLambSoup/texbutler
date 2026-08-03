@@ -1,14 +1,26 @@
 import { useEffect, useState } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import ProjectTree from "./components/ProjectTree";
 import EditorPane from "./components/Editor";
 import PdfPreview from "./components/PdfPreview";
 import ProblemsPanel from "./components/ProblemsPanel";
 import AiPanel from "./components/AiPanel";
 import SettingsModal from "./components/SettingsModal";
+import { api } from "./api";
 import { useProjectStore } from "./store/projectStore";
 import { useCompileStore } from "./store/compileStore";
 import { useAiStore } from "./store/aiStore";
 import { useT } from "./i18n";
+
+function loadTheme(): "dark" | "light" {
+  try {
+    const saved = window.localStorage.getItem("tb-theme");
+    if (saved === "dark" || saved === "light") return saved;
+  } catch {
+    /* ignore */
+  }
+  return "dark";
+}
 
 export default function App() {
   const { root, mainFile, openPath } = useProjectStore();
@@ -19,6 +31,33 @@ export default function App() {
   const [pdfRev, setPdfRev] = useState(0);
   const [compileTarget, setCompileTarget] = useState<"main" | "current">("main");
   const t = useT();
+  const [theme, setTheme] = useState<"dark" | "light">(loadTheme());
+
+  // apply theme to <html data-theme>
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      window.localStorage.setItem("tb-theme", theme);
+    } catch {
+      /* ignore */
+    }
+  }, [theme]);
+
+  const importWord = async () => {
+    try {
+      const file = await open({
+        multiple: false,
+        filters: [{ name: "Word", extensions: ["docx"] }],
+      });
+      if (!file || Array.isArray(file)) return;
+      const r = await api.importDocx(file);
+      window.alert(`已导入为 ${r.file}（${r.chars} 字符）。可在项目树中打开。`);
+      await useProjectStore.getState().refresh();
+      await useProjectStore.getState().openFile(r.file);
+    } catch (e) {
+      window.alert(String(e));
+    }
+  };
 
   // Bump the PDF iframe key on every successful compile.
   useEffect(() => {
@@ -84,6 +123,16 @@ export default function App() {
             {t("toolbar.cancel")}
           </button>
         )}
+        <button className="btn" onClick={() => void importWord()} disabled={!root}>
+          Word→LaTeX
+        </button>
+        <button
+          className="btn"
+          title={theme === "dark" ? "日间模式" : "夜间模式"}
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+        >
+          {theme === "dark" ? "☀️" : "🌙"}
+        </button>
         <button className="btn" onClick={() => setSettingsOpen(true)}>
           {t("toolbar.settings")}
         </button>

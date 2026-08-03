@@ -570,6 +570,21 @@ pub async fn fix_loop(
     let project_files = project_file_listing(project);
 
     for round in 1..=max_rounds {
+        // Fail fast on missing-file errors (e.g. `Unable to load picture`):
+        // the AI cannot fix a physically absent file, and models sometimes
+        // waste rounds emitting unrelated no-op diffs for such errors.
+        if let Some(missing) = missing_file_from_error(std::slice::from_ref(&current_issue)) {
+            return FixReport {
+                ok: false,
+                rounds: round - 1,
+                diff: None,
+                summary: format!(
+                    "项目缺少文件 `{missing}`，AI 无法修复（文件本身不存在）。请将该文件放入项目目录后重新编译。"
+                ),
+                issues_after: issues_after.clone(),
+                rolled_back: false,
+            };
+        }
         // Deterministic fixes first: unambiguous errors (missing xcolor,
         // standalone undefined commands, missing \end{document}) are fixed
         // without the AI — it repeatedly failed to add `\usepackage{xcolor}`

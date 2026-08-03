@@ -26,6 +26,11 @@ pub fn run() {
             commands::project::tb_recent_projects,
             commands::project::tb_get_templates,
             commands::project::tb_set_main_file,
+            commands::project::tb_import_image,
+            commands::project::tb_import_docx,
+            commands::project::tb_save_template,
+            commands::project::tb_list_templates,
+            commands::project::tb_delete_template,
             // compile
             commands::compile::tb_compile,
             commands::compile::tb_cancel_compile,
@@ -39,6 +44,7 @@ pub fn run() {
             commands::ai::tb_ai_get_settings,
             commands::ai::tb_ai_set_settings,
             commands::ai::tb_ai_test_connection,
+            commands::ai::tb_ai_generate,
             // check
             commands::check::tb_run_check,
             commands::check::tb_set_rule_enabled,

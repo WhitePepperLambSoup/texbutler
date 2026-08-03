@@ -3,6 +3,7 @@
 
 pub mod ai;
 pub mod compiler;
+pub mod docx;
 pub mod log_parser;
 pub mod project;
 pub mod rules;

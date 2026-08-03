@@ -114,6 +114,46 @@ pub fn tb_ai_set_settings(
     Ok(())
 }
 
+/// AI-generate LaTeX code from a natural-language request (e.g. "生成一个
+/// 三线表"). Returns raw LaTeX code (no markdown fences).
+#[tauri::command]
+pub async fn tb_ai_generate(
+    state: State<'_, AppState>,
+    request: String,
+) -> Result<String, String> {
+    let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
+    if settings.api_key.is_none() && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. }) {
+        return Err("尚未配置 AI API Key。请在“设置”中填写 provider 配置。".into());
+    }
+    let system = "你是 TeXButler 内置的 LaTeX 代码生成助手。只输出可直接编译的 LaTeX 代码（含 \\documentclass 的完整片段或局部片段均可，视请求而定），不要输出 Markdown 代码围栏，不要输出解释文字。中文文档默认使用 ctexart，注意中文 LaTeX 规范：百分号转义 \\%、中文字体不用斜体、表格单元格内用 {\\bfseries ...} 而非 \\textbf。";
+    let reply = crate::core::ai::chat(
+        &settings,
+        &[
+            crate::core::ai::ChatMsg { role: "system".into(), content: system.into() },
+            crate::core::ai::ChatMsg { role: "user".into(), content: request },
+        ],
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    let code = reply.trim();
+    if code.is_empty() {
+        return Err("AI 回复为空，请检查模型配置或重试。".into());
+    }
+    // strip any markdown fences the model may still add
+    let code = code
+        .strip_prefix("```")
+        .map(|s| {
+            let body = match s.find('\n') {
+                Some(nl) => &s[nl + 1..],
+                None => s,
+            };
+            body.trim_end_matches("```").trim()
+        })
+        .unwrap_or(code)
+        .to_string();
+    Ok(code)
+}
+
 /// Ping the configured provider with a tiny message to verify connectivity.
 #[tauri::command]
 pub async fn tb_ai_test_connection(

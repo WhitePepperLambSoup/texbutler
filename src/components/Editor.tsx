@@ -1,5 +1,7 @@
 import Editor, { type OnMount, type BeforeMount } from "@monaco-editor/react";
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback, useState } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
+import { api } from "../api";
 import { useProjectStore } from "../store/projectStore";
 import { useT } from "../i18n";
 
@@ -49,10 +51,18 @@ const SNIPPETS: { label: string; insert: string }[] = [
   { label: "\\label 标签", insert: "\\label{sec:}" },
 ];
 
+/** Quick math symbols for the symbol panel. */
+const MATH_SYMBOLS = [
+  "α", "β", "γ", "δ", "ε", "θ", "λ", "μ", "π", "σ", "ω", "φ",
+  "∞", "∑", "∫", "√", "±", "≤", "≥", "≈", "≠", "∈", "∀", "∃",
+  "×", "÷", "∂", "Δ", "→", "⇒", "∪", "∩", "⊂", "⊆", "⊥", "∥",
+];
+
 export default function EditorPane() {
   const { openPath, openContent, dirty, saveFile } = useProjectStore();
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const t = useT();
+  const [symbolOpen, setSymbolOpen] = useState(false);
 
   const handleMount: OnMount = (editor) => {
     editorRef.current = editor;
@@ -74,6 +84,23 @@ export default function EditorPane() {
     ed.focus();
   };
 
+  const insertImage = async () => {
+    if (!openPath) return;
+    try {
+      const file = await open({
+        multiple: false,
+        filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "svg", "pdf", "eps"] }],
+      });
+      if (!file || Array.isArray(file)) return;
+      const name = await api.importImage(file);
+      const code =
+        `\\begin{figure}[H]\n\\centering\n\\includegraphics[width=0.8\\textwidth]{${name}}\n\\caption{图注}\n\\label{fig:}\n\\end{figure}\n`;
+      insertSnippet(code);
+    } catch (e) {
+      window.alert(String(e));
+    }
+  };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
@@ -90,11 +117,26 @@ export default function EditorPane() {
         ed.focus();
       }
     };
+    const onInsertText = (e: Event) => {
+      const text = (e as CustomEvent<{ text: string }>).detail?.text;
+      const ed = editorRef.current;
+      if (ed && typeof text === "string" && text) {
+        const sel = ed.getSelection();
+        if (sel) {
+          ed.executeEdits("ai", [{ range: sel, text }]);
+        } else {
+          ed.executeEdits("ai", [{ range: { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 1 }, text }]);
+        }
+        ed.focus();
+      }
+    };
     window.addEventListener("keydown", onKey);
     window.addEventListener("tb:goto-line", onGoto);
+    window.addEventListener("tb:insert-text", onInsertText);
     return () => {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("tb:goto-line", onGoto);
+      window.removeEventListener("tb:insert-text", onInsertText);
     };
   }, [doSave]);
 
@@ -104,6 +146,38 @@ export default function EditorPane() {
         <span className="panel-title">
           {openPath ?? t("editor.untitled")}
           {dirty ? " ●" : ""}
+        </span>
+        <span className="format-buttons" title={t("editor.insert")}>
+          <button className="btn-mini" title="插入图片" onClick={() => void insertImage()} disabled={!openPath}>
+            🖼
+          </button>
+          <button className="btn-mini" title="段落" onClick={() => insertSnippet("\n\n")} disabled={!openPath}>
+            ¶
+          </button>
+          <button className="btn-mini" title="\\section" onClick={() => insertSnippet("\\section{标题}\n")} disabled={!openPath}>
+            H1
+          </button>
+          <button className="btn-mini" title="\\subsection" onClick={() => insertSnippet("\\subsection{小节}\n")} disabled={!openPath}>
+            H2
+          </button>
+          <button className="btn-mini" title="\\textbf" onClick={() => insertSnippet("\\textbf{加粗文字}")} disabled={!openPath}>
+            B
+          </button>
+          <button className="btn-mini" title="行内公式 $..$" onClick={() => insertSnippet("$E = mc^2$")} disabled={!openPath}>
+            Σ
+          </button>
+          <button className="btn-mini" title="行间公式 \\[..\\]" onClick={() => insertSnippet("\\[\nE = mc^2\n\\]\n")} disabled={!openPath}>
+            ∑
+          </button>
+          <button className="btn-mini" title="列表" onClick={() => insertSnippet("\\begin{itemize}\n\\item 第一项\n\\item 第二项\n\\end{itemize}\n")} disabled={!openPath}>
+            ••
+          </button>
+          <button className="btn-mini" title="表格" onClick={() => insertSnippet("\\begin{table}[H]\n\\centering\n\\begin{tabular}{cc}\n列1 & 列2 \\\\\n\\hline\nA & B \\\\\n\\end{tabular}\n\\caption{表注}\n\\label{tab:}\n\\end{table}\n")} disabled={!openPath}>
+            ▦
+          </button>
+          <button className="btn-mini" title="数学符号" onClick={() => setSymbolOpen((v) => !v)} disabled={!openPath}>
+            αβ
+          </button>
         </span>
         <span className="panel-actions">
           <select
@@ -128,6 +202,15 @@ export default function EditorPane() {
           </button>
         </span>
       </div>
+      {symbolOpen && (
+        <div className="symbol-panel">
+          {MATH_SYMBOLS.map((s) => (
+            <button key={s} className="symbol-btn" onClick={() => insertSnippet(s)}>
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
       {openPath ? (
         <Editor
           height="100%"

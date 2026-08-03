@@ -108,7 +108,10 @@ export const api = {
   openProject: (path?: string) => invoke<ProjectInfo>("tb_open_project", { path: path ?? null }),
   newProject: (parent: string, name: string, template?: string) =>
     invoke<ProjectInfo>("tb_new_project", { parent, name, template: template ?? null }),
-  templates: () => invoke<{ id: string; name: string }[]>("tb_get_templates"),
+  templates: () => invoke<{ id: string; name: string; source: string }[]>("tb_get_templates"),
+  saveTemplate: (name: string) => invoke<void>("tb_save_template", { name }),
+  listTemplates: () => invoke<{ id: string; name: string; source: string }[]>("tb_list_templates"),
+  deleteTemplate: (name: string) => invoke<void>("tb_delete_template", { name }),
   projectInfo: () => invoke<ProjectInfo>("tb_project_info"),
   readFile: (path: string) => invoke<string>("tb_read_file", { path }),
   writeFile: (path: string, content: string) => invoke<void>("tb_write_file", { path, content }),
@@ -121,6 +124,9 @@ export const api = {
   lastResult: () => invoke<CompileResult | null>("tb_get_last_result"),
   readLog: () => invoke<string>("tb_read_log"),
   setMainFile: (path: string) => invoke<ProjectInfo>("tb_set_main_file", { path }),
+  importImage: (sourcePath: string) => invoke<string>("tb_import_image", { sourcePath }),
+  importDocx: (sourcePath: string) =>
+    invoke<{ file: string; preview: string; chars: number }>("tb_import_docx", { sourcePath }),
 
   // diagnostics
   diagnostics: () => invoke<DiagnosticsBundle>("tb_get_diagnostics"),
@@ -149,6 +155,7 @@ export const api = {
       disableThinking: s.disableThinking ?? null,
     }),
   aiTestConnection: () => invoke<string>("tb_ai_test_connection"),
+  aiGenerate: (request: string) => invoke<string>("tb_ai_generate", { request }),
 
   // rules / bundle
   runCheck: (onlyFile?: string) =>
