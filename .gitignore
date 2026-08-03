@@ -1,0 +1,40 @@
+# Rust / Cargo
+target/
+src-tauri/target/
+**/*.rs.bk
+
+# Node
+node_modules/
+dist/
+
+# Tauri build artifacts
+src-tauri/gen/schemas/
+*.local
+
+# Editor
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Agent tool internals
+.reasonix/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# TeXButler runtime artifacts (user projects' build dirs are under .texbutler/ inside each project)
+.texbutler/
+*.log
+!src-tauri/tests/fixtures/*.log
+*.aux
+*.toc
+*.out
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
+# Release artifacts (installers are delivered out-of-band, not committed)
+release/

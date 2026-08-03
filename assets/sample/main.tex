@@ -1,0 +1,55 @@
+\documentclass[UTF8]{ctexart}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{xcolor}
+
+\title{TeXButler 中文样例}
+\author{TeXButler 团队}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{引言}
+
+这是一个用于回归测试的中文 ctex 文档。
+它包含中文 LaTeX 特有的常见踩坑点（见下面各节），供规则引擎自测。
+
+\section{常见错误示例}
+
+\subsection{百分号误当注释}
+
+本次测试通过率 71%，同比增长 5%。
+
+正确写法应为 71\% 与 5\%。
+
+\subsection{斜体包中文}
+
+\textit{这是中文斜体，中文字体通常没有斜体}，应改用 \textbf{加粗} 或 {\bfseries 粗体}。
+
+\subsection{浮动体定位}
+
+\begin{figure}[ht]
+\centering
+\caption{使用 [ht] 的浮动体会乱飘}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{使用 [H] 的浮动体固定在本位}
+\end{table}
+
+\subsection{混色语法}
+
+{\color{red!60} 需要 xcolor 的混色语法}。
+
+\subsection{浮点垃圾}
+
+正确率 87.30000000000001%，这是程序生成时未 round 的典型例子。
+
+\section{结论}
+
+本样例用于验证 TeXButler 的编译与规则检查功能。
+
+\end{document}
