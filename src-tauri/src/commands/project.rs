@@ -106,13 +106,18 @@ pub async fn tb_new_project(
 ) -> Result<ProjectInfo, String> {
     let proj = match template.as_deref() {
         Some(t) if !t.is_empty() => {
+            // validate the template id (no traversal) before any join;
+            // use the normalized name for both builtin match and file join
+            let t = validate_template_name(t)?;
             // built-in template first, then user-saved template
             let builtin = crate::core::project::templates().iter().any(|(id, _, _)| *id == t);
             if builtin {
-                Project::create_with_template(Path::new(&parent), &name, t)?
+                Project::create_with_template(Path::new(&parent), &name, &t)?
             } else {
                 let user_path = user_template_dir().join(format!("{t}.tex"));
                 if user_path.exists() {
+                    // same project-name validation as the builtin branch
+                    crate::core::project::validate_project_name(&name)?;
                     let content = std::fs::read_to_string(&user_path).map_err(|e| e.to_string())?;
                     let dir = Path::new(&parent).join(&name);
                     if dir.exists() {
@@ -292,6 +297,11 @@ pub async fn tb_import_docx(
     if code.is_empty() {
         return Err("AI 返回为空，请检查模型配置".into());
     }
+    // AI-output size guard (untrusted model output)
+    const MAX_LATEX_BYTES: usize = 2 * 1024 * 1024;
+    if code.len() > MAX_LATEX_BYTES {
+        return Err(format!("AI 生成的 LaTeX 过大（{} 字节，上限 2MB），已拒绝写入", code.len()));
+    }
     // strip fences if any
     let code = code
         .strip_prefix("```")
@@ -329,13 +339,20 @@ pub fn user_template_dir() -> PathBuf {
         .join("templates")
 }
 
-/// Save the current project's main.tex as a reusable user template.
-#[tauri::command]
-pub fn tb_save_template(state: State<'_, AppState>, name: String) -> Result<(), String> {
-    let name = name.trim().to_string();
+/// Validate a template name: no path separators, no traversal.
+/// Returns the normalized (trimmed) name for consistent use by all callers.
+fn validate_template_name(name: &str) -> Result<String, String> {
+    let name = name.trim();
     if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
         return Err("模板名不合法（不能含路径分隔符）".into());
     }
+    Ok(name.to_string())
+}
+
+/// Save the current project's main.tex as a reusable user template.
+#[tauri::command]
+pub fn tb_save_template(state: State<'_, AppState>, name: String) -> Result<(), String> {
+    let name = validate_template_name(&name)?;
     let content = {
         let guard = state.project.read().map_err(|e| e.to_string())?;
         let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
@@ -373,6 +390,8 @@ pub fn tb_list_templates() -> Vec<TemplateInfo> {
 /// Delete a user-saved template.
 #[tauri::command]
 pub fn tb_delete_template(name: String) -> Result<(), String> {
+    // same validation as save — prevents path traversal (`../../x`)
+    let name = validate_template_name(&name)?;
     let path = user_template_dir().join(format!("{name}.tex"));
     if !path.exists() {
         return Err("模板不存在".into());

@@ -17,12 +17,23 @@ pub enum Block {
 pub fn parse_docx(path: &std::path::Path) -> Result<Vec<Block>, String> {
     let file = std::fs::File::open(path).map_err(|e| format!("打开 docx 失败: {e}"))?;
     let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("不是有效的 docx: {e}"))?;
-    let mut xml = String::new();
-    archive
+    // zip-bomb guard: reject oversized document.xml before reading
+    let entry = archive
         .by_name("word/document.xml")
-        .map_err(|_| "docx 中缺少 word/document.xml".to_string())?
+        .map_err(|_| "docx 中缺少 word/document.xml".to_string())?;
+    const MAX_XML_BYTES: u64 = 20 * 1024 * 1024; // 20 MB
+    if entry.size() > MAX_XML_BYTES {
+        return Err(format!("word/document.xml 过大（{} 字节，上限 20MB），拒绝解析", entry.size()));
+    }
+    let mut xml = String::new();
+    entry
+        .take(MAX_XML_BYTES + 1)
         .read_to_string(&mut xml)
         .map_err(|e| e.to_string())?;
+    // explicit truncation check (a forged zip header could lie about size)
+    if xml.len() as u64 > MAX_XML_BYTES {
+        return Err("word/document.xml 超过 20MB 上限，拒绝解析".into());
+    }
     parse_document_xml(&xml)
 }
 

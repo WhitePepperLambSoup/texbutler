@@ -93,6 +93,9 @@ impl Project {
 
     /// Create a new project with one of the built-in templates.
     pub fn create_with_template(root: &Path, name: &str, template: &str) -> Result<Project, String> {
+        // security: reject traversal in the project name (`../x` would create
+        // directories outside `root`)
+        validate_project_name(name)?;
         let content = template_body(template);
         let dir = root.join(name);
         if dir.exists() {
@@ -272,6 +275,27 @@ impl Project {
         }
         deps
     }
+}
+
+/// Validate a project folder name: no traversal (ParentDir / RootDir /
+/// Prefix components rejected) and no empty / current-dir names.
+pub fn validate_project_name(name: &str) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Err("项目名不能为空".into());
+    }
+    let name_path = Path::new(name);
+    for comp in name_path.components() {
+        if matches!(
+            comp,
+            std::path::Component::ParentDir
+                | std::path::Component::RootDir
+                | std::path::Component::Prefix(_)
+                | std::path::Component::CurDir
+        ) {
+            return Err(format!("项目名不合法: {name}"));
+        }
+    }
+    Ok(())
 }
 
 /// A handle that keeps the notify watcher alive.
@@ -491,6 +515,20 @@ mod tests {
         assert!(proj.resolve("main.tex").is_some());
         assert!(proj.resolve("../secret.txt").is_none());
         assert!(proj.resolve("..\\secret.txt").is_none());
+    }
+
+    #[test]
+    fn create_with_template_rejects_traversal_name() {
+        let dir = std::env::temp_dir().join(format!("tb-name-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // `../evil` must NOT create anything outside `dir`
+        let r = Project::create_with_template(&dir, "../evil", "article");
+        assert!(r.is_err(), "路径遍历项目名必须拒绝");
+        assert!(!dir.parent().unwrap().join("evil").exists());
+        // normal name works
+        assert!(Project::create_with_template(&dir, "ok-name", "article").is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
