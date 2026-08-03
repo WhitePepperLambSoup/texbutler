@@ -99,7 +99,7 @@ export default function AiPanel() {
                   .pushMessage({
                     role: "user",
                     kind: "plain",
-                    text: `🧩 ${genInput.trim()}`,
+                    text: genInput.trim(),
                   });
               } catch (e) {
                 window.alert(String(e));

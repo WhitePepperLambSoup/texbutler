@@ -51,7 +51,7 @@ export default function NewProjectModal({ open, onClose }: Props) {
         <div className="modal-header">
           <span>{t("newProject.title")}</span>
           <button className="btn-mini" onClick={onClose}>
-            ✕
+            ×
           </button>
         </div>
         <div className="modal-body">
@@ -87,7 +87,7 @@ export default function NewProjectModal({ open, onClose }: Props) {
                         void api.listTemplates().then(setTemplates).catch(() => undefined);
                       }}
                     >
-                      ✕
+                      ×
                     </button>
                   )}
                 </span>

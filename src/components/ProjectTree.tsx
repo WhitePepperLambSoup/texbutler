@@ -28,7 +28,7 @@ function Node({
           onClick={() => setOpen(!open)}
         >
           <span className="tree-arrow">{open ? "▾" : "▸"}</span>
-          <span className="tree-icon">📁</span>
+          <span className="tree-icon"></span>
           {node.name}
         </div>
         {open &&
@@ -47,7 +47,7 @@ function Node({
       title={node.path}
     >
       <span className="tree-icon">
-        {node.name.endsWith(".tex") ? (isMain ? "⭐" : "📄") : "🗂️"}
+        {node.name.endsWith(".tex") ? "•" : "•"}
       </span>
       {node.name}
       {isMain && <span className="tree-main-tag">{useI18n.getState().t("tree.mainTag")}</span>}
@@ -117,14 +117,13 @@ export default function ProjectTree() {
               void api.saveTemplate(nm).then(() => window.alert("模板已保存")).catch((e) => window.alert(String(e)));
             }}
           >
-            ⭐
           </button>
         </span>
       </div>
       {root ? (
         <>
           <div className="tree-root" title={root}>
-            <span className="tree-icon">🗀</span>
+            <span className="tree-icon"></span>
             {root.split(/[\\/]/).pop() || root}
           </div>
           <div className="tree-body">

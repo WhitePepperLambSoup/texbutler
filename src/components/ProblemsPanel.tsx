@@ -105,7 +105,7 @@ export default function ProblemsPanel() {
                   {issue.message}
                 </span>
                 {issue.fix_hint && (
-                  <span className="problem-hint">💡 {issue.fix_hint}</span>
+                  <span className="problem-hint">{issue.fix_hint}</span>
                 )}
               </span>
               <span className="problem-actions" onClick={(e) => e.stopPropagation()}>
@@ -164,7 +164,7 @@ export default function ProblemsPanel() {
                   {t("problems.copyAll")}
                 </button>
                 <button className="btn-mini" onClick={() => setLogOpen(false)}>
-                  ✕
+                  ×
                 </button>
               </span>
             </div>

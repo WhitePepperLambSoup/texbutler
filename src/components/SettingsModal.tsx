@@ -137,7 +137,7 @@ export default function SettingsModal({ open, onClose }: Props) {
               <option value="en">{t("settings.languageEn")}</option>
             </select>
             <button className="btn-mini" onClick={onClose}>
-              ✕
+              ×
             </button>
           </span>
         </div>
@@ -271,7 +271,7 @@ export default function SettingsModal({ open, onClose }: Props) {
           <div className="font-grid">
             {fonts.map((f) => (
               <span key={f.name} className={`font-item ${f.available ? "font-ok" : "font-missing"}`}>
-                {f.available ? "✅" : "❌"} {f.name}
+                {f.available ? "●" : "○"} {f.name}
               </span>
             ))}
           </div>

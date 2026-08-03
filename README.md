@@ -62,13 +62,13 @@ On the first compile, Tectonic downloads resources on demand from `https://relay
 
 ### v0.2.0 writing aids
 
-- **Insert image**: click 🖼 in the editor toolbar, pick an image — it is copied into the project and a `figure`/`includegraphics` block is inserted at the cursor.
+- **Insert image**: click the image button in the editor toolbar, pick an image — it is copied into the project and a `figure`/`includegraphics` block is inserted at the cursor.
 - **Quick formats**: toolbar buttons for paragraph / section / bold / inline & display math / lists / tables.
 - **AI generate**: type a request in the AI panel (e.g. "generate a three-line booktabs table") → AI returns LaTeX → insert into the editor or save as a new file.
 - **Word import**: toolbar **Word→LaTeX** → pick a `.docx` → headings/paragraphs/tables are parsed and AI generates a complete compilable LaTeX document.
-- **Templates**: ⭐ in the project tree saves the current project as a reusable template; the new-project dialog lists built-in + user templates (user ones can be deleted).
+- **Templates**: the star button in the project tree saves the current project as a reusable template; the new-project dialog lists built-in + user templates (user ones can be deleted).
 - **Math symbols**: the αβ button opens a 36-symbol panel (α β γ … ∑ ∫ √ ± ≤ ≥ ≈ ≠ ∈ ∀ ∃) — click to type, no need to memorize commands.
-- **Day/night theme**: ☀️/🌙 toolbar toggle, persisted across restarts.
+- **Day/night theme**: day/night toolbar toggle, persisted across restarts.
 
 ## Demo Project
 

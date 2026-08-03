@@ -149,7 +149,7 @@ export default function EditorPane() {
         </span>
         <span className="format-buttons" title={t("editor.insert")}>
           <button className="btn-mini" title="插入图片" onClick={() => void insertImage()} disabled={!openPath}>
-            🖼
+            {t("toolbar.image")}
           </button>
           <button className="btn-mini" title="段落" onClick={() => insertSnippet("\n\n")} disabled={!openPath}>
             ¶

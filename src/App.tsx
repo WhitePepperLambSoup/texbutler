@@ -131,7 +131,7 @@ export default function App() {
           title={theme === "dark" ? "日间模式" : "夜间模式"}
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
         >
-          {theme === "dark" ? "☀️" : "🌙"}
+          {theme === "dark" ? t("toolbar.light") : t("toolbar.dark")}
         </button>
         <button className="btn" onClick={() => setSettingsOpen(true)}>
           {t("toolbar.settings")}
