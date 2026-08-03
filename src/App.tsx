@@ -128,7 +128,7 @@ export default function App() {
         </button>
         <button
           className="btn"
-          title={theme === "dark" ? "日间模式" : "夜间模式"}
+          title={theme === "dark" ? t("toolbar.lightTitle") : t("toolbar.darkTitle")}
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
         >
           {theme === "dark" ? t("toolbar.light") : t("toolbar.dark")}

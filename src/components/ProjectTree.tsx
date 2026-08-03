@@ -47,7 +47,7 @@ function Node({
       title={node.path}
     >
       <span className="tree-icon">
-        {node.name.endsWith(".tex") ? "•" : "•"}
+        {"•"}
       </span>
       {node.name}
       {isMain && <span className="tree-main-tag">{useI18n.getState().t("tree.mainTag")}</span>}
@@ -117,6 +117,7 @@ export default function ProjectTree() {
               void api.saveTemplate(nm).then(() => window.alert("模板已保存")).catch((e) => window.alert(String(e)));
             }}
           >
+            {t("tree.saveTemplate")}
           </button>
         </span>
       </div>
