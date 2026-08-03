@@ -9,7 +9,8 @@
 1. **Self-contained local compilation** — bundles the Tectonic 0.15 engine, so it compiles Chinese LaTeX to PDF even without TeX Live; automatically falls back to a system `xelatex`/`lualatex` when detected.
 2. **AI error diagnosis & repair** — turns cryptic LaTeX errors into plain language with the real error line; one-click fix: deterministic fixes (missing packages / undefined commands / missing `\end{document}`) → AI diff → audit (referenced-file existence check) → apply → recompile, with automatic rollback on failure.
 3. **Chinese-LaTeX specific checks** — 9 rules (bare `%`, `\textit` with CJK, `[ht]` float drift, floating-point garbage, glued paragraphs, …) that run automatically on save.
-4. **End-to-end verifiable** — real-API + real-compile e2e tests (`cargo test --test e2e_ai -- --ignored`) validate every layer of the fix loop.
+4. **Made for writing (v0.2.0)** — one-click image insertion with generated code, quick-format buttons (sections / formulas / tables / lists), AI code generation from natural language, **Word (.docx) import → AI generates a complete compilable LaTeX document**, user template library, math-symbol panel (36 symbols), day/night theme, and a bilingual UI (中文 / English).
+5. **End-to-end verifiable** — real-API + real-compile e2e tests (`cargo test --test e2e_ai -- --ignored`) validate every layer of the fix loop.
 
 ## Tech Stack
 
@@ -52,12 +53,22 @@ On the first compile, Tectonic downloads resources on demand from `https://relay
 
 ## Quick Start
 
-1. Click **Open** to select any folder containing `.tex` files (or **New** with a template: article / report / slides);
+1. Click **Open** to select any folder containing `.tex` files (or **New** with a template: article / report / slides / your saved templates);
 2. Open `main.tex` in the file tree and edit (`Ctrl+S` saves & triggers rule checks; `Ctrl+B` compiles, `Ctrl+Shift+B` compiles the current file; right-click a `.tex` file to set it as main);
 3. Click **▶ Compile** → PDF preview on the right; the "Compile errors" panel lists errors with real line numbers (click to jump); the "Log" button shows the raw `main.log`;
 4. Select an error → **AI explain** (plain-Chinese explanation + fix advice) or **AI fix** (deterministic fix → AI diff → audit → apply → recompile → auto-rollback);
 5. The "Rule check" tab shows the 9 Chinese-LaTeX rule hits (with fix hints), toggleable in Settings;
 6. The status bar shows engine / duration / issue count; Settings shows system-font detection and bundle status.
+
+### v0.2.0 writing aids
+
+- **Insert image**: click 🖼 in the editor toolbar, pick an image — it is copied into the project and a `figure`/`includegraphics` block is inserted at the cursor.
+- **Quick formats**: toolbar buttons for paragraph / section / bold / inline & display math / lists / tables.
+- **AI generate**: type a request in the AI panel (e.g. "generate a three-line booktabs table") → AI returns LaTeX → insert into the editor or save as a new file.
+- **Word import**: toolbar **Word→LaTeX** → pick a `.docx` → headings/paragraphs/tables are parsed and AI generates a complete compilable LaTeX document.
+- **Templates**: ⭐ in the project tree saves the current project as a reusable template; the new-project dialog lists built-in + user templates (user ones can be deleted).
+- **Math symbols**: the αβ button opens a 36-symbol panel (α β γ … ∑ ∫ √ ± ≤ ≥ ≈ ≠ ∈ ∀ ∃) — click to type, no need to memorize commands.
+- **Day/night theme**: ☀️/🌙 toolbar toggle, persisted across restarts.
 
 ## Demo Project
 
