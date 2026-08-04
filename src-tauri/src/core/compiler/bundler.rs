@@ -88,20 +88,17 @@ pub fn download_bundle() -> Result<u64, String> {
 }
 
 /// Locate a bundled `bundle.zip` shipped next to the executable
-/// (`resources/bundle/bundle.zip`), or the `TEXBUTLER_BUNDLE_ZIP` env override.
+/// (`resources/bundle/bundle.zip` — or the tauri resource target dir).
+/// NOTE: the `TEXBUTLER_BUNDLE_ZIP` env var is handled by the tectonic
+/// driver directly (`--bundle zip`) and must NOT be unpacked here.
 pub fn find_bundled_zip() -> Option<PathBuf> {
-    if let Ok(zip) = std::env::var("TEXBUTLER_BUNDLE_ZIP") {
-        let p = PathBuf::from(zip);
-        if p.is_file() {
-            return Some(p);
-        }
-    }
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
         .unwrap_or_default();
     let candidates = [
         exe_dir.join("resources").join("bundle").join("bundle.zip"),
+        exe_dir.join("bundle").join("bundle.zip"),
         PathBuf::from("src-tauri").join("resources").join("bundle").join("bundle.zip"),
         PathBuf::from("resources").join("bundle").join("bundle.zip"),
     ];
@@ -146,11 +143,23 @@ pub fn unpack_zip(zip_path: &Path, target: &Path) -> Result<u64, String> {
             continue;
         }
         let name = entry.name().to_string();
-        // zip-slip defence: reject traversal paths
-        if name.contains("..") || name.starts_with('/') {
+        // zip-slip defence: reject any component that could escape `target` —
+        // `..`, absolute paths (`/x`, `\x`), Windows drive prefixes (`C:/x`)
+        let p = Path::new(&name);
+        let unsafe_component = p.components().any(|c| match c {
+            std::path::Component::ParentDir
+            | std::path::Component::RootDir
+            | std::path::Component::Prefix(_) => true,
+            _ => false,
+        });
+        if unsafe_component {
             return Err(format!("bundle.zip 包含非法路径: {name}"));
         }
         let out_path = target.join(&name);
+        // belt & braces: the resolved path must stay inside the target
+        if !out_path.starts_with(target) {
+            return Err(format!("bundle.zip 包含越界路径: {name}"));
+        }
         if let Some(parent) = out_path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
@@ -221,6 +230,17 @@ mod tests {
         let err = unpack_zip(&zip_path, &target).unwrap_err();
         assert!(err.contains("evil"), "应拒绝路径遍历: {err}");
         assert!(!target.join("evil.txt").exists());
+
+        // drive-prefix and rooted entries must also be rejected
+        for evil in ["C:/evil.txt", "/rooted.txt"] {
+            let zip3 = tmp.join(format!("evil-{}.zip", evil.replace(['/', ':'], "_")));
+            let mut zw3 = zip::ZipWriter::new(std::fs::File::create(&zip3).unwrap());
+            zw3.start_file(evil, zip::write::SimpleFileOptions::default()).unwrap();
+            zw3.write_all(b"evil").unwrap();
+            zw3.finish().unwrap();
+            let err = unpack_zip(&zip3, &target).unwrap_err();
+            assert!(err.contains("非法") || err.contains("越界"), "{evil} 应被拒绝: {err}");
+        }
 
         // clean zip unpacks fine
         let zip2 = tmp.join("test2.zip");

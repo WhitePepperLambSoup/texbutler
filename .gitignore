@@ -1,4 +1,4 @@
-﻿# Rust / Cargo
+# Rust / Cargo
 target/
 src-tauri/target/
 **/*.rs.bk
