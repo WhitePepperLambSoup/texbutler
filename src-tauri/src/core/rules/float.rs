@@ -4,7 +4,7 @@
 //! language-agnostic but CJK line breaking makes displacement very visible).
 //! Recommend `\usepackage{float}` + `[H]` for "keep it exactly here".
 
-use super::Rule;
+use super::{Rule, is_in_comment};
 use crate::core::{Issue, IssueKind, Severity};
 
 pub struct FloatRule;
@@ -34,6 +34,11 @@ impl Rule for FloatRule {
                 let env = &line[start + 7..env_end];
                 let is_float = env == "figure" || env == "table" || env == "figure*" || env == "table*";
                 if !is_float {
+                    pos = env_end + 1;
+                    continue;
+                }
+                // skip `\begin{...}` inside `%` comments
+                if is_in_comment(line, start) {
                     pos = env_end + 1;
                     continue;
                 }
@@ -104,5 +109,11 @@ mod tests {
     fn does_not_flag_other_environments() {
         let issues = check("\\begin{tabular}{cc}\na & b \\\\\n\\end{tabular}\n");
         assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn does_not_flag_floats_inside_comments() {
+        let issues = check("% \\begin{figure}[ht]\n% \\end{figure}\n\\begin{figure}[ht] % 注释\n\\end{figure}\n");
+        assert_eq!(issues.len(), 1, "only the real float: {:?}", issues);
     }
 }

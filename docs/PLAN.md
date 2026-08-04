@@ -60,7 +60,7 @@
 - [x] 最近项目快速打开、系统中文字体检测、保存前未保存修改保护
 - [x] 修复 MiKTeX `-output-directory` 下多文件 `\input` 解析失败的兼容问题（TEXINPUTS 方案 + 集成测试）
 - [x] 真实 tectonic 日志回归 fixture（tests/fixtures/ + tests/log_regression.rs）
-- [x] 61 个测试全部通过（59 单元 + 2 真实日志回归；1 个系统 xelatex 集成测试手动验证通过）
+- [x] 112 个测试全部通过（110 单元 + 2 真实日志回归；1 个系统 xelatex 集成测试手动验证通过）
 
 ## 阶段 7（后续，不在本次范围）
 

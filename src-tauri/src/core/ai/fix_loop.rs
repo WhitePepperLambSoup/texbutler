@@ -550,6 +550,7 @@ pub async fn fix_loop(
             summary: format!("无法读取文件 `{file}`，放弃修复。"),
             issues_after: vec![],
             rolled_back: false,
+            backup: None,
         };
     };
 
@@ -583,6 +584,7 @@ pub async fn fix_loop(
                 ),
                 issues_after: issues_after.clone(),
                 rolled_back: false,
+                backup: None,
             };
         }
         // Deterministic fixes first: unambiguous errors (missing xcolor,
@@ -593,7 +595,9 @@ pub async fn fix_loop(
             if det_content != current_content {
                 // keep a backup snapshot before the deterministic write so a
                 // crash mid-loop cannot leave an unrecoverable file
-                let _snap = snapshot(project, &file, &current_content).ok();
+                let snap_det = snapshot(project, &file, &current_content)
+                    .ok()
+                    .map(|p| p.to_string_lossy().to_string());
                 if let Err(e) = project.write_file(&file, &det_content) {
                     last_error = format!("写入文件失败: {e}");
                 } else {
@@ -617,6 +621,7 @@ pub async fn fix_loop(
                             summary: format!("第 {round} 轮确定性修复成功：编译已通过（引擎: {}）。", det_result.engine.label()),
                             issues_after: det_result.issues,
                             rolled_back: false,
+                            backup: snap_det,
                         };
                     }
                     issues_after = det_result.issues.clone();
@@ -631,6 +636,7 @@ pub async fn fix_loop(
                             ),
                             issues_after,
                             rolled_back: false,
+                            backup: None,
                         };
                     }
                     last_error = issues_after
@@ -687,6 +693,7 @@ pub async fn fix_loop(
                     summary: format!("AI 调用失败: {e}"),
                     issues_after: vec![],
                     rolled_back: false,
+                    backup: None,
                 };
             }
         };
@@ -705,6 +712,7 @@ pub async fn fix_loop(
                 ),
                 issues_after: vec![],
                 rolled_back: false,
+                backup: None,
             };
         }
         let diff_text = strip_code_fences(trimmed_reply);
@@ -721,6 +729,7 @@ pub async fn fix_loop(
                 ),
                 issues_after: vec![],
                 rolled_back: false,
+                backup: None,
             };
         }
 
@@ -746,7 +755,9 @@ pub async fn fix_loop(
         }
 
         // apply with rollback snapshot
-        let snap = snapshot(project, &file, &current_content).ok();
+        let snap = snapshot(project, &file, &current_content)
+            .ok()
+            .map(|p| p.to_string_lossy().to_string());
         if let Err(e) = project.write_file(&file, &new_content) {
             last_error = format!("写入文件失败: {e}");
             continue;
@@ -775,6 +786,7 @@ pub async fn fix_loop(
                 ),
                 issues_after,
                 rolled_back: false,
+                backup: None,
             };
         }
         if result.ok {
@@ -785,6 +797,7 @@ pub async fn fix_loop(
                 summary: format!("第 {round} 轮修复成功：编译已通过（引擎: {}）。", result.engine.label()),
                 issues_after,
                 rolled_back: false,
+                backup: snap,
             };
         }
         // failed: revert this round's edit (back to current_content, which
@@ -833,7 +846,33 @@ pub async fn fix_loop(
         summary: format!("{max_rounds} 轮修复均未通过编译，已回滚原文件。最后一次错误: {}", truncate(&last_error, 300)),
         issues_after,
         rolled_back: true,
+        backup: None,
     }
+}
+
+/// Restore a file from a snapshot created by `snapshot()` (reject flow).
+///
+/// The snapshot path must live inside the project backup dir; the relative
+/// target is derived from `<backup_dir>/<ts>/<rel>` and written back through
+/// `Project::write_file` (path-traversal safe).
+pub fn rollback_from_backup(project: &Project, backup: &str) -> Result<String, String> {
+    let backup_dir = project.backup_dir();
+    let path = std::path::Path::new(backup);
+    let rel_to_backup = path
+        .strip_prefix(&backup_dir)
+        .map_err(|_| "备份路径不在项目备份目录内".to_string())?;
+    let mut comps = rel_to_backup.components();
+    let _ts = comps
+        .next()
+        .ok_or_else(|| "备份路径缺少时间戳目录".to_string())?;
+    let rel: std::path::PathBuf = comps.collect();
+    let rel_str = rel.to_string_lossy().to_string();
+    if rel_str.is_empty() {
+        return Err("备份路径无效".into());
+    }
+    let content = std::fs::read_to_string(path).map_err(|e| format!("读取备份失败: {e}"))?;
+    project.write_file(&rel_str, &content)?;
+    Ok(rel_str)
 }
 
 fn strip_code_fences(reply: &str) -> String {

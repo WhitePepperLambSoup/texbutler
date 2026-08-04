@@ -2,7 +2,7 @@
 //! `\end{document}`. The PDF is silently truncated or TeX errors out with
 //! "File ended while scanning" style messages.
 
-use super::Rule;
+use super::{Rule, is_in_comment};
 use crate::core::{Issue, IssueKind, Severity};
 
 pub struct MissingEndRule;
@@ -16,12 +16,12 @@ impl Rule for MissingEndRule {
     }
 
     fn check(&self, src: &str, file: &str, issues: &mut Vec<Issue>) {
-        let has_begin = src
-            .lines()
-            .any(|l| l.contains("\\begin{document}") && !l.trim_start().starts_with('%'));
-        let has_end = src
-            .lines()
-            .any(|l| l.contains("\\end{document}") && !l.trim_start().starts_with('%'));
+        // only count \begin/\end{document} occurrences outside `%` comments
+        let in_code = |l: &str, needle: &str| -> bool {
+            l.find(needle).map(|i| !is_in_comment(l, i)).unwrap_or(false)
+        };
+        let has_begin = src.lines().any(|l| in_code(l, "\\begin{document}"));
+        let has_end = src.lines().any(|l| in_code(l, "\\end{document}"));
         if has_begin && !has_end {
             issues.push(
                 Issue::new(
@@ -63,5 +63,12 @@ mod tests {
     fn no_flag_without_document_env() {
         let issues = check("\\section{裸章节}\n");
         assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn commented_out_end_document_does_not_count() {
+        // a commented `\end{document}` must NOT satisfy the check
+        let issues = check("\\begin{document}\n内容\n% \\end{document}\n");
+        assert_eq!(issues.len(), 1, "missing real \\end{{document}}: {:?}", issues);
     }
 }

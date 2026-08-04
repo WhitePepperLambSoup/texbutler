@@ -80,7 +80,13 @@ fn is_prose_line(line: &str) -> bool {
         let mut rest = &body[cmd_end..];
         loop {
             let trimmed = rest.trim_start();
-            if trimmed.starts_with('{') {
+            if trimmed.starts_with('[') {
+                // optional argument group, e.g. \includegraphics[width=..]{..}
+                match trimmed.find(']') {
+                    Some(idx) => rest = &trimmed[idx + 1..],
+                    None => return false,
+                }
+            } else if trimmed.starts_with('{') {
                 match trimmed.find('}') {
                     Some(idx) => rest = &trimmed[idx + 1..],
                     None => return false,
@@ -135,5 +141,11 @@ mod tests {
     fn does_not_flag_command_lines() {
         let issues = check("\\section{标题}\n\\label{sec:x}\n");
         assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn does_not_flag_includegraphics_with_optional_args() {
+        let issues = check("\\includegraphics[width=0.8\\linewidth]{fig.png}\n\\caption{图注}\n");
+        assert!(issues.is_empty(), "command + optional args are not prose: {:?}", issues);
     }
 }

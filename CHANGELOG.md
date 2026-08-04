@@ -2,6 +2,19 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 语义化版本约定。
 
+## [Unreleased]
+
+### 修复（代码审查 v0.3.1）
+
+- **AI 修复真确认**：修复成功后返回修复前快照，点"拒绝"真实回滚文件并同步编辑器；点"接受"自动从磁盘重载编辑器（此前"拒绝"只是清弹窗，文件早已写入）。
+- **快捷键冲突**：`Ctrl+Shift+B` 仅保留编辑器内"加粗包裹"，全局"编译当前文件"改 `Ctrl+Shift+K`（此前一次按键同时编译+加粗）。
+- **安全配置收窄**：关闭 `assetProtocol`（原 `scope: ["**"]`），PDF/图片预览改走白名单自定义协议 `tb-file://`（仅项目目录内、仅 7 种预览扩展名）；启用严格 CSP（script-src 'self'、object-src none）。
+- **规则引擎注释感知**：italic/bold/float/color/missing_end 不再对 `%` 注释内内容误报；percent 补报行尾裸 `%`；paragraph 不再把 `\includegraphics[..]{..}` 误判为正文。
+- **编译互斥**：全局编译锁（`COMPILE_LOCK`）串行化手动编译与 AI 修复编译，杜绝并发写同一 `build/` 目录；编译失败以红色提示条常驻显示（此前失败被隐藏）。
+- **竞态修复**：`openFile` 加请求序号，快速连点文件时活动标签不再落错。
+- **Word 导入顺序**：docx 解析改单遍扫描，带属性/无属性段落混排时保持文档顺序。
+- **CI/脚本**：CI 加 rust-cache、`--locked`、`tsc --noEmit`；`download-tectonic.ps1` 加 SHA-256 校验与超时。
+
 ## [0.3.0] - 2026-08-04
 
 ### 图片插入流程优化

@@ -53,6 +53,7 @@ export interface FixReport {
   summary: string;
   issues_after: Issue[];
   rolled_back: boolean;
+  backup?: string | null;
 }
 
 export interface BibEntry {
@@ -145,6 +146,7 @@ export const api = {
   aiDiagnose: (issueIndex: number) => invoke<AiDiagnosis>("tb_ai_diagnose", { issueIndex }),
   aiFix: (issueIndex: number, maxRounds?: number) =>
     invoke<FixReport>("tb_ai_fix", { issueIndex, maxRounds: maxRounds ?? null }),
+  aiRollback: (backup: string) => invoke<string>("tb_ai_rollback", { backup }),
   aiGetSettings: () => invoke<AiSettings>("tb_ai_get_settings"),
   aiSetSettings: (s: {
     provider: ProviderKind;

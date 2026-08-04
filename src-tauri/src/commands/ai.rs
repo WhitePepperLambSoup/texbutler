@@ -1,6 +1,6 @@
 //! AI commands: diagnose an issue, run the fix loop, manage provider settings.
 
-use crate::core::ai::{AiDiagnosis, ChatMsg, diagnose, fix_loop};
+use crate::core::ai::{AiDiagnosis, ChatMsg, diagnose, fix_loop, rollback_from_backup};
 use crate::core::{FixReport, Issue, SourceContext};
 use crate::state::AppState;
 use tauri::{AppHandle, Emitter, State};
@@ -58,6 +58,18 @@ pub async fn tb_ai_fix(
     let report = fix_loop(&issue, &proj, &settings, max_rounds.unwrap_or(3)).await;
     let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "fix", "status": "done", "ok": report.ok }));
     Ok(report)
+}
+
+/// Roll a file back to the snapshot taken before an AI fix was applied
+/// (the "reject fix" flow). The snapshot path is validated to live inside
+/// the project backup dir; the target file is derived from it.
+#[tauri::command]
+pub fn tb_ai_rollback(state: State<'_, AppState>, backup: String) -> Result<String, String> {
+    let proj = {
+        let guard = state.project.read().map_err(|e| e.to_string())?;
+        guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?.clone()
+    };
+    rollback_from_backup(&proj, &backup)
 }
 
 /// Get the current AI settings (masked: api_key only shows "***").

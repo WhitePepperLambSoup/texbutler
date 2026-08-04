@@ -5,6 +5,92 @@ pub mod core;
 pub mod state;
 
 use state::AppState;
+use tauri::Manager;
+
+/// Percent-decode a URL path component (`%XX`). `+` is kept literal.
+fn percent_decode(s: &str) -> Result<String, ()> {
+    let bytes = s.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'%' if i + 2 < bytes.len() => {
+                let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).map_err(|_| ())?;
+                let v = u8::from_str_radix(hex, 16).map_err(|_| ())?;
+                out.push(v);
+                i += 3;
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8(out).map_err(|_| ())
+}
+
+/// Restrictive file-serving scheme for PDF/images inside the OPEN PROJECT
+/// only (the old `assetProtocol.scope: ["**"]` allowed any local file once
+/// the frontend was injected). Extension whitelist: only preview-able
+/// content types can ever be served.
+const PREVIEW_EXTS: [&str; 7] = ["pdf", "png", "jpg", "jpeg", "gif", "svg", "webp"];
+
+fn serve_project_file(app: &tauri::AppHandle, request: &tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
+    use tauri::http::{Response, StatusCode};
+    let bad = |code: StatusCode| -> tauri::http::Response<Vec<u8>> {
+        Response::builder().status(code).body(Vec::new()).unwrap()
+    };
+    let path_and_query = request.uri().path_and_query().map(|p| p.as_str()).unwrap_or("/");
+    // `tb-file://localhost/<percent-encoded absolute path>` → strip leading '/'
+    let encoded = path_and_query.trim_start_matches('/');
+    let Ok(decoded) = percent_decode(encoded) else {
+        return bad(StatusCode::BAD_REQUEST);
+    };
+    if decoded.is_empty() || decoded.starts_with("tb-file:") {
+        return bad(StatusCode::BAD_REQUEST);
+    }
+    let ext = std::path::Path::new(&decoded)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    if !PREVIEW_EXTS.iter().any(|w| *w == ext) {
+        return bad(StatusCode::FORBIDDEN);
+    }
+    let proj = {
+        let state = app.state::<AppState>();
+        let Ok(guard) = state.project.read() else {
+            return bad(StatusCode::FORBIDDEN);
+        };
+        let Some(p) = guard.as_ref() else {
+            return bad(StatusCode::FORBIDDEN);
+        };
+        p.clone()
+    };
+    // `Project::resolve` rejects any path that escapes the project root
+    // (including `..` and absolute paths outside), so this cannot serve
+    // files outside the opened project directory.
+    let Some(resolved) = proj.resolve(&decoded) else {
+        return bad(StatusCode::FORBIDDEN);
+    };
+    let Ok(bytes) = std::fs::read(&resolved) else {
+        return bad(StatusCode::NOT_FOUND);
+    };
+    let content_type = match ext.as_str() {
+        "pdf" => "application/pdf",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "svg" => "image/svg+xml",
+        "webp" => "image/webp",
+        _ => "application/octet-stream",
+    };
+    Response::builder()
+        .header("content-type", content_type)
+        .header("cache-control", "no-store")
+        .body(bytes)
+        .unwrap_or_else(|_| bad(StatusCode::INTERNAL_SERVER_ERROR))
+}
 
 /// Run the Tauri application.
 pub fn run() {
@@ -12,6 +98,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(AppState::new())
+        .register_uri_scheme_protocol("tb-file", |ctx, request| {
+            let app = ctx.app_handle();
+            serve_project_file(app, &request)
+        })
         .setup(|_app| {
             // Tectonic manages its own bundle cache; nothing to unpack here.
             // (Offline bundle dirs can be injected via TEXBUTLER_BUNDLE_DIR.)
@@ -44,6 +134,7 @@ pub fn run() {
             // ai
             commands::ai::tb_ai_diagnose,
             commands::ai::tb_ai_fix,
+            commands::ai::tb_ai_rollback,
             commands::ai::tb_ai_get_settings,
             commands::ai::tb_ai_set_settings,
             commands::ai::tb_ai_test_connection,

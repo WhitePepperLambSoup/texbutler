@@ -3,7 +3,7 @@
 //! the infamous `File ended while scanning use of \textbf` error. Use
 //! `{\bfseries ...}` inside cells instead.
 
-use super::Rule;
+use super::{Rule, is_in_comment};
 use crate::core::{Issue, IssueKind, Severity};
 
 pub struct BoldRule;
@@ -25,6 +25,11 @@ impl Rule for BoldRule {
                 };
                 let start = pos + rel;
                 let cmd_end = start + "\\textbf".len();
+                // skip commands inside `%` comments
+                if is_in_comment(line, start) {
+                    pos = cmd_end;
+                    continue;
+                }
                 // boundary: next char must be `{`
                 let Some(next) = line[cmd_end..].chars().next() else {
                     break;
@@ -102,5 +107,11 @@ mod tests {
     fn does_not_flag_textbf_without_brace() {
         let issues = check("\\textbf 加粗（旧语法）\n");
         assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn does_not_flag_textbf_inside_comments() {
+        let issues = check("% \\textbf{名称 & 数值}\n正文 \\textbf{名称 & 数值} % 注释 \\textbf{x & y}\n");
+        assert_eq!(issues.len(), 1, "only the real command: {:?}", issues);
     }
 }

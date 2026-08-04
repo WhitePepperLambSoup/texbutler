@@ -2,7 +2,7 @@
 //! Most Chinese fonts have no real italic face — the text renders upright
 //! or fake-slanted. Recommend `\textbf` / `{\bfseries ...}` instead.
 
-use super::{Rule, contains_cjk};
+use super::{Rule, contains_cjk, is_in_comment};
 use crate::core::{Issue, IssueKind, Severity};
 
 pub struct ItalicRule;
@@ -22,6 +22,11 @@ impl Rule for ItalicRule {
                 let Some(rel) = find_command(line, pos, &["textit", "emph"]) else {
                     break;
                 };
+                // skip commands inside `%` comments
+                if is_in_comment(line, rel.start) {
+                    pos = rel.end;
+                    continue;
+                }
                 // find the opening `{`
                 let brace = line[rel.end..].find('{').map(|b| rel.end + b);
                 let Some(brace) = brace else {
@@ -71,6 +76,7 @@ impl Rule for ItalicRule {
 
 struct Found {
     name: &'static str,
+    start: usize,
     end: usize,
 }
 
@@ -87,7 +93,7 @@ fn find_command(line: &str, from: usize, names: &[&'static str]) -> Option<Found
             // boundary check: next char must be `{` or whitespace
             if let Some(next) = line[end..].chars().next() {
                 if next == '{' || next.is_whitespace() {
-                    let cand = Found { name, end };
+                    let cand = Found { name, start, end };
                     best = match best {
                         Some(b) if b.end <= cand.end => Some(cand),
                         Some(b) => Some(b),
@@ -135,5 +141,11 @@ mod tests {
     fn flags_multiple_on_line() {
         let issues = check("\\textit{甲} 和 \\textit{乙}\n");
         assert_eq!(issues.len(), 2);
+    }
+
+    #[test]
+    fn does_not_flag_commands_inside_comments() {
+        let issues = check("% \\textit{中文} 这是注释\n\\textit{中文} % 行尾 \\textit{注释中文}\n");
+        assert_eq!(issues.len(), 1, "only the real command outside comments: {:?}", issues);
     }
 }

@@ -1,6 +1,5 @@
 // Image insert dialog: preview + width/position/caption options.
 import { useState } from "react";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { useT } from "../i18n";
 
 interface Props {
@@ -32,7 +31,7 @@ export default function ImageInsertModal({ fileName, projectRoot, onCancel, onCo
     return lines.join("\n") + "\n";
   };
 
-  const src = convertFileSrc(`${projectRoot.replace(/\\/g, "/")}/${fileName}`);
+  const src = `tb-file://localhost/${encodeURIComponent(`${projectRoot.replace(/\\/g, "/")}/${fileName}`)}`;
 
   return (
     <div className="modal-overlay" onClick={onCancel}>

@@ -178,6 +178,9 @@ pub struct FixReport {
     pub issues_after: Vec<Issue>,
     /// True when the applied changes were rolled back from backup.
     pub rolled_back: bool,
+    /// Snapshot path of the file content BEFORE the fix was applied.
+    /// Present on success so the user can reject the fix (roll back).
+    pub backup: Option<String>,
 }
 
 /// Round a float to `decimals` and format without floating-point garbage.

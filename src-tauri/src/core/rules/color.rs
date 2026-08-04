@@ -21,9 +21,13 @@ impl Rule for ColorRule {
         let mut first_mix: Option<(usize, usize)> = None; // (line, col)
 
         for (idx, line) in src.lines().enumerate() {
-            // detect \usepackage[..]{xcolor}
-            if !has_xcolor && line.contains("\\usepackage") && line.contains("xcolor") {
-                has_xcolor = true;
+            // detect \usepackage[..]{xcolor} (skip commented-out lines)
+            if !has_xcolor {
+                if let Some(ui) = line.find("\\usepackage") {
+                    if !is_in_comment(line, ui) && line[ui..].contains("xcolor") {
+                        has_xcolor = true;
+                    }
+                }
             }
             // detect color mixing: `name!<number>` (e.g. blue!60)
             if !has_mixing {
@@ -89,5 +93,12 @@ mod tests {
     fn no_flag_on_plain_colors() {
         let issues = check("\\usepackage{color}\n\\color{red}文本\n");
         assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn commented_out_xcolor_does_not_count() {
+        // `% \usepackage{xcolor}` must NOT satisfy the mixing check
+        let issues = check("% \\usepackage{xcolor}\n\\color{blue!60}文本\n");
+        assert_eq!(issues.len(), 1);
     }
 }

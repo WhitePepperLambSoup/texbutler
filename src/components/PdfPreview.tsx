@@ -1,11 +1,11 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { useProjectStore } from "../store/projectStore";
 import { useT } from "../i18n";
 
 /**
- * PDF preview via the Tauri asset protocol. The Rust side writes
- * `.texbutler/build/main.pdf`; we render it in an iframe with a reload
- * key that bumps on every successful compile.
+ * PDF preview via the restricted `tb-file://` scheme (Rust side validates
+ * the path stays inside the open project; `assetProtocol` is disabled).
+ * The Rust side writes `.texbutler/build/main.pdf`; we render it in an
+ * iframe with a reload key that bumps on every successful compile.
  */
 export default function PdfPreview({ revision }: { revision: number }) {
   const { pdfPath, root } = useProjectStore();
@@ -22,7 +22,7 @@ export default function PdfPreview({ revision }: { revision: number }) {
     );
   }
 
-  const src = convertFileSrc(pdfPath);
+  const src = `tb-file://localhost/${encodeURIComponent(pdfPath)}`;
   return (
     <div className="pdf-pane">
       <div className="panel-header">

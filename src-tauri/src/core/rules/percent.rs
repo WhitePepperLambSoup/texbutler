@@ -45,9 +45,9 @@ impl Rule for PercentRule {
                     i += 1;
                     continue;
                 }
-                // next char: letter / digit / space / CJK punctuation
+                // next char: letter / digit / space / CJK punctuation / EOL
                 let next = if i + 1 < bytes.len() { bytes[i + 1] as char } else { '\0' };
-                let next_ok = next.is_ascii_alphanumeric() || next == ' ' || next == '（' || next == '(';
+                let next_ok = next.is_ascii_alphanumeric() || next == ' ' || next == '（' || next == '(' || next == '\0';
                 // check CJK after the percent (multi-byte)
                 let rest = &line[i + 1..];
                 let next_cjk = rest.chars().next().map(contains_cjk_char).unwrap_or(false);
@@ -114,5 +114,13 @@ mod tests {
     fn does_not_flag_escaped_percent() {
         let issues = check("进度 71\\% 完成\n");
         assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn flags_percent_at_end_of_line() {
+        // `71%` at EOL silently comments out the rest — must be flagged
+        let issues = check("完成率 71%\n下一行正文\n");
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].line, Some(1));
     }
 }

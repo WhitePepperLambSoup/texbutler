@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api, onEvent, events, type AiDiagnosis, type AiSettings, type FixReport, type Issue } from "../api";
 import { useI18n } from "../i18n";
+import { useProjectStore } from "./projectStore";
 
 export interface AiMessage {
   id: number;
@@ -119,9 +120,6 @@ export const useAiStore = create<AiState>((set, get) => ({
   async acceptDiff() {
     const { diffPending } = get();
     if (!diffPending) return;
-    // The fix loop already applied + compiled + rolled back on failure.
-    // For safety we simply report the result; diff application happened
-    // server-side with rollback. Show outcome.
     get().pushMessage({
       role: "assistant",
       kind: diffPending.ok ? "fix" : "error",
@@ -131,12 +129,39 @@ export const useAiStore = create<AiState>((set, get) => ({
       report: diffPending,
     });
     set({ diffPending: null });
+    // Sync the editor with the fixed file on disk (the fix loop wrote it).
+    const active = useProjectStore.getState().activeTab;
+    if (active) await useProjectStore.getState().reloadTab(active);
     await useCompileStoreRefresh();
   },
 
-  rejectDiff() {
+  async rejectDiff() {
+    const { diffPending } = get();
+    if (!diffPending) return;
+    const backup = diffPending.backup;
     set({ diffPending: null });
-    get().pushMessage({ role: "system", kind: "plain", text: useI18n.getState().t("ai.rejected") });
+    if (backup) {
+      // Real rollback: restore the pre-fix snapshot, then reload the editor.
+      try {
+        const rel = await api.aiRollback(backup);
+        const active = useProjectStore.getState().activeTab;
+        if (active) await useProjectStore.getState().reloadTab(active);
+        get().pushMessage({
+          role: "system",
+          kind: "plain",
+          text: useI18n.getState().t("ai.rolledBack", { file: rel }),
+        });
+      } catch (e) {
+        get().pushMessage({
+          role: "assistant",
+          kind: "error",
+          text: useI18n.getState().t("ai.rollbackFailed", { e: String(e) }),
+        });
+      }
+    } else {
+      // Nothing was written (fix failed / rolled back server-side already).
+      get().pushMessage({ role: "system", kind: "plain", text: useI18n.getState().t("ai.rejected") });
+    }
   },
 
   async testConnection() {

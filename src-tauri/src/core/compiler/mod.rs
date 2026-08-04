@@ -89,6 +89,12 @@ pub trait Compiler: Send + Sync {
 /// tectonic is unavailable or when its compile fails with a suspected
 /// package-compatibility problem. The actual engine is recorded in
 /// `CompileResult.engine` so the UI can show it.
+/// Global mutex serializing ALL compiles (manual + AI fix loop + generate).
+/// Tectonic/TeX writes into the same per-project `build/` dir; concurrent
+/// compiles could interleave writes and corrupt the PDF. The lock is held
+/// for the duration of one `CompilerScheduler::compile` call.
+pub static COMPILE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 pub struct CompilerScheduler {
     pub tectonic: tectonic::TectonicCompiler,
     pub texlive: texlive::SystemTexliveCompiler,
@@ -110,12 +116,15 @@ impl CompilerScheduler {
     }
 
     /// Main entry: compile the project's main file.
+    /// Serialized globally: only one compile runs at a time (manual
+    /// compiles and AI-fix compiles share this lock).
     pub fn compile(
         &self,
         project: &Project,
         main: &Path,
         stop: &dyn Fn() -> bool,
     ) -> CompileResult {
+        let _guard = COMPILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let use_tectonic = match self.preference {
             EnginePreference::Tectonic => true,
             EnginePreference::SystemTexlive => false,

@@ -119,16 +119,28 @@ export default function App() {
     await compile(compileTarget);
   };
 
-  // Global shortcuts: Ctrl+B compile (like VS Code), Ctrl+Shift+B compile current
+  // Global shortcuts: Ctrl+B compile (like VS Code), Ctrl+Shift+K compile current.
+  // (Ctrl+Shift+B is reserved for the editor's bold-wrap; registering both
+  // made one keypress compile AND bold at the same time.)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "b") return;
       e.preventDefault();
-      const target = e.shiftKey ? "current" : "main";
+      const target = e.shiftKey ? null : "main";
+      if (!target) return;
       void useCompileStore.getState().compile(target);
     };
+    const onKeyK = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.key.toLowerCase() !== "k") return;
+      e.preventDefault();
+      void useCompileStore.getState().compile("current");
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKeyK);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKeyK);
+    };
   }, []);
 
   const totalIssues = compileIssues.length + ruleIssues.length;
@@ -183,9 +195,12 @@ export default function App() {
           {t("toolbar.settings")}
         </button>
       </div>
-      {running && progress && (
-        <div className="compile-bar">
-          <div className="compile-bar-fill" style={{ width: `${Math.round(progress.progress * 100)}%` }} />
+      {progress && (running || progress.stage === "error") && (
+        <div className={`compile-bar ${progress.stage === "error" ? "error" : ""}`}>
+          <div
+            className="compile-bar-fill"
+            style={{ width: `${Math.round(progress.progress * 100)}%` }}
+          />
           <span className="compile-bar-text">{progress.message}</span>
         </div>
       )}

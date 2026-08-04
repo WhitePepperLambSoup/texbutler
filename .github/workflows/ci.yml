@@ -22,11 +22,19 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Run Rust tests
-        run: cargo test
+      - name: Run Rust tests (locked, all non-ignored)
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
 
       - name: Build frontend
         run: npm run build
+
+      - name: Typecheck frontend
+        run: npx tsc --noEmit

@@ -20,7 +20,7 @@
 │    ├ texlive.rs    xelatex/lualatex 驱动（-file-line-error，2 遍）               │
 │    └ bundler.rs    bundle 缓存/预热/打包资源                                     │
 │  log_parser.rs     .log → Vec<Issue>（错误块/行号/分类/raw）                     │
-│  rules/            规则引擎（Rule trait + 注册表，7 条中文规则）                  │
+│  rules/            规则引擎（Rule trait + 注册表，9 条中文规则）                  │
 │  ai/               provider(OpenAI 兼容/Anthropic/Ollama) · diagnose · fix_loop  │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -95,7 +95,7 @@ pub trait Rule { fn id(&self); fn name(&self); fn default_enabled(&self) -> bool
 pub fn all_rules() -> Vec<Box<dyn Rule>>   // 注册表，新增规则只需加一项
 ```
 
-7 条规则见 README；规则开关持久化于 settings.json（`rules: {id: bool}`），保存文件时前端防抖 500ms 自动触发 `tb_run_check`；>2MB 文件跳过（性能保护）。
+9 条规则见 README；规则开关持久化于 settings.json（`rules: {id: bool}`），保存文件时前端防抖 500ms 自动触发 `tb_run_check`；>2MB 文件跳过（性能保护）。
 
 ### AI 层（core/ai/）
 

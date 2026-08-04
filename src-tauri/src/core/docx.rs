@@ -57,28 +57,25 @@ pub fn parse_document_xml(xml: &str) -> Result<Vec<Block>, String> {
 }
 
 fn parse_paragraphs(segment: &str, blocks: &mut Vec<Block>) {
+    // Single pass over `<w:p>` / `<w:p ...>` in DOCUMENT ORDER. A two-pass
+    // scan (attrs first, then no-attr) reordered mixed documents. Careful:
+    // `<w:pPr>` also starts with `<w:p` — require `>` or a space after it.
     let mut pos = 0usize;
-    while let Some(p_start) = find_tag(segment, pos, "<w:p ") {
-        let start = p_start + "<w:p ".len();
-        let Some(p_end) = find_tag(segment, start, "</w:p>") else { break };
-        let p = &segment[start..p_end];
-        let text = extract_text(p);
-        let level = heading_level(p);
-        if text.trim().is_empty() {
-            // skip
-        } else if level > 0 {
-            blocks.push(Block::Heading { level, text: text.trim().to_string() });
+    while let Some(p_start) = find_tag(segment, pos, "<w:p") {
+        let after = p_start + "<w:p".len();
+        let Some(next) = segment[after..].chars().next() else { break };
+        let body_start = if next == '>' {
+            after + 1
+        } else if next == ' ' {
+            let Some(gt) = segment[after..].find('>') else { break };
+            after + gt + 1
         } else {
-            blocks.push(Block::Paragraph(text.trim().to_string()));
-        }
-        pos = p_end + "</w:p>".len();
-    }
-    // also match `<w:p>` without attributes
-    let mut pos2 = 0usize;
-    while let Some(p_start) = find_tag(segment, pos2, "<w:p>") {
-        let start = p_start + "<w:p>".len();
-        let Some(p_end) = find_tag(segment, start, "</w:p>") else { break };
-        let p = &segment[start..p_end];
+            // e.g. `<w:pPr>` / `<w:pStyle>` — not a paragraph element
+            pos = after;
+            continue;
+        };
+        let Some(p_end) = find_tag(segment, body_start, "</w:p>") else { break };
+        let p = &segment[body_start..p_end];
         let text = extract_text(p);
         let level = heading_level(p);
         if !text.trim().is_empty() {
@@ -88,52 +85,53 @@ fn parse_paragraphs(segment: &str, blocks: &mut Vec<Block>) {
                 blocks.push(Block::Paragraph(text.trim().to_string()));
             }
         }
-        pos2 = p_end + "</w:p>".len();
+        pos = p_end + "</w:p>".len();
     }
 }
 
 fn parse_table(seg: &str) -> Block {
     let mut rows: Vec<Vec<String>> = Vec::new();
+    // Single pass over `<w:tr>` / `<w:tr ...>` (document order); `<w:trPr>`
+    // is excluded by the same `>`/space check as paragraphs.
     let mut pos = 0usize;
-    while let Some(r_start) = find_tag(seg, pos, "<w:tr ") {
-        let start = r_start + "<w:tr ".len();
-        let Some(r_end) = find_tag(seg, start, "</w:tr>") else { break };
-        let row = &seg[start..r_end];
+    while let Some(r_start) = find_tag(seg, pos, "<w:tr") {
+        let after = r_start + "<w:tr".len();
+        let Some(next) = seg[after..].chars().next() else { break };
+        let body_start = if next == '>' {
+            after + 1
+        } else if next == ' ' {
+            let Some(gt) = seg[after..].find('>') else { break };
+            after + gt + 1
+        } else {
+            pos = after;
+            continue;
+        };
+        let Some(r_end) = find_tag(seg, body_start, "</w:tr>") else { break };
+        let row = &seg[body_start..r_end];
         let mut cells = Vec::new();
         let mut cpos = 0usize;
-        while let Some(c_start) = find_tag(row, cpos, "<w:tc>") {
-            let cbody = &row[c_start + "<w:tc>".len()..];
-            let Some(c_end) = find_tag(row, c_start, "</w:tc>") else { break };
-            let cseg = &row[c_start..c_end];
+        while let Some(c_start) = find_tag(row, cpos, "<w:tc") {
+            let cafter = c_start + "<w:tc".len();
+            let Some(cnext) = row[cafter..].chars().next() else { break };
+            let cbody_start = if cnext == '>' {
+                cafter + 1
+            } else if cnext == ' ' {
+                let Some(gt) = row[cafter..].find('>') else { break };
+                cafter + gt + 1
+            } else {
+                cpos = cafter;
+                continue;
+            };
+            let Some(c_end) = find_tag(row, cbody_start, "</w:tc>") else { break };
+            let cseg = &row[cbody_start..c_end];
             let cell_text = extract_text(cseg);
             cells.push(cell_text.trim().to_string());
             cpos = c_end + "</w:tc>".len();
-            let _ = cbody;
         }
         if !cells.is_empty() {
             rows.push(cells);
         }
         pos = r_end + "</w:tr>".len();
-    }
-    // also `<w:tr>` without attrs
-    let mut pos2 = 0usize;
-    while let Some(r_start) = find_tag(seg, pos2, "<w:tr>") {
-        let start = r_start + "<w:tr>".len();
-        let Some(r_end) = find_tag(seg, start, "</w:tr>") else { break };
-        let row = &seg[start..r_end];
-        let mut cells = Vec::new();
-        let mut cpos = 0usize;
-        while let Some(c_start) = find_tag(row, cpos, "<w:tc>") {
-            let Some(c_end) = find_tag(row, c_start, "</w:tc>") else { break };
-            let cseg = &row[c_start..c_end];
-            let cell_text = extract_text(cseg);
-            cells.push(cell_text.trim().to_string());
-            cpos = c_end + "</w:tc>".len();
-        }
-        if !cells.is_empty() {
-            rows.push(cells);
-        }
-        pos2 = r_end + "</w:tr>".len();
     }
     Block::Table(rows)
 }
@@ -219,6 +217,26 @@ mod tests {
         let md = render_markdown(&blocks);
         assert!(md.contains("# 标题一"));
         assert!(md.contains("| A | B |"));
+    }
+
+    #[test]
+    fn mixed_attr_and_plain_paragraphs_keep_document_order() {
+        // a `<w:p>` (no attrs) BETWEEN two `<w:p ...>` must not be
+        // reordered to the end (the old two-pass scan did exactly that)
+        let xml = r#"<w:document><w:body>
+<w:p w14:paraId="1"><w:r><w:t>第一</w:t></w:r></w:p>
+<w:p><w:r><w:t>第二</w:t></w:r></w:p>
+<w:p w14:paraId="3"><w:r><w:t>第三</w:t></w:r></w:p>
+</w:body></w:document>"#;
+        let blocks = parse_document_xml(xml).unwrap();
+        let texts: Vec<&str> = blocks
+            .iter()
+            .filter_map(|b| match b {
+                Block::Paragraph(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(texts, vec!["第一", "第二", "第三"], "document order must be preserved");
     }
 
     #[test]

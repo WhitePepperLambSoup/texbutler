@@ -11,6 +11,7 @@
   --warn: #cca700;
   --info: #3794ff;
   --sugg: #6a9955;
+  --danger: #f14c4c;
   font-size: 14px;
 }
 
@@ -28,6 +29,7 @@ html[data-theme="light"] {
   --warn: #9d7500;
   --info: #1d6fd1;
   --sugg: #2e7d32;
+  --danger: #c42b1c;
 }
 
 html[data-theme="light"] .statusbar {
@@ -239,6 +241,14 @@ body {
   top: 3px;
   font-size: 12px;
   color: var(--fg);
+}
+
+.compile-bar.error {
+  background: color-mix(in srgb, var(--danger) 18%, var(--bg2));
+}
+
+.compile-bar.error .compile-bar-fill {
+  background: var(--danger);
 }
 
 /* ---------- layout ---------- */

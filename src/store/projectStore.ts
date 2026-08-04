@@ -6,6 +6,9 @@ import { api, type Issue, type ProjectFileNode, type ProjectInfo } from "../api"
 import { useI18n } from "../i18n";
 import { saveFlow } from "../flow";
 
+/** Monotonic openFile request counter (race guard for async tab activation). */
+let openFileSeq = 0;
+
 export interface Tab {
   path: string;
   content: string;
@@ -27,6 +30,7 @@ interface ProjectState {
   refresh: () => Promise<void>;
   openFile: (rel: string) => Promise<void>;
   saveFile: () => Promise<void>;
+  reloadTab: (rel: string) => Promise<void>;
   closeTab: (rel: string) => Promise<void>;
   setTabContent: (rel: string, content: string) => void;
   closeProject: () => void;
@@ -73,6 +77,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   async openFile(rel) {
+    // request sequence: only the LATEST openFile call may activate a tab.
+    // Without this, opening A then quickly B could end up with A activating
+    // after B finished (async race → activeTab on the wrong file).
+    const seq = ++openFileSeq;
     const { tabs } = get();
     // already open → just activate it (no confirm, no loss)
     if (tabs.some((t) => t.path === rel)) {
@@ -81,6 +89,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return;
     }
     const content = await api.readFile(rel);
+    // a newer openFile superseded this one → drop this stale result
+    if (seq !== openFileSeq) return;
     // re-read state after await: another openFile may have completed first
     const cur = get();
     if (cur.tabs.some((t) => t.path === rel)) {
@@ -121,6 +131,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (stillSame) {
       window.dispatchEvent(new Event("tb:file-saved"));
     }
+  },
+
+  /** Reload a tab's content from disk (discards unsaved edits). Used after
+   *  AI fixes / rollbacks so the editor reflects the file on disk. */
+  async reloadTab(rel: string) {
+    const content = await api.readFile(rel);
+    set((s) => ({
+      tabs: s.tabs.map((t) => (t.path === rel ? { ...t, content, dirty: false } : t)),
+    }));
   },
 
   /** Close a tab; unsaved edits are auto-saved first (no blocking dialog). */
