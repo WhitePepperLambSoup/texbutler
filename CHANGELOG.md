@@ -12,6 +12,7 @@
 ### 修复（代码审查 v0.3.1）
 
 - **AI 修复真确认**：修复成功后返回修复前快照，点"拒绝"真实回滚文件并同步编辑器；点"接受"自动从磁盘重载编辑器（此前"拒绝"只是清弹窗，文件早已写入）。
+- **PDF 预览修复**：WebView2 不支持非标准协议，PDF/图片预览协议改为 `http://tb-file.localhost/`（wry workaround 形式，服务端白名单校验不变），端到端实测 PDF 正常渲染。
 - **快捷键冲突**：`Ctrl+Shift+B` 仅保留编辑器内"加粗包裹"，全局"编译当前文件"改 `Ctrl+Shift+K`（此前一次按键同时编译+加粗）。
 - **安全配置收窄**：关闭 `assetProtocol`（原 `scope: ["**"]`），PDF/图片预览改走白名单自定义协议 `tb-file://`（仅项目目录内、仅 7 种预览扩展名）；启用严格 CSP（script-src 'self'、object-src none）。
 - **规则引擎注释感知**：italic/bold/float/color/missing_end 不再对 `%` 注释内内容误报；percent 补报行尾裸 `%`；paragraph 不再把 `\includegraphics[..]{..}` 误判为正文。

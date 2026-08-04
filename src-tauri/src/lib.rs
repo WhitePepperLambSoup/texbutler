@@ -40,8 +40,20 @@ fn serve_project_file(app: &tauri::AppHandle, request: &tauri::http::Request<Vec
     let bad = |code: StatusCode| -> tauri::http::Response<Vec<u8>> {
         Response::builder().status(code).body(Vec::new()).unwrap()
     };
+    // Defense in depth: only serve requests for the tb-file protocol.
+    // wry reverts the workaround URI (`http://tb-file.localhost/...`) to
+    // the original form (`tb-file://localhost/...`) before calling the
+    // handler, so both hosts are legitimate. Anything else is refused.
+    let host_ok = request
+        .uri()
+        .host()
+        .map(|h| h.eq_ignore_ascii_case("tb-file.localhost") || h.eq_ignore_ascii_case("localhost"))
+        .unwrap_or(false);
+    if !host_ok {
+        return bad(StatusCode::FORBIDDEN);
+    }
     let path_and_query = request.uri().path_and_query().map(|p| p.as_str()).unwrap_or("/");
-    // `tb-file://localhost/<percent-encoded absolute path>` → strip leading '/'
+    // `http://tb-file.localhost/<percent-encoded absolute path>` → strip leading '/'
     let encoded = path_and_query.trim_start_matches('/');
     let Ok(decoded) = percent_decode(encoded) else {
         return bad(StatusCode::BAD_REQUEST);

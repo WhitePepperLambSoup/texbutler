@@ -31,7 +31,7 @@ export default function ImageInsertModal({ fileName, projectRoot, onCancel, onCo
     return lines.join("\n") + "\n";
   };
 
-  const src = `tb-file://localhost/${encodeURIComponent(`${projectRoot.replace(/\\/g, "/")}/${fileName}`)}`;
+  const src = `http://tb-file.localhost/${encodeURIComponent(`${projectRoot.replace(/\\/g, "/")}/${fileName}`)}`;
 
   return (
     <div className="modal-overlay" onClick={onCancel}>

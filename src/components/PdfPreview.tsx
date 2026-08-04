@@ -2,10 +2,12 @@ import { useProjectStore } from "../store/projectStore";
 import { useT } from "../i18n";
 
 /**
- * PDF preview via the restricted `tb-file://` scheme (Rust side validates
- * the path stays inside the open project; `assetProtocol` is disabled).
- * The Rust side writes `.texbutler/build/main.pdf`; we render it in an
- * iframe with a reload key that bumps on every successful compile.
+ * PDF preview via the restricted `tb-file` custom protocol. WebView2 does
+ * not support non-standard schemes, so wry's workaround form is used:
+ * `http://tb-file.localhost/<percent-encoded path>` (the Rust side maps it
+ * back to the tb-file scheme and validates the path stays inside the open
+ * project; `assetProtocol` is disabled). We render it in an iframe with a
+ * reload key that bumps on every successful compile.
  */
 export default function PdfPreview({ revision }: { revision: number }) {
   const { pdfPath, root } = useProjectStore();
@@ -22,7 +24,7 @@ export default function PdfPreview({ revision }: { revision: number }) {
     );
   }
 
-  const src = `tb-file://localhost/${encodeURIComponent(pdfPath)}`;
+  const src = `http://tb-file.localhost/${encodeURIComponent(pdfPath)}`;
   return (
     <div className="pdf-pane">
       <div className="panel-header">

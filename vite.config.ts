@@ -11,8 +11,10 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
     watch: {
-      // Tell vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // Ignore `src-tauri` AND build artifacts: vite's fs watcher dies with
+      // EBUSY when the running app locks files under `target/` (WebView2
+      // Cookies etc.), which killed `tauri dev` mid-session.
+      ignored: ["**/src-tauri/**", "**/target/**", "**/dist/**"],
     },
   },
   build: {

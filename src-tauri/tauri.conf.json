@@ -21,7 +21,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' tb-file: data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; frame-src 'self' tb-file:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'",
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' http://tb-file.localhost data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://tb-file.localhost; frame-src 'self' http://tb-file.localhost; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'",
       "devCsp": null,
       "assetProtocol": {
         "enable": false,
@@ -44,3 +44,4 @@
     }
   }
 }
+
