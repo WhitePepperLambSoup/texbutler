@@ -861,6 +861,18 @@ pub fn rollback_from_backup(project: &Project, backup: &str) -> Result<String, S
     let rel_to_backup = path
         .strip_prefix(&backup_dir)
         .map_err(|_| "备份路径不在项目备份目录内".to_string())?;
+    // reject traversal components: `<backup_dir>/../../x` must not read (or
+    // later write) files outside the backup dir even though the prefix matches
+    for comp in rel_to_backup.components() {
+        if matches!(
+            comp,
+            std::path::Component::ParentDir
+                | std::path::Component::RootDir
+                | std::path::Component::Prefix(_)
+        ) {
+            return Err("备份路径包含非法组件".into());
+        }
+    }
     let mut comps = rel_to_backup.components();
     let _ts = comps
         .next()
@@ -1185,6 +1197,27 @@ mod tests {
         assert_eq!(truncate("", 5), "");
         assert_eq!(truncate(s, 0), "…");
         assert_eq!(truncate("abc", 3), "abc");
+    }
+
+    #[test]
+    fn rollback_rejects_traversal_backup_path() {
+        // `<backup_dir>/../../outside` must be rejected even though the
+        // string prefix matches the backup dir (review should-fix)
+        let root = std::env::temp_dir().join(format!("tb-rollback-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let proj = crate::core::project::Project::open(&root).unwrap();
+        let backup_dir = proj.backup_dir();
+        let evil = backup_dir.join("..").join("..").join("..").join("outside.txt");
+        let err = rollback_from_backup(&proj, evil.to_string_lossy().as_ref());
+        assert!(err.is_err(), "traversal path must be rejected: {err:?}");
+        // a legit snapshot (backup/<ts>/<rel>) still works
+        let ts = backup_dir.join("20260101-000000");
+        std::fs::create_dir_all(&ts).unwrap();
+        let snap = ts.join("main.tex");
+        std::fs::write(&snap, "\\end{document}\n").unwrap();
+        let ok = rollback_from_backup(&proj, snap.to_string_lossy().as_ref());
+        assert!(ok.is_ok());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
