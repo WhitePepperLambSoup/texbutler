@@ -1,4 +1,4 @@
-# Rust / Cargo
+﻿# Rust / Cargo
 target/
 src-tauri/target/
 **/*.rs.bk
@@ -38,3 +38,8 @@ Desktop.ini
 
 # Release artifacts (installers are delivered out-of-band, not committed)
 release/
+
+# 离线 bundle（体积大，由 scripts/package-bundle.ps1 生成，不入库）
+
+src-tauri/resources/bundle/*
+!src-tauri/resources/bundle/README.txt

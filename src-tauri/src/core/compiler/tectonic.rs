@@ -147,6 +147,13 @@ impl Compiler for TectonicCompiler {
         let mut self_mut = TectonicCompiler { binary: self.binary.clone() };
         let binary = self_mut.ensure_binary()?.clone();
 
+        // offline-first: if a bundled bundle.zip ships with the app and the
+        // local cache is empty, unpack it once so every user can compile
+        // without network access (not just the machine that pre-downloaded)
+        if let Err(e) = super::bundler::ensure_unpacked_bundle() {
+            eprintln!("内置 bundle 解压失败（将按需联网下载）: {e}");
+        }
+
         let main_path = project.root.join(main);
         if !main_path.exists() {
             return Err(CompileError::Project(format!("主文件不存在: {}", main_path.display())));

@@ -38,7 +38,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "resources/bin/tectonic.exe": "bin/tectonic.exe"
+      "resources/bin/tectonic.exe": "bin/tectonic.exe",
+      "resources/bundle/*": "bundle/"
     }
   }
 }

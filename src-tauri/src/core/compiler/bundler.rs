@@ -14,7 +14,7 @@
 //!   / zip) and point to it via `TEXBUTLER_BUNDLE_DIR` / `TEXBUTLER_BUNDLE_ZIP`;
 //!   the tectonic driver picks those up automatically.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// tectonic's own bundle cache root on this machine.
 /// NOTE: tectonic 0.15 layout is `TectonicProject\Tectonic\{files,formats,...}`
@@ -87,6 +87,80 @@ pub fn download_bundle() -> Result<u64, String> {
     Ok(after.saturating_sub(before))
 }
 
+/// Locate a bundled `bundle.zip` shipped next to the executable
+/// (`resources/bundle/bundle.zip`), or the `TEXBUTLER_BUNDLE_ZIP` env override.
+pub fn find_bundled_zip() -> Option<PathBuf> {
+    if let Ok(zip) = std::env::var("TEXBUTLER_BUNDLE_ZIP") {
+        let p = PathBuf::from(zip);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+        .unwrap_or_default();
+    let candidates = [
+        exe_dir.join("resources").join("bundle").join("bundle.zip"),
+        PathBuf::from("src-tauri").join("resources").join("bundle").join("bundle.zip"),
+        PathBuf::from("resources").join("bundle").join("bundle.zip"),
+    ];
+    candidates.into_iter().find(|p| p.is_file())
+}
+
+/// Whether the tectonic cache is already warm (has downloaded files).
+fn cache_warm() -> bool {
+    let files = tectonic_cache_root().join("files");
+    if files.is_dir() {
+        if let Ok(rd) = std::fs::read_dir(&files) {
+            if rd.count() > 0 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Unpack a bundled `bundle.zip` into the tectonic cache so compiling works
+/// fully offline for every user, not just the machine that pre-downloaded.
+/// Called lazily before the first compile; no-op when the cache is warm or
+/// no bundled zip is present. Returns how many files were unpacked.
+pub fn ensure_unpacked_bundle() -> Result<u64, String> {
+    if cache_warm() {
+        return Ok(0);
+    }
+    let Some(zip_path) = find_bundled_zip() else {
+        return Ok(0);
+    };
+    unpack_zip(&zip_path, &tectonic_cache_root())
+}
+
+/// Extract every file of a zip into `target` (zip-slip protected).
+pub fn unpack_zip(zip_path: &Path, target: &Path) -> Result<u64, String> {
+    let file = std::fs::File::open(zip_path).map_err(|e| e.to_string())?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("bundle.zip 读取失败: {e}"))?;
+    let mut unpacked = 0u64;
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        if entry.is_dir() {
+            continue;
+        }
+        let name = entry.name().to_string();
+        // zip-slip defence: reject traversal paths
+        if name.contains("..") || name.starts_with('/') {
+            return Err(format!("bundle.zip 包含非法路径: {name}"));
+        }
+        let out_path = target.join(&name);
+        if let Some(parent) = out_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let mut out = std::fs::File::create(&out_path).map_err(|e| e.to_string())?;
+        std::io::copy(&mut entry, &mut out).map_err(|e| e.to_string())?;
+        unpacked += 1;
+    }
+    Ok(unpacked)
+}
+
 fn cache_bytes() -> u64 {
     let root = tectonic_cache_root();
     let mut total = 0u64;
@@ -124,5 +198,40 @@ mod tests {
     #[test]
     fn bundle_dir_has_texbutler() {
         assert!(bundle_dir().to_string_lossy().contains("texbutler"));
+    }
+
+    #[test]
+    fn unpack_zip_extracts_files_and_rejects_traversal() {
+        use std::io::Write;
+        let tmp = std::env::temp_dir().join(format!("tb-unpack-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        // build a small zip with a normal file and a traversal entry
+        let zip_path = tmp.join("test.zip");
+        let mut zw = zip::ZipWriter::new(std::fs::File::create(&zip_path).unwrap());
+        zw.start_file("files/ab/hello.txt", zip::write::SimpleFileOptions::default()).unwrap();
+        zw.write_all(b"hello").unwrap();
+        zw.start_file("../evil.txt", zip::write::SimpleFileOptions::default()).unwrap();
+        zw.write_all(b"evil").unwrap();
+        zw.finish().unwrap();
+
+        let target = tmp.join("out");
+        // traversal entry must abort the whole unpack
+        let err = unpack_zip(&zip_path, &target).unwrap_err();
+        assert!(err.contains("evil"), "应拒绝路径遍历: {err}");
+        assert!(!target.join("evil.txt").exists());
+
+        // clean zip unpacks fine
+        let zip2 = tmp.join("test2.zip");
+        let mut zw2 = zip::ZipWriter::new(std::fs::File::create(&zip2).unwrap());
+        zw2.start_file("files/ab/hello.txt", zip::write::SimpleFileOptions::default()).unwrap();
+        zw2.write_all(b"hello").unwrap();
+        zw2.finish().unwrap();
+        let n = unpack_zip(&zip2, &target).unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(std::fs::read_to_string(target.join("files/ab/hello.txt")).unwrap(), "hello");
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
