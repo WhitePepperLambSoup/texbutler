@@ -136,9 +136,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         return;
       }
       // re-read after the await: if the user kept typing during the write,
-      // write the newer content too so nothing is lost
-      const latest = get().tabs.find((t) => t.path === rel);
-      if (latest && latest.content !== tab.content) {
+      // write the newer content too so nothing is lost (bounded retries)
+      let wrote = tab.content;
+      for (let i = 0; i < 3; i++) {
+        const latest = get().tabs.find((t) => t.path === rel);
+        if (!latest || latest.content === wrote) break;
+        wrote = latest.content;
         try {
           await api.writeFile(latest.path, latest.content);
         } catch {
