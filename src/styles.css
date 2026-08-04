@@ -12,6 +12,7 @@
   --info: #3794ff;
   --sugg: #6a9955;
   --danger: #f14c4c;
+  --hover: #2d2d30;
   font-size: 14px;
 }
 
@@ -30,6 +31,294 @@ html[data-theme="light"] {
   --info: #1d6fd1;
   --sugg: #2e7d32;
   --danger: #c42b1c;
+  --hover: #dcdcdc;
+}
+
+/* ============ Liquid Glass theme (v0.4.0) ============
+   Techniques learned from naughtyduk/liquidGL + css.glass:
+   - animated gradient blobs behind a deep gradient canvas
+   - frosted panes: backdrop-filter blur + saturate, translucent fill
+   - bevel edge: 1px light border + inset top highlight + soft drop shadow
+   - specular shimmer: rotating conic highlight on tool buttons
+   - SVG noise overlay for physical depth                          */
+html[data-theme="liquid"] {
+  --bg: #0c1122;
+  --bg2: rgba(255, 255, 255, 0.05);
+  --bg3: rgba(255, 255, 255, 0.07);
+  --border: rgba(255, 255, 255, 0.13);
+  --fg: #e9edf6;
+  --fg-dim: #a7b1c6;
+  --accent: #6ea8fe;
+  --accent2: #a78bfa;
+  --err: #ff6b6b;
+  --warn: #ffc857;
+  --info: #6ea8fe;
+  --sugg: #7be0a0;
+  --danger: #ff6b6b;
+  --hover: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="liquid"] body {
+  background:
+    radial-gradient(1200px 800px at 15% -10%, #1b2a5e 0%, transparent 55%),
+    radial-gradient(1000px 700px at 110% 20%, #3b1d6e 0%, transparent 50%),
+    radial-gradient(900px 900px at 50% 120%, #0e3a52 0%, transparent 55%),
+    linear-gradient(160deg, #0a0e1f 0%, #101530 45%, #14103a 100%);
+}
+
+/* animated colour blobs behind the glass (render only in liquid theme) */
+html[data-theme="liquid"] .glass-blobs {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+html[data-theme="liquid"] .glass-blobs .blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(70px);
+  opacity: 0.55;
+  will-change: transform;
+}
+
+html[data-theme="liquid"] .glass-blobs .blob-1 {
+  width: 520px;
+  height: 520px;
+  left: -120px;
+  top: -80px;
+  background: radial-gradient(circle at 30% 30%, #4f7cff, transparent 70%);
+  animation: blob-drift-1 26s ease-in-out infinite alternate;
+}
+
+html[data-theme="liquid"] .glass-blobs .blob-2 {
+  width: 460px;
+  height: 460px;
+  right: -100px;
+  top: 30%;
+  background: radial-gradient(circle at 60% 40%, #a855f7, transparent 70%);
+  animation: blob-drift-2 32s ease-in-out infinite alternate;
+}
+
+html[data-theme="liquid"] .glass-blobs .blob-3 {
+  width: 420px;
+  height: 420px;
+  left: 35%;
+  bottom: -160px;
+  background: radial-gradient(circle at 50% 50%, #22d3ee, transparent 70%);
+  animation: blob-drift-3 38s ease-in-out infinite alternate;
+}
+
+@keyframes blob-drift-1 {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(180px, 140px) scale(1.25); }
+}
+@keyframes blob-drift-2 {
+  from { transform: translate(0, 0) scale(1.1); }
+  to { transform: translate(-160px, 120px) scale(0.9); }
+}
+@keyframes blob-drift-3 {
+  from { transform: translate(0, 0) scale(0.95); }
+  to { transform: translate(120px, -140px) scale(1.2); }
+}
+
+/* app content sits above the blobs */
+html[data-theme="liquid"] .app {
+  position: relative;
+  z-index: 1;
+}
+
+/* frosted panes */
+html[data-theme="liquid"] .toolbar,
+html[data-theme="liquid"] .col-tree,
+html[data-theme="liquid"] .col-pdf,
+html[data-theme="liquid"] .bottom,
+html[data-theme="liquid"] .statusbar,
+html[data-theme="liquid"] .compile-bar,
+html[data-theme="liquid"] .modal,
+html[data-theme="liquid"] .quick-open {
+  background: rgba(19, 25, 48, 0.5);
+  backdrop-filter: blur(18px) saturate(170%);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 10px 34px rgba(2, 6, 20, 0.45);
+}
+
+/* floating layout: gaps + rounded panes */
+html[data-theme="liquid"] .layout {
+  gap: 10px;
+  padding: 10px 10px 0;
+}
+
+html[data-theme="liquid"] .col-tree,
+html[data-theme="liquid"] .col-editor,
+html[data-theme="liquid"] .col-pdf,
+html[data-theme="liquid"] .bottom {
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+html[data-theme="liquid"] .toolbar {
+  margin: 8px 10px 0;
+  border-radius: 12px;
+}
+
+html[data-theme="liquid"] .statusbar {
+  margin: 0 10px 8px;
+  border-radius: 12px;
+}
+
+html[data-theme="liquid"] .compile-bar {
+  margin: 0 10px;
+  border-radius: 10px;
+}
+
+html[data-theme="liquid"] .panel-header,
+html[data-theme="liquid"] .tree-tab,
+html[data-theme="liquid"] .editor-tab,
+html[data-theme="liquid"] .ai-msg,
+html[data-theme="liquid"] .problem-item,
+html[data-theme="liquid"] .outline-item,
+html[data-theme="liquid"] .bib-item,
+html[data-theme="liquid"] .log-viewer,
+html[data-theme="liquid"] .ai-diff,
+html[data-theme="liquid"] .ai-raw,
+html[data-theme="liquid"] .formula-panel {
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* toolbar buttons: specular pill */
+html[data-theme="liquid"] .btn,
+html[data-theme="liquid"] .btn-mini {
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 9px;
+  color: var(--fg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+html[data-theme="liquid"] .btn:hover,
+html[data-theme="liquid"] .btn-mini:hover {
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 4px 18px rgba(110, 168, 254, 0.25);
+  transform: translateY(-1px);
+}
+
+html[data-theme="liquid"] .btn:disabled,
+html[data-theme="liquid"] .btn-mini:disabled {
+  opacity: 0.45;
+  transform: none;
+  box-shadow: none;
+}
+
+html[data-theme="liquid"] .brand {
+  background: linear-gradient(120deg, #6ea8fe, #a78bfa 60%, #22d3ee);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* editor pane: deep translucent panel (NO backdrop blur on the big editor
+   surface — keeps typing smooth; blobs still glow through the tint) */
+html[data-theme="liquid"] .col-editor {
+  background: rgba(13, 17, 34, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 10px 34px rgba(2, 6, 20, 0.4);
+}
+
+html[data-theme="liquid"] .pdf-empty,
+html[data-theme="liquid"] .pdf-frame {
+  background: transparent;
+}
+
+html[data-theme="liquid"] .editor-tab.active {
+  background: rgba(110, 168, 254, 0.14);
+  border-color: rgba(110, 168, 254, 0.35);
+}
+
+/* theme picker */
+.theme-picker {
+  position: relative;
+}
+
+.theme-picker-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 12px;
+  z-index: 60;
+  min-width: 168px;
+}
+
+html[data-theme="liquid"] .theme-picker-menu {
+  background: rgba(19, 25, 48, 0.85);
+  backdrop-filter: blur(18px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 14px 40px rgba(2, 6, 20, 0.55);
+}
+
+html[data-theme="dark"] .theme-picker-menu {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+}
+
+html[data-theme="light"] .theme-picker-menu {
+  background: #fff;
+  border: 1px solid var(--border);
+}
+
+.theme-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--fg);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.theme-option:hover {
+  background: var(--hover);
+}
+
+.theme-option.active {
+  border-color: var(--accent);
+}
+
+.theme-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.swatch-liquid {
+  background: conic-gradient(from 210deg, #4f7cff, #a855f7, #22d3ee, #4f7cff);
+}
+
+.swatch-dark {
+  background: linear-gradient(135deg, #1e1e1e, #3c3c3c);
+}
+
+.swatch-light {
+  background: linear-gradient(135deg, #f3f3f3, #c8c8c8);
 }
 
 html[data-theme="light"] .statusbar {

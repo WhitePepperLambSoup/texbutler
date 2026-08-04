@@ -67,6 +67,32 @@ const beforeMount: BeforeMount = (monaco) => {
     ],
     colors: {},
   });
+  // Liquid-glass variant: transparent editor background so the animated
+  // colour blobs glow through the deep tinted pane (no backdrop blur on
+  // the large editing surface — keeps typing smooth).
+  monaco.editor.defineTheme("texbutler-liquid", {
+    base: "vs-dark",
+    inherit: true,
+    rules: [
+      { token: "keyword", foreground: "6EA8FE", fontStyle: "bold" },
+      { token: "type", foreground: "C4B5FD" },
+      { token: "comment", foreground: "7BE0A0", fontStyle: "italic" },
+      { token: "string", foreground: "F2C4A0" },
+      { token: "delimiter", foreground: "E9EDF6" },
+    ],
+    colors: {
+      "editor.background": "#00000000",
+      "editor.lineHighlightBackground": "#6EA8FE14",
+      "editorLineNumber.foreground": "#5A6480",
+      "editorLineNumber.activeForeground": "#A7B1C6",
+      "editorCursor.foreground": "#6EA8FE",
+      "editor.selectionBackground": "#6EA8FE33",
+      "editor.inactiveSelectionBackground": "#6EA8FE22",
+      "editorIndentGuide.background1": "#ffffff12",
+      "editorWidget.background": "#151A30E6",
+      "editorSuggestWidget.selectedBackground": "#6EA8FE2E",
+    },
+  });
 
   // --- autocompletion: common commands + environment pairs ---
   const COMMANDS: string[] = [
@@ -146,6 +172,14 @@ const MATH_SYMBOLS = [
   "×", "÷", "∂", "Δ", "→", "⇒", "∪", "∩", "⊂", "⊆", "⊥", "∥",
 ];
 
+type MonacoThemeId = "texbutler" | "texbutler-dark" | "texbutler-liquid";
+
+function monacoThemeFor(dataTheme: string | undefined): MonacoThemeId {
+  if (dataTheme === "liquid") return "texbutler-liquid";
+  if (dataTheme === "dark") return "texbutler-dark";
+  return "texbutler";
+}
+
 export default function EditorPane() {
   const { tabs, activeTab, saveFile, setTabContent, closeTab, openFile } = useProjectStore();
   const active = tabs.find((t) => t.path === activeTab) ?? null;
@@ -154,14 +188,14 @@ export default function EditorPane() {
   const [symbolOpen, setSymbolOpen] = useState(false);
   const [imgModal, setImgModal] = useState<{ fileName: string; root: string } | null>(null);
   const [formulaMode, setFormulaMode] = useState<"inline" | "display" | null>(null);
-  const [monacoTheme, setMonacoTheme] = useState<"texbutler" | "texbutler-dark">(() =>
-    document.documentElement.dataset.theme === "dark" ? "texbutler-dark" : "texbutler"
+  const [monacoTheme, setMonacoTheme] = useState<"texbutler" | "texbutler-dark" | "texbutler-liquid">(
+    () => monacoThemeFor(document.documentElement.dataset.theme)
   );
 
-  // follow the app theme (day/night toggle) for the editor panel
+  // follow the app theme (liquid glass / day / night) for the editor panel
   useEffect(() => {
     const onTheme = () => {
-      setMonacoTheme(document.documentElement.dataset.theme === "dark" ? "texbutler-dark" : "texbutler");
+      setMonacoTheme(monacoThemeFor(document.documentElement.dataset.theme));
     };
     const mo = new MutationObserver(onTheme);
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });

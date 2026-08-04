@@ -16,14 +16,16 @@ import { useT } from "./i18n";
 import { loadFlow } from "./flow";
 import QuickOpenModal from "./components/QuickOpenModal";
 
-function loadTheme(): "dark" | "light" {
+export type ThemeId = "liquid" | "dark" | "light";
+
+function loadTheme(): ThemeId {
   try {
     const saved = window.localStorage.getItem("tb-theme");
-    if (saved === "dark" || saved === "light") return saved;
+    if (saved === "liquid" || saved === "dark" || saved === "light") return saved;
   } catch {
     /* ignore */
   }
-  return "dark";
+  return "liquid";
 }
 
 export default function App() {
@@ -36,8 +38,9 @@ export default function App() {
   const [leftTab, setLeftTab] = useState<"tree" | "outline" | "bib">("tree");
   const [compileTarget, setCompileTarget] = useState<"main" | "current">("main");
   const [quickOpen, setQuickOpen] = useState(false);
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
   const t = useT();
-  const [theme, setTheme] = useState<"dark" | "light">(loadTheme());
+  const [theme, setTheme] = useState<ThemeId>(loadTheme());
 
   // apply theme to <html data-theme>
   useEffect(() => {
@@ -48,6 +51,25 @@ export default function App() {
       /* ignore */
     }
   }, [theme]);
+
+  // close the theme picker on outside click / Escape
+  useEffect(() => {
+    if (!themePickerOpen) return;
+    const onDown = (e: MouseEvent | KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (e instanceof KeyboardEvent) {
+        if (e.key === "Escape") setThemePickerOpen(false);
+        return;
+      }
+      if (t && !t.closest(".theme-picker")) setThemePickerOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onDown);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onDown);
+    };
+  }, [themePickerOpen]);
 
   // session restore + auto-compile + Ctrl+P quick open
   useEffect(() => {
@@ -147,6 +169,13 @@ export default function App() {
 
   return (
     <div className="app">
+      {theme === "liquid" && (
+        <div className="glass-blobs" aria-hidden="true">
+          <div className="blob blob-1" />
+          <div className="blob blob-2" />
+          <div className="blob blob-3" />
+        </div>
+      )}
       <div className="toolbar">
         <span className="brand">TeXButler</span>
         {root && (
@@ -185,12 +214,38 @@ export default function App() {
           Word→LaTeX
         </button>
         <button
-          className="btn"
-          title={theme === "dark" ? t("toolbar.lightTitle") : t("toolbar.darkTitle")}
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          className="btn theme-picker-btn"
+          title={t("theme.title")}
+          onClick={() => setThemePickerOpen((v) => !v)}
         >
-          {theme === "dark" ? t("toolbar.light") : t("toolbar.dark")}
+          <span className={`theme-swatch swatch-${theme}`} />
+          {theme === "liquid" ? t("theme.liquid") : theme === "dark" ? t("theme.dark") : t("theme.light")}
         </button>
+        {themePickerOpen && (
+          <div className="theme-picker">
+            <div className="theme-picker-menu">
+              {(
+                [
+                  ["liquid", "theme.liquid", "swatch-liquid"],
+                  ["dark", "theme.dark", "swatch-dark"],
+                  ["light", "theme.light", "swatch-light"],
+                ] as const
+              ).map(([id, key, swatch]) => (
+                <button
+                  key={id}
+                  className={`theme-option ${theme === id ? "active" : ""}`}
+                  onClick={() => {
+                    setTheme(id);
+                    setThemePickerOpen(false);
+                  }}
+                >
+                  <span className={`theme-swatch ${swatch}`} />
+                  {t(key)}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <button className="btn" onClick={() => setSettingsOpen(true)}>
           {t("toolbar.settings")}
         </button>
