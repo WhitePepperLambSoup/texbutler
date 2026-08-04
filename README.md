@@ -10,7 +10,8 @@
 2. **AI error diagnosis & repair** — turns cryptic LaTeX errors into plain language with the real error line; one-click fix: deterministic fixes (missing packages / undefined commands / missing `\end{document}`) → AI diff → audit (referenced-file existence check) → apply → recompile, with automatic rollback on failure.
 3. **Chinese-LaTeX specific checks** — 9 rules (bare `%`, `\textit` with CJK, `[ht]` float drift, floating-point garbage, glued paragraphs, …) that run automatically on save.
 4. **Made for writing (v0.2.0)** — one-click image insertion with generated code, quick-format buttons (sections / formulas / tables / lists), AI code generation from natural language, **Word (.docx) import → AI generates a complete compilable LaTeX document**, user template library, math-symbol panel (36 symbols), day/night theme, and a bilingual UI (中文 / English).
-5. **End-to-end verifiable** — real-API + real-compile e2e tests (`cargo test --test e2e_ai -- --ignored`) validate every layer of the fix loop.
+5. **Smooth writing flow (v0.3.0)** — drag images into the editor or paste screenshots (auto-saved, insert dialog with width/position/caption), an **Outline panel** (section tree, click to jump), a **Bibliography panel** (click a .bib entry to insert `\cite`), LaTeX autocompletion (60+ commands, environment pairs), optional auto-compile after save, session restore on startup, and Ctrl+P quick file open.
+6. **End-to-end verifiable** — real-API + real-compile e2e tests (`cargo test --test e2e_ai -- --ignored`) validate every layer of the fix loop.
 
 ## Tech Stack
 

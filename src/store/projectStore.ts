@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api, type Issue, type ProjectFileNode, type ProjectInfo } from "../api";
 import { useI18n } from "../i18n";
+import { saveFlow } from "../flow";
 
 interface ProjectState {
   root: string;
@@ -36,6 +37,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       files: info.files,
       pdfPath: info.pdf_url ?? null,
     });
+    saveFlow({ lastProject: info.root });
     // auto-open the main file
     await get().openFile(info.main_file);
   },
@@ -67,6 +69,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
     const content = await api.readFile(rel);
     set({ openPath: rel, openContent: content, dirty: false });
+    saveFlow({ lastFile: rel });
   },
 
   async saveFile() {
@@ -74,6 +77,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (!openPath) return;
     await api.writeFile(openPath, openContent);
     set({ dirty: false });
+    // notify listeners (App triggers auto-compile when enabled)
+    window.dispatchEvent(new Event("tb:file-saved"));
   },
 
   closeProject() {

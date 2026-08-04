@@ -126,6 +126,27 @@ impl Project {
         out
     }
 
+    /// All `.bib` files relative to the root (recursive).
+    pub fn bib_files(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut stack = vec![self.root.clone()];
+        while let Some(dir) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if path.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("bib")) == Some(true) {
+                    if let Ok(rel) = path.strip_prefix(&self.root) {
+                        out.push(rel.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
     /// The absolute path of the main file.
     pub fn main_path(&self) -> PathBuf {
         self.root.join(&self.main_file)

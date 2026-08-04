@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type AiSettings, type ProviderKind, type RuleState } from "../api";
 import { useAiStore } from "../store/aiStore";
+import { loadFlow, saveFlow } from "../flow";
 import { useI18n, useT } from "../i18n";
 
 interface Props {
@@ -35,6 +36,7 @@ export default function SettingsModal({ open, onClose }: Props) {
   const [testing, setTesting] = useState(false);
   const [bundleStatus, setBundleStatus] = useState<string>("");
   const [ruleStates, setRuleStates] = useState<RuleState[]>([]);
+  const [flow, setFlow] = useState(loadFlow());
   const [fonts, setFonts] = useState<{ name: string; available: boolean }[]>([]);
 
   useEffect(() => {
@@ -207,6 +209,32 @@ export default function SettingsModal({ open, onClose }: Props) {
               {testing ? t("settings.testing") : t("settings.test")}
             </button>
             {testResult && <span className="test-result">{testResult}</span>}
+          </div>
+
+          <h4>{t("settings.flow")}</h4>
+          <div className="rule-toggles">
+            <label className="rule-toggle">
+              <input
+                type="checkbox"
+                checked={flow.autoCompile}
+                onChange={(e) => {
+                  saveFlow({ autoCompile: e.target.checked });
+                  setFlow({ ...flow, autoCompile: e.target.checked });
+                }}
+              />
+              <span>{t("settings.autoCompile")}</span>
+            </label>
+            <label className="rule-toggle">
+              <input
+                type="checkbox"
+                checked={flow.restoreSession}
+                onChange={(e) => {
+                  saveFlow({ restoreSession: e.target.checked });
+                  setFlow({ ...flow, restoreSession: e.target.checked });
+                }}
+              />
+              <span>{t("settings.restoreSession")}</span>
+            </label>
           </div>
 
           <h4>{t("settings.rulesTitle")}</h4>

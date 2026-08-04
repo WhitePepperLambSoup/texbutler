@@ -55,6 +55,14 @@ export interface FixReport {
   rolled_back: boolean;
 }
 
+export interface BibEntry {
+  key: string;
+  entry_type: string;
+  title: string;
+  author: string;
+  year: string;
+}
+
 export interface AiDiagnosis {
   ok: boolean;
   explanation: string;
@@ -125,6 +133,8 @@ export const api = {
   readLog: () => invoke<string>("tb_read_log"),
   setMainFile: (path: string) => invoke<ProjectInfo>("tb_set_main_file", { path }),
   importImage: (sourcePath: string) => invoke<string>("tb_import_image", { sourcePath }),
+  importClipboardImage: () => invoke<string>("tb_import_clipboard_image"),
+  listBibEntries: () => invoke<BibEntry[]>("tb_list_bib_entries"),
   importDocx: (sourcePath: string) =>
     invoke<{ file: string; preview: string; chars: number }>("tb_import_docx", { sourcePath }),
 

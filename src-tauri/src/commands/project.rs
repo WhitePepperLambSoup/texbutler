@@ -249,6 +249,190 @@ pub fn tb_import_image(state: State<'_, AppState>, source_path: String) -> Resul
     Ok(target.file_name().unwrap_or_default().to_string_lossy().to_string())
 }
 
+/// Import an image from the clipboard (screenshot) into the project root.
+/// Returns the file name to reference in `\includegraphics`.
+#[tauri::command]
+pub fn tb_import_clipboard_image(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let guard = state.project.read().map_err(|e| e.to_string())?;
+    let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
+    let image = app
+        .clipboard()
+        .read_image()
+        .map_err(|e| format!("剪贴板中没有图片或读取失败: {e}"))?;
+    let png = {
+        let rgba = image.rgba();
+        let w = image.width() as u32;
+        let h = image.height() as u32;
+        if w == 0 || h == 0 {
+            return Err("剪贴板图片尺寸无效".into());
+        }
+        let img = image::RgbaImage::from_raw(w, h, rgba.to_vec())
+            .ok_or_else(|| "剪贴板图片数据无效".to_string())?;
+        let mut buf = Vec::new();
+        let mut cursor = std::io::Cursor::new(&mut buf);
+        image::write_buffer_with_format(&mut cursor, img.as_raw(), w, h, image::ExtendedColorType::Rgba8, image::ImageFormat::Png)
+            .map_err(|e| format!("图片编码失败: {e}"))?;
+        buf
+    };
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let fname = format!("clipboard_{ts}.png");
+    let mut target = proj.root.join(&fname);
+    let mut n = 1usize;
+    while target.exists() {
+        target = proj.root.join(format!("clipboard_{ts}_{n}.png"));
+        n += 1;
+    }
+    std::fs::write(&target, png).map_err(|e| format!("保存图片失败: {e}"))?;
+    drop(guard);
+    if let Ok(mut g) = state.project.write() {
+        if let Some(p) = g.as_mut() {
+            let _ = p.scan();
+        }
+    }
+    Ok(target.file_name().unwrap_or_default().to_string_lossy().to_string())
+}
+
+/// A parsed `.bib` entry for the reference panel.
+#[derive(serde::Serialize)]
+pub struct BibEntry {
+    pub key: String,
+    pub entry_type: String,
+    pub title: String,
+    pub author: String,
+    pub year: String,
+}
+
+/// Scan the project's `.bib` files and return parsed entries.
+#[tauri::command]
+pub fn tb_list_bib_entries(state: State<'_, AppState>) -> Result<Vec<BibEntry>, String> {
+    let guard = state.project.read().map_err(|e| e.to_string())?;
+    let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
+    let mut out: Vec<BibEntry> = Vec::new();
+    for rel in proj.bib_files() {
+        let Some(content) = proj.read_file(&rel).ok() else { continue };
+        for entry in parse_bib(&content) {
+            out.push(entry);
+        }
+    }
+    Ok(out)
+}
+
+/// Parse `@type{key, field = {value}, ...}` blocks from a .bib source.
+fn parse_bib(content: &str) -> Vec<BibEntry> {
+    let mut out = Vec::new();
+    let mut rest = content;
+    while let Some(at) = rest.find('@') {
+        let after = &rest[at + 1..];
+        // skip comments like @comment{...}
+        if after.trim_start().to_ascii_lowercase().starts_with("comment") {
+            if let Some(close) = after.find('}') {
+                rest = &after[close + 1..];
+                continue;
+            }
+            break;
+        }
+        // entry type
+        let Some(type_end) = after.find('{') else { break };
+        let entry_type = after[..type_end].trim().to_string();
+        let body_start = type_end + 1;
+        // find the matching closing brace (first `}` at depth 0)
+        let mut depth = 1usize;
+        let mut end = body_start;
+        let bytes = after.as_bytes();
+        while end < bytes.len() && depth > 0 {
+            match bytes[end] {
+                b'{' => depth += 1,
+                b'}' => depth -= 1,
+                _ => {}
+            }
+            end += 1;
+        }
+        if depth != 0 {
+            break;
+        }
+        let body = &after[body_start..end - 1];
+        // skip @comment / @string / @preamble pseudo-entries
+        let low_type = entry_type.to_ascii_lowercase();
+        if !matches!(low_type.as_str(), "comment" | "string" | "preamble") {
+            let key = body.split(',').next().unwrap_or("").trim().to_string();
+            if !key.is_empty() {
+                out.push(BibEntry {
+                    key,
+                    entry_type,
+                    title: extract_bib_field(body, "title"),
+                    author: extract_bib_field(body, "author"),
+                    year: extract_bib_field(body, "year"),
+                });
+            }
+        }
+        rest = &after[end..];
+    }
+    out
+}
+
+/// Extract `name = {value}` (or `name = "value"`) from a bib entry body.
+/// The field name must not be preceded by an alphanumeric (so `title` does
+/// not match inside `subtitle`).
+fn extract_bib_field(body: &str, name: &str) -> String {
+    let mut rest = body;
+    while !rest.is_empty() {
+        // locate `name` at a field boundary (previous char not alphanumeric)
+        let mut idx = None;
+        let mut probe = rest;
+        let mut base = 0;
+        while let Some(i) = probe.find(name) {
+            let prev = probe[..i].chars().next_back();
+            let ok = prev.map(|c| !c.is_ascii_alphanumeric()).unwrap_or(true);
+            if ok {
+                idx = Some(base + i);
+                break;
+            }
+            probe = &probe[i + name.len()..];
+            base += i + name.len();
+        }
+        let Some(idx) = idx else { break };
+        let after = &rest[idx + name.len()..];
+        // the field name must be followed by `=` (whitespace allowed)
+        let after_eq = after.trim_start();
+        let Some(eq) = after_eq.find('=') else { break };
+        let value = after_eq[eq + 1..].trim_start();
+        let v = if let Some(v) = value.strip_prefix('{') {
+            // match the closing brace at depth 0 (nested braces allowed)
+            let mut depth = 1usize;
+            let bytes = v.as_bytes();
+            let mut end = 0;
+            while end < bytes.len() && depth > 0 {
+                match bytes[end] {
+                    b'{' => depth += 1,
+                    b'}' => depth -= 1,
+                    _ => {}
+                }
+                end += 1;
+            }
+            let end = if depth == 0 { end - 1 } else { v.len() };
+            v[..end].trim().to_string()
+        } else if let Some(v) = value.strip_prefix('"') {
+            let end = v.find('"').unwrap_or(v.len());
+            v[..end].trim().to_string()
+        } else {
+            let end = value.find(|c: char| c == ',' || c == '\n').unwrap_or(value.len());
+            value[..end].trim().to_string()
+        };
+        if !v.is_empty() {
+            return v;
+        }
+        rest = after;
+    }
+    String::new()
+}
+
 /// Import a Word (.docx) document: parse its structure, let the AI convert
 /// it into a complete LaTeX document and write it into the project.
 /// Returns the created file name.
@@ -426,4 +610,65 @@ pub fn tb_write_file(
 #[tauri::command]
 pub fn tb_recent_projects(state: State<'_, AppState>) -> Vec<String> {
     state.settings.read().map(|s| s.recent_projects.clone()).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_simple_bib_entry() {
+        let src = "@article{smith2024,\n  title = {A Study on Chinese Typesetting},\n  author = {Smith, John and Li, Wei},\n  year = {2024},\n  journal = {J. Typography}\n}\n";
+        let entries = parse_bib(src);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].key, "smith2024");
+        assert_eq!(entries[0].entry_type, "article");
+        assert_eq!(entries[0].title, "A Study on Chinese Typesetting");
+        assert!(entries[0].author.contains("Li, Wei"));
+        assert_eq!(entries[0].year, "2024");
+    }
+
+    #[test]
+    fn parses_multiple_entries_and_skips_comments() {
+        let src = "@comment{a note}\n@book{knuth1984,\n  title = {The TeXbook},\n  author = {Knuth, Donald},\n  year = {1984}\n}\n@inproceedings{li2020, title={X}, year={2020}}\n";
+        let entries = parse_bib(src);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].key, "knuth1984");
+        assert_eq!(entries[0].entry_type, "book");
+        assert_eq!(entries[1].key, "li2020");
+        assert_eq!(entries[1].year, "2020");
+    }
+
+    #[test]
+    fn handles_string_quoted_fields_and_nested_braces() {
+        let src = "@article{nested2023,\n  title = {Nested {Braces} Inside},\n  author = \"Doe, Jane\",\n  year = {2023}\n}\n";
+        let entries = parse_bib(src);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].title, "Nested {Braces} Inside");
+        assert_eq!(entries[0].author, "Doe, Jane");
+    }
+
+    #[test]
+    fn empty_input_yields_nothing() {
+        assert!(parse_bib("").is_empty());
+        assert!(parse_bib("no entries here").is_empty());
+    }
+
+    #[test]
+    fn skips_string_and_preamble_entries() {
+        let src = "@string{jour = {Journal of X}}\n@article{key2020, title={T}, year={2020}}\n@preamble{\"\\\\newcommand\"}\n";
+        let entries = parse_bib(src);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].key, "key2020");
+        assert_eq!(entries[0].title, "T");
+    }
+
+    #[test]
+    fn field_boundary_ignores_subtitle() {
+        let src = "@article{b2021,\n  title = {Real Title},\n  subtitle = {Sub},\n  year = {2021}\n}\n";
+        let entries = parse_bib(src);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].title, "Real Title");
+        assert_eq!(entries[0].year, "2021");
+    }
 }

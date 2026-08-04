@@ -1,15 +1,17 @@
 import Editor, { type OnMount, type BeforeMount } from "@monaco-editor/react";
 import { useRef, useEffect, useCallback, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { api } from "../api";
 import { useProjectStore } from "../store/projectStore";
+import { useCompileStore } from "../store/compileStore";
 import { useT } from "../i18n";
+import ImageInsertModal from "./ImageInsertModal";
 
 /** Register the `latex` language with a lightweight monarch tokenizer. */
 const beforeMount: BeforeMount = (monaco) => {
   if (monaco.languages.getLanguages().some((l) => l.id === "latex")) return;
-  monaco.languages.register({ id: "latex", extensions: [".tex"] });
-  monaco.languages.setMonarchTokensProvider("latex", {
+  monaco.languages.register({ id: "latex", extensions: [".tex"] });  monaco.languages.setMonarchTokensProvider("latex", {
     tokenizer: {
       root: [
         [/\\begin\{[^}]*\}/, "keyword"],
@@ -33,6 +35,61 @@ const beforeMount: BeforeMount = (monaco) => {
       { token: "delimiter", foreground: "000000" },
     ],
     colors: {},
+  });
+
+  // --- autocompletion: common commands + environment pairs ---
+  const COMMANDS: string[] = [
+    "\\alpha", "\\beta", "\\gamma", "\\delta", "\\epsilon", "\\zeta", "\\eta",
+    "\\theta", "\\lambda", "\\mu", "\\pi", "\\rho", "\\sigma", "\\tau",
+    "\\phi", "\\omega", "\\Delta", "\\Gamma", "\\Omega", "\\Sigma",
+    "\\frac{}{}", "\\sqrt{}", "\\sum_{}^{}", "\\int_{}^{}", "\\lim_{}",
+    "\\leq", "\\geq", "\\neq", "\\approx", "\\in", "\\subset", "\\cup", "\\cap",
+    "\\times", "\\cdot", "\\pm", "\\infty", "\\partial", "\\nabla",
+    "\\textbf{}", "\\textit{}", "\\emph{}", "\\underline{}",
+    "\\section{}", "\\subsection{}", "\\subsubsection{}", "\\chapter{}",
+    "\\label{}", "\\ref{}", "\\cite{}", "\\includegraphics{}",
+    "\\begin{}", "\\end{}", "\\item", "\\centering", "\\caption{}",
+    "\\documentclass{}", "\\usepackage{}", "\\title{}", "\\author{}", "\\date{}",
+  ];
+  const ENVIRONMENTS: string[] = [
+    "figure", "table", "equation", "align", "itemize", "enumerate",
+    "description", "center", "tabular", "abstract", "theorem", "proof",
+    "document", "verbatim", "quote",
+  ];
+
+  monaco.languages.registerCompletionItemProvider("latex", {
+    provideCompletionItems: (model, position) => {
+      const word = model.getWordUntilPosition(position);
+      const range = {
+        startLineNumber: position.lineNumber,
+        endLineNumber: position.lineNumber,
+        startColumn: word.startColumn,
+        endColumn: word.endColumn,
+      };
+      const items: {
+        label: string;
+        kind: number;
+        insertText: string;
+        range: typeof range;
+        insertTextRules?: number;
+      }[] = COMMANDS.map((c) => ({
+        label: c,
+        kind: monaco.languages.CompletionItemKind.Function,
+        insertText: c,
+        range,
+      }));
+      for (const env of ENVIRONMENTS) {
+        items.push({
+          label: `\\begin{${env}}`,
+          kind: monaco.languages.CompletionItemKind.Snippet,
+          // plain text insert: a real tab would be interpreted as a Monaco
+          // snippet tabstop, and `\t` literally would break LaTeX
+          insertText: `\\begin{${env}}\n\n\\end{${env}}`,
+          range,
+        });
+      }
+      return { suggestions: items };
+    },
   });
 };
 
@@ -63,9 +120,25 @@ export default function EditorPane() {
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const t = useT();
   const [symbolOpen, setSymbolOpen] = useState(false);
+  const [imgModal, setImgModal] = useState<{ fileName: string; root: string } | null>(null);
 
   const handleMount: OnMount = (editor) => {
     editorRef.current = editor;
+    // paste interception: a clipboard image (screenshot) is imported into the
+    // project and inserted through the image dialog instead of raw pasting
+    const dom = editor.getDomNode();
+    const onPaste = (e: ClipboardEvent) => {
+      const files = e.clipboardData?.files;
+      const types = e.clipboardData?.types;
+      const hasImage =
+        (files && files.length > 0 && files[0].type.startsWith("image/")) ||
+        (types != null && Array.prototype.includes.call(types, "image/png"));
+      if (!hasImage) return;
+      e.preventDefault();
+      void importClipboardImage();
+    };
+    dom?.addEventListener("paste", onPaste);
+    editor.onDidDispose(() => dom?.removeEventListener("paste", onPaste));
   };
 
   const doSave = useCallback(() => {
@@ -92,14 +165,65 @@ export default function EditorPane() {
         filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "svg", "pdf", "eps"] }],
       });
       if (!file || Array.isArray(file)) return;
-      const name = await api.importImage(file);
-      const code =
-        `\\begin{figure}[H]\n\\centering\n\\includegraphics[width=0.8\\textwidth]{${name}}\n\\caption{图注}\n\\label{fig:}\n\\end{figure}\n`;
-      insertSnippet(code);
+      await startImageImport(file);
     } catch (e) {
       window.alert(String(e));
     }
   };
+
+  /** Import an image (by path) into the project and open the insert dialog. */
+  const startImageImport = async (path: string) => {
+    const name = await api.importImage(path);
+    const root = useProjectStore.getState().root;
+    setImgModal({ fileName: name, root });
+  };
+
+  /** Import the clipboard image (screenshot) and open the insert dialog. */
+  const importClipboardImage = async () => {
+    if (!openPath) return;
+    try {
+      const name = await api.importClipboardImage();
+      const root = useProjectStore.getState().root;
+      setImgModal({ fileName: name, root });
+    } catch {
+      // clipboard contains no image — ignore (normal paste path)
+    }
+  };
+
+  const confirmImageInsert = (code: string) => {
+    insertSnippet(code);
+    setImgModal(null);
+    // keep the flow smooth: recompile right after inserting an image
+    const { compile } = useCompileStore.getState();
+    void compile("main");
+  };
+
+  useEffect(() => {
+    let disposed = false;
+    let unlistenDrag: (() => void) | undefined;
+    void getCurrentWebviewWindow()
+      .onDragDropEvent((event) => {
+        if (event.payload.type === "drop") {
+          const img = event.payload.paths.find((p) =>
+            /\.(png|jpe?g|gif|svg|pdf|eps)$/i.test(p)
+          );
+          if (!img) return;
+          void startImageImport(img);
+        }
+      })
+      .then((fn) => {
+        if (disposed) {
+          fn();
+        } else {
+          unlistenDrag = fn;
+        }
+      });
+    return () => {
+      disposed = true;
+      unlistenDrag?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -239,6 +363,14 @@ export default function EditorPane() {
         />
       ) : (
         <div className="editor-empty">{t("editor.empty")}</div>
+      )}
+      {imgModal && (
+        <ImageInsertModal
+          fileName={imgModal.fileName}
+          projectRoot={imgModal.root}
+          onCancel={() => setImgModal(null)}
+          onConfirm={confirmImageInsert}
+        />
       )}
     </div>
   );

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import ProjectTree from "./components/ProjectTree";
+import OutlinePanel from "./components/OutlinePanel";
+import BibPanel from "./components/BibPanel";
 import EditorPane from "./components/Editor";
 import PdfPreview from "./components/PdfPreview";
 import ProblemsPanel from "./components/ProblemsPanel";
@@ -11,6 +13,8 @@ import { useProjectStore } from "./store/projectStore";
 import { useCompileStore } from "./store/compileStore";
 import { useAiStore } from "./store/aiStore";
 import { useT } from "./i18n";
+import { loadFlow } from "./flow";
+import QuickOpenModal from "./components/QuickOpenModal";
 
 function loadTheme(): "dark" | "light" {
   try {
@@ -29,7 +33,9 @@ export default function App() {
   const busy = useAiStore((s) => s.busy);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pdfRev, setPdfRev] = useState(0);
+  const [leftTab, setLeftTab] = useState<"tree" | "outline" | "bib">("tree");
   const [compileTarget, setCompileTarget] = useState<"main" | "current">("main");
+  const [quickOpen, setQuickOpen] = useState(false);
   const t = useT();
   const [theme, setTheme] = useState<"dark" | "light">(loadTheme());
 
@@ -42,6 +48,46 @@ export default function App() {
       /* ignore */
     }
   }, [theme]);
+
+  // session restore + auto-compile + Ctrl+P quick open
+  useEffect(() => {
+    const flow = loadFlow();
+    if (flow.restoreSession && flow.lastProject) {
+      void useProjectStore
+        .getState()
+        .openProject(flow.lastProject)
+        .then(() => {
+          if (flow.lastFile) {
+            void useProjectStore.getState().openFile(flow.lastFile);
+          }
+        })
+        .catch(() => {
+          /* project no longer exists — ignore */
+        });
+    }
+    let timer: number | undefined;
+    const onSaved = () => {
+      const f = loadFlow();
+      if (!f.autoCompile) return;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        void useCompileStore.getState().compile("main");
+      }, 1200);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "p") {
+        e.preventDefault();
+        setQuickOpen(true);
+      }
+    };
+    window.addEventListener("tb:file-saved", onSaved);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("tb:file-saved", onSaved);
+      window.removeEventListener("keydown", onKey);
+      window.clearTimeout(timer);
+    };
+  }, []);
 
   const importWord = async () => {
     try {
@@ -145,7 +191,29 @@ export default function App() {
       )}
       <div className="layout">
         <aside className="col-tree">
-          <ProjectTree />
+          <div className="tree-tabs">
+            <button
+              className={`tree-tab ${leftTab === "tree" ? "active" : ""}`}
+              onClick={() => setLeftTab("tree")}
+            >
+              {t("tree.title")}
+            </button>
+            <button
+              className={`tree-tab ${leftTab === "outline" ? "active" : ""}`}
+              onClick={() => setLeftTab("outline")}
+            >
+              {t("outline.title")}
+            </button>
+            <button
+              className={`tree-tab ${leftTab === "bib" ? "active" : ""}`}
+              onClick={() => setLeftTab("bib")}
+            >
+              {t("bib.title")}
+            </button>
+          </div>
+          {leftTab === "tree" && <ProjectTree />}
+          {leftTab === "outline" && <OutlinePanel />}
+          {leftTab === "bib" && <BibPanel />}
         </aside>
         <main className="col-editor">
           <EditorPane />
@@ -186,6 +254,7 @@ export default function App() {
         </span>
       </div>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      {quickOpen && <QuickOpenModal onClose={() => setQuickOpen(false)} />}
       {busy && <div className="busy-overlay">{t("ai.busyDiagnose")}</div>}
     </div>
   );

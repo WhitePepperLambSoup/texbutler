@@ -10,6 +10,7 @@ use state::AppState;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(AppState::new())
         .setup(|_app| {
             // Tectonic manages its own bundle cache; nothing to unpack here.
@@ -27,6 +28,8 @@ pub fn run() {
             commands::project::tb_get_templates,
             commands::project::tb_set_main_file,
             commands::project::tb_import_image,
+            commands::project::tb_import_clipboard_image,
+            commands::project::tb_list_bib_entries,
             commands::project::tb_import_docx,
             commands::project::tb_save_template,
             commands::project::tb_list_templates,
