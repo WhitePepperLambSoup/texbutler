@@ -98,6 +98,11 @@ fn serve_project_file(app: &tauri::AppHandle, request: &tauri::http::Request<Vec
     Response::builder()
         .header("content-type", content_type)
         .header("cache-control", "no-store")
+        // Chromium treats a custom-scheme resource in an <iframe> as
+        // cross-origin; without CORP the PDF viewer is blocked and the
+        // preview stays blank. nosniff keeps the served bytes honest.
+        .header("cross-origin-resource-policy", "cross-origin")
+        .header("x-content-type-options", "nosniff")
         .body(bytes)
         .unwrap_or_else(|_| bad(StatusCode::INTERNAL_SERVER_ERROR))
 }
