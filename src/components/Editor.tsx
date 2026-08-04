@@ -1,4 +1,5 @@
-import Editor, { type OnMount, type BeforeMount } from "@monaco-editor/react";
+/// <reference types="vite/client" />
+import Editor, { loader, type OnMount, type BeforeMount } from "@monaco-editor/react";
 import { useRef, useEffect, useCallback, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -8,6 +9,18 @@ import { useCompileStore } from "../store/compileStore";
 import { useT } from "../i18n";
 import ImageInsertModal from "./ImageInsertModal";
 import FormulaModal from "./FormulaModal";
+
+// Load Monaco from the LOCAL npm package instead of the jsdelivr CDN.
+// @monaco-editor/react defaults to the CDN — when the network is slow or
+// blocked the editor shows "loading" forever. Bundling it makes the editor
+// work fully offline (same promise as the built-in tectonic bundle).
+import * as monacoLocal from "monaco-editor/esm/vs/editor/editor.api";
+import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
+
+self.MonacoEnvironment = {
+  getWorker: () => new EditorWorker(),
+};
+loader.config({ monaco: monacoLocal });
 
 /** Register the `latex` language with a lightweight monarch tokenizer. */
 const beforeMount: BeforeMount = (monaco) => {
@@ -67,9 +80,10 @@ const beforeMount: BeforeMount = (monaco) => {
     ],
     colors: {},
   });
-  // Liquid-glass variant: transparent editor background so the animated
-  // colour blobs glow through the deep tinted pane (no backdrop blur on
-  // the large editing surface — keeps typing smooth).
+  // Liquid-glass variant: Monaco does NOT support transparent editor
+  // backgrounds (the editor can fail to initialize / render blank), so we
+  // use an opaque deep blue that matches the tinted pane. The colour blobs
+  // still show through the pane border/panels around the editor.
   monaco.editor.defineTheme("texbutler-liquid", {
     base: "vs-dark",
     inherit: true,
@@ -81,7 +95,7 @@ const beforeMount: BeforeMount = (monaco) => {
       { token: "delimiter", foreground: "E9EDF6" },
     ],
     colors: {
-      "editor.background": "#00000000",
+      "editor.background": "#0d1122",
       "editor.lineHighlightBackground": "#6EA8FE14",
       "editorLineNumber.foreground": "#5A6480",
       "editorLineNumber.activeForeground": "#A7B1C6",
@@ -165,12 +179,19 @@ const SNIPPETS: { label: string; insert: string }[] = [
   { label: "\\label 标签", insert: "\\label{sec:}" },
 ];
 
-/** Quick math symbols for the symbol panel. */
+/** Quick math symbols for the symbol panel (60+). */
 const MATH_SYMBOLS = [
-  "α", "β", "γ", "δ", "ε", "θ", "λ", "μ", "π", "σ", "ω", "φ",
-  "∞", "∑", "∫", "√", "±", "≤", "≥", "≈", "≠", "∈", "∀", "∃",
-  "×", "÷", "∂", "Δ", "→", "⇒", "∪", "∩", "⊂", "⊆", "⊥", "∥",
+  "α", "β", "γ", "δ", "ε", "ζ", "η", "θ", "ι", "κ", "λ", "μ", "ν", "ξ", "ο", "π", "ρ", "σ", "τ", "υ", "φ", "χ", "ψ", "ω",
+  "Α", "Β", "Γ", "Δ", "Ε", "Θ", "Λ", "Ξ", "Π", "Σ", "Υ", "Φ", "Ψ", "Ω",
+  "√", "∛", "∫", "∮", "∑", "∏", "∞", "±", "∓", "×", "÷", "⋅", "∘",
+  "≤", "≥", "≪", "≫", "≠", "≈", "≡", "∼", "∝",
+  "∈", "∉", "⊂", "⊆", "⊃", "⊇", "∪", "∩", "∧", "∨", "¬",
+  "∀", "∃", "∂", "∇", "∠", "⊥", "∥", "⟂",
+  "→", "←", "↑", "↓", "↦", "⇒", "⇐", "⇔", "↔", "⋯", "…",
 ];
+
+/** Always-visible quick symbols on the editor toolbar (click to insert). */
+const QUICK_SYMBOLS = ["α", "β", "γ", "δ", "θ", "λ", "π", "√", "∫", "∞", "±", "≤"];
 
 type MonacoThemeId = "texbutler" | "texbutler-dark" | "texbutler-liquid";
 
@@ -420,6 +441,19 @@ export default function EditorPane() {
           <button className="btn-mini" title={t("formula.display")} onClick={() => setFormulaMode("display")} disabled={!active}>
             ∑
           </button>
+          <span className="sym-quick" title="常用公式符号（点击直接插入）">
+            {QUICK_SYMBOLS.map((s) => (
+              <button
+                key={s}
+                className="btn-mini sym-quick-btn"
+                title={`插入 ${s}`}
+                onClick={() => insertSnippet(`${s} `)}
+                disabled={!active}
+              >
+                {s}
+              </button>
+            ))}
+          </span>
           <button className="btn-mini" title="列表" onClick={() => insertSnippet("\\begin{itemize}\n\\item 第一项\n\\item 第二项\n\\end{itemize}\n")} disabled={!active}>
             ••
           </button>

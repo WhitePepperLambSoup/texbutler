@@ -66,7 +66,11 @@ html[data-theme="liquid"] body {
     linear-gradient(160deg, #0a0e1f 0%, #101530 45%, #14103a 100%);
 }
 
-/* animated colour blobs behind the glass (render only in liquid theme) */
+/* animated colour blobs behind the glass (render only in liquid theme).
+   IMPORTANT: no `filter: blur()` here — a per-frame 70px blur of large
+   layers makes WebView2's compositor flicker/corrupt ("花屏"). The blobs
+   are pre-softened radial gradients and only animate `transform`, which
+   stays on the compositor thread. */
 html[data-theme="liquid"] .glass-blobs {
   position: fixed;
   inset: 0;
@@ -78,35 +82,33 @@ html[data-theme="liquid"] .glass-blobs {
 html[data-theme="liquid"] .glass-blobs .blob {
   position: absolute;
   border-radius: 50%;
-  filter: blur(70px);
-  opacity: 0.55;
-  will-change: transform;
+  opacity: 0.5;
 }
 
 html[data-theme="liquid"] .glass-blobs .blob-1 {
-  width: 520px;
-  height: 520px;
-  left: -120px;
-  top: -80px;
-  background: radial-gradient(circle at 30% 30%, #4f7cff, transparent 70%);
+  width: 560px;
+  height: 560px;
+  left: -140px;
+  top: -100px;
+  background: radial-gradient(circle at 35% 35%, rgba(79, 124, 255, 0.55), rgba(79, 124, 255, 0) 62%);
   animation: blob-drift-1 26s ease-in-out infinite alternate;
 }
 
 html[data-theme="liquid"] .glass-blobs .blob-2 {
-  width: 460px;
-  height: 460px;
-  right: -100px;
+  width: 500px;
+  height: 500px;
+  right: -120px;
   top: 30%;
-  background: radial-gradient(circle at 60% 40%, #a855f7, transparent 70%);
+  background: radial-gradient(circle at 60% 40%, rgba(168, 85, 247, 0.5), rgba(168, 85, 247, 0) 62%);
   animation: blob-drift-2 32s ease-in-out infinite alternate;
 }
 
 html[data-theme="liquid"] .glass-blobs .blob-3 {
-  width: 420px;
-  height: 420px;
+  width: 460px;
+  height: 460px;
   left: 35%;
-  bottom: -160px;
-  background: radial-gradient(circle at 50% 50%, #22d3ee, transparent 70%);
+  bottom: -180px;
+  background: radial-gradient(circle at 50% 50%, rgba(34, 211, 238, 0.42), rgba(34, 211, 238, 0) 62%);
   animation: blob-drift-3 38s ease-in-out infinite alternate;
 }
 
@@ -123,57 +125,100 @@ html[data-theme="liquid"] .glass-blobs .blob-3 {
   to { transform: translate(120px, -140px) scale(1.2); }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="liquid"] .glass-blobs .blob {
+    animation: none;
+  }
+}
+
 /* app content sits above the blobs */
 html[data-theme="liquid"] .app {
   position: relative;
   z-index: 1;
 }
 
-/* frosted panes */
+/* frosted panes — backdrop-filter ONLY on small surfaces. Large panes
+   (tree / pdf / bottom) use a high-opacity solid tint: blurring big areas
+   under WebView2 causes frequent compositor flicker. */
 html[data-theme="liquid"] .toolbar,
-html[data-theme="liquid"] .col-tree,
-html[data-theme="liquid"] .col-pdf,
-html[data-theme="liquid"] .bottom,
 html[data-theme="liquid"] .statusbar,
 html[data-theme="liquid"] .compile-bar,
 html[data-theme="liquid"] .modal,
-html[data-theme="liquid"] .quick-open {
-  background: rgba(19, 25, 48, 0.5);
-  backdrop-filter: blur(18px) saturate(170%);
-  -webkit-backdrop-filter: blur(18px) saturate(170%);
+html[data-theme="liquid"] .quick-open,
+html[data-theme="liquid"] .theme-picker-menu {
+  background: rgba(19, 25, 48, 0.72);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
   border: 1px solid rgba(255, 255, 255, 0.11);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
     0 10px 34px rgba(2, 6, 20, 0.45);
 }
 
+html[data-theme="liquid"] .col-tree,
+html[data-theme="liquid"] .col-pdf,
+html[data-theme="liquid"] .bottom {
+  background: rgba(17, 22, 42, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 10px 34px rgba(2, 6, 20, 0.4);
+}
+
 /* floating layout: gaps + rounded panes */
 html[data-theme="liquid"] .layout {
-  gap: 10px;
-  padding: 10px 10px 0;
+  gap: 8px;
+  padding: 8px 8px 0;
 }
 
 html[data-theme="liquid"] .col-tree,
 html[data-theme="liquid"] .col-editor,
 html[data-theme="liquid"] .col-pdf,
 html[data-theme="liquid"] .bottom {
-  border-radius: 14px;
+  border-radius: 12px;
   overflow: hidden;
 }
 
 html[data-theme="liquid"] .toolbar {
-  margin: 8px 10px 0;
+  margin: 6px 8px 0;
   border-radius: 12px;
 }
 
 html[data-theme="liquid"] .statusbar {
-  margin: 0 10px 8px;
+  margin: 0 8px 6px;
   border-radius: 12px;
 }
 
 html[data-theme="liquid"] .compile-bar {
-  margin: 0 10px;
+  margin: 0 8px;
   border-radius: 10px;
+}
+
+/* small windows: drop the floating margins so the editor tab bar /
+   toolbar are never squeezed or clipped (reported on < 100% scaling) */
+@media (max-height: 700px) {
+  html[data-theme="liquid"] .toolbar {
+    margin: 0;
+    border-radius: 0;
+  }
+  html[data-theme="liquid"] .layout {
+    gap: 0;
+    padding: 0;
+  }
+  html[data-theme="liquid"] .col-tree,
+  html[data-theme="liquid"] .col-editor,
+  html[data-theme="liquid"] .col-pdf,
+  html[data-theme="liquid"] .bottom {
+    border-radius: 0;
+  }
+  html[data-theme="liquid"] .statusbar {
+    margin: 0;
+    border-radius: 0;
+  }
+  html[data-theme="liquid"] .compile-bar {
+    margin: 0;
+    border-radius: 0;
+  }
 }
 
 html[data-theme="liquid"] .panel-header,
@@ -1617,4 +1662,29 @@ body {
   align-items: center;
   gap: 6px;
   font-size: 12.5px;
+}
+
+/* quick math symbols on the editor toolbar (compact pills) */
+.sym-quick {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  border-radius: 8px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  max-width: 100%;
+}
+
+.sym-quick-btn {
+  min-width: 24px;
+  padding: 2px 4px !important;
+  font-size: 12.5px !important;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.sym-quick-btn:hover {
+  background: var(--accent2) !important;
+  color: #fff;
 }
