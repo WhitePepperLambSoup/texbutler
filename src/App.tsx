@@ -27,7 +27,7 @@ function loadTheme(): "dark" | "light" {
 }
 
 export default function App() {
-  const { root, mainFile, openPath } = useProjectStore();
+  const { root, mainFile, activeTab } = useProjectStore();
   const { running, progress, compile, lastResult, elapsedSec, compileIssues, ruleIssues } =
     useCompileStore();
   const busy = useAiStore((s) => s.busy);
@@ -151,13 +151,13 @@ export default function App() {
           title={
             compileTarget === "main"
               ? t("toolbar.target.main", { file: mainFile })
-              : t("toolbar.target.current", { file: openPath?.split("/").pop() ?? "" })
+              : t("toolbar.target.current", { file: activeTab?.split("/").pop() ?? "" })
           }
         >
           <option value="main">{t("toolbar.target.main", { file: mainFile || "main.tex" })}</option>
-          <option value="current" disabled={!openPath}>
-            {openPath
-              ? t("toolbar.target.current", { file: openPath.split("/").pop() ?? "" })
+          <option value="current" disabled={!activeTab}>
+            {activeTab
+              ? t("toolbar.target.current", { file: activeTab.split("/").pop() ?? "" })
               : t("toolbar.target.currentEmpty")}
           </option>
         </select>

@@ -11,7 +11,7 @@ type Tab = "compile" | "rules" | "ai";
 export default function ProblemsPanel() {
   const [tab, setTab] = useState<Tab>("compile");
   const { compileIssues, ruleIssues, runCheck, checkRunning, lastResult } = useCompileStore();
-  const { openFile, openPath } = useProjectStore();
+  const { openFile } = useProjectStore();
   const { diagnoseIssue, fixIssue, busy } = useAiStore();
   const [aiBusyIdx, setAiBusyIdx] = useState<number | null>(null);
   const [logOpen, setLogOpen] = useState(false);
@@ -20,22 +20,23 @@ export default function ProblemsPanel() {
 
   // debounce rule check when editor content changes (500ms) — only the
   // current file is scanned so typing stays responsive
-  const { openContent } = useProjectStore();
+  const activeTab = useProjectStore((s) => s.activeTab);
+  const openContent = useProjectStore((s) => s.tabs.find((t) => t.path === s.activeTab)?.content ?? "");
   useEffect(() => {
     const root = useProjectStore.getState().root;
-    const file = useProjectStore.getState().openPath;
+    const file = useProjectStore.getState().activeTab;
     if (!root || !file) return;
     const t = window.setTimeout(() => {
       void useCompileStore.getState().runCheck(file);
     }, 500);
     return () => window.clearTimeout(t);
-  }, [openContent, openPath]);
+  }, [openContent, activeTab]);
 
   const issues = tab === "compile" ? compileIssues : ruleIssues;
 
   const jump = (issue: Issue) => {
     const file = issue.file ?? null;
-    const needOpen = !!file && file !== openPath;
+    const needOpen = !!file && file !== useProjectStore.getState().activeTab;
     if (needOpen) {
       void openFile(file);
     }

@@ -32,16 +32,17 @@ export function parseOutline(text: string): OutlineItem[] {
 
 export default function OutlinePanel() {
   const t = useT();
-  const { openPath, openContent } = useProjectStore();
-  const [text, setText] = useState(openContent);
+  const activeTab = useProjectStore((s) => s.activeTab);
+  const activeContent = useProjectStore((s) => s.tabs.find((t) => t.path === s.activeTab)?.content ?? "");
+  const [text, setText] = useState(activeContent);
 
   useEffect(() => {
-    setText(openContent);
-  }, [openPath, openContent]);
+    setText(activeContent);
+  }, [activeTab, activeContent]);
 
   const items = useMemo(() => parseOutline(text ?? ""), [text]);
 
-  if (!openPath) return <div className="panel-empty">{t("tree.noProject")}</div>;
+  if (!activeTab) return <div className="panel-empty">{t("tree.noProject")}</div>;
   if (items.length === 0) return <div className="panel-empty">{t("outline.empty")}</div>;
 
   return (

@@ -24,7 +24,7 @@ export default function AiPanel() {
   const [genInput, setGenInput] = useState("");
   const [genBusy, setGenBusy] = useState(false);
   const [genResult, setGenResult] = useState<string | null>(null);
-  const { openPath } = useProjectStore();
+  const activeTab = useProjectStore((s) => s.activeTab);
 
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: "smooth" });
@@ -124,7 +124,7 @@ export default function AiPanel() {
               <button
                 className="btn-mini"
                 onClick={async () => {
-                  const base = (openPath ?? "main.tex").replace(/\.tex$/, "");
+                  const base = (activeTab ?? "main.tex").replace(/\.tex$/, "");
                   const fname = window.prompt("保存为文件（相对路径）", `${base}-ai.tex`);
                   if (!fname) return;
                   try {

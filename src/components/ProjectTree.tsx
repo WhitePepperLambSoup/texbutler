@@ -16,8 +16,9 @@ function Node({
   onContext: (e: React.MouseEvent, path: string) => void;
 }) {
   const [open, setOpen] = useState(depth < 1);
-  const { openPath, openFile } = useProjectStore();
-  const isOpen = openPath === node.path;
+  const activeTab = useProjectStore((s) => s.activeTab);
+  const { openFile } = useProjectStore();
+  const isOpen = activeTab === node.path;
 
   if (node.is_dir) {
     return (

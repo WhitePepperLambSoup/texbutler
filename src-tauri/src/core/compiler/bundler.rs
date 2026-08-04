@@ -16,12 +16,13 @@
 use std::path::PathBuf;
 
 /// tectonic's own bundle cache root on this machine.
+/// NOTE: tectonic 0.15 layout is `TectonicProject\Tectonic\{files,formats,...}`
+/// — there is NO `bundles` subdirectory in this version.
 pub fn tectonic_cache_root() -> PathBuf {
     dirs::cache_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("TectonicProject")
         .join("Tectonic")
-        .join("bundles")
 }
 
 /// Our own offline bundle dir (flat file layout for `--bundle <dir>`).

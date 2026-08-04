@@ -7,23 +7,42 @@ import { useProjectStore } from "../store/projectStore";
 import { useCompileStore } from "../store/compileStore";
 import { useT } from "../i18n";
 import ImageInsertModal from "./ImageInsertModal";
+import FormulaModal from "./FormulaModal";
 
 /** Register the `latex` language with a lightweight monarch tokenizer. */
 const beforeMount: BeforeMount = (monaco) => {
-  if (monaco.languages.getLanguages().some((l) => l.id === "latex")) return;
-  monaco.languages.register({ id: "latex", extensions: [".tex"] });  monaco.languages.setMonarchTokensProvider("latex", {
-    tokenizer: {
-      root: [
-        [/\\begin\{[^}]*\}/, "keyword"],
-        [/\\end\{[^}]*\}/, "keyword"],
-        [/\\(?:usepackage|documentclass|title|author|date|maketitle|section|subsection|subsubsection|paragraph|label|ref|cite|input|include|includegraphics|textbf|textit|emph|bfseries|item|table|figure|centering|caption|newpage|clearpage)\b/, "keyword"],
-        [/\\[a-zA-Z@]+/, "type"],
-        [/%.*$/, "comment"],
-        [/[{}]/, "delimiter"],
-        [/\$/, "string"],
+  if (!monaco.languages.getLanguages().some((l) => l.id === "latex")) {
+    monaco.languages.register({ id: "latex", extensions: [".tex"] });
+    monaco.languages.setMonarchTokensProvider("latex", {
+      tokenizer: {
+        root: [
+          [/\\begin\{[^}]*\}/, "keyword"],
+          [/\\end\{[^}]*\}/, "keyword"],
+          [/\\(?:usepackage|documentclass|title|author|date|maketitle|section|subsection|subsubsection|paragraph|label|ref|cite|input|include|includegraphics|textbf|textit|emph|bfseries|item|table|figure|centering|caption|newpage|clearpage)\b/, "keyword"],
+          [/\\[a-zA-Z@]+/, "type"],
+          [/%.*$/, "comment"],
+          [/[{}]/, "delimiter"],
+          [/\$/, "string"],
+        ],
+      },
+    });
+    // auto-closing pairs + surrounding (bracket/brace pairing like Overleaf)
+    monaco.languages.setLanguageConfiguration("latex", {
+      brackets: [["{", "}"], ["[", "]"], ["(", ")"]],
+      autoClosingPairs: [
+        { open: "{", close: "}" },
+        { open: "[", close: "]" },
+        { open: "(", close: ")" },
+        { open: "$", close: "$" },
       ],
-    },
-  });
+      surroundingPairs: [
+        { open: "{", close: "}" },
+        { open: "[", close: "]" },
+        { open: "(", close: ")" },
+        { open: "$", close: "$" },
+      ],
+    });
+  }
   monaco.editor.defineTheme("texbutler", {
     base: "vs",
     inherit: true,
@@ -33,6 +52,18 @@ const beforeMount: BeforeMount = (monaco) => {
       { token: "comment", foreground: "3F7F5F", fontStyle: "italic" },
       { token: "string", foreground: "2A00FF" },
       { token: "delimiter", foreground: "000000" },
+    ],
+    colors: {},
+  });
+  monaco.editor.defineTheme("texbutler-dark", {
+    base: "vs-dark",
+    inherit: true,
+    rules: [
+      { token: "keyword", foreground: "4FC1FF", fontStyle: "bold" },
+      { token: "type", foreground: "DCDCAA" },
+      { token: "comment", foreground: "6A9955", fontStyle: "italic" },
+      { token: "string", foreground: "CE9178" },
+      { token: "delimiter", foreground: "D4D4D4" },
     ],
     colors: {},
   });
@@ -116,11 +147,26 @@ const MATH_SYMBOLS = [
 ];
 
 export default function EditorPane() {
-  const { openPath, openContent, dirty, saveFile } = useProjectStore();
+  const { tabs, activeTab, saveFile, setTabContent, closeTab, openFile } = useProjectStore();
+  const active = tabs.find((t) => t.path === activeTab) ?? null;
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const t = useT();
   const [symbolOpen, setSymbolOpen] = useState(false);
   const [imgModal, setImgModal] = useState<{ fileName: string; root: string } | null>(null);
+  const [formulaMode, setFormulaMode] = useState<"inline" | "display" | null>(null);
+  const [monacoTheme, setMonacoTheme] = useState<"texbutler" | "texbutler-dark">(() =>
+    document.documentElement.dataset.theme === "dark" ? "texbutler-dark" : "texbutler"
+  );
+
+  // follow the app theme (day/night toggle) for the editor panel
+  useEffect(() => {
+    const onTheme = () => {
+      setMonacoTheme(document.documentElement.dataset.theme === "dark" ? "texbutler-dark" : "texbutler");
+    };
+    const mo = new MutationObserver(onTheme);
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => mo.disconnect();
+  }, []);
 
   const handleMount: OnMount = (editor) => {
     editorRef.current = editor;
@@ -157,8 +203,34 @@ export default function EditorPane() {
     ed.focus();
   };
 
+  /** Wrap the current selection with a command pair (Ctrl+Shift+B = bold). */
+  const wrapSelection = (prefix: string, suffix = prefix) => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    const sel = ed.getSelection();
+    if (!sel || sel.isEmpty()) {
+      // insert the pair and park the cursor between the braces so the user
+      // can type the content immediately (no placeholder text is written)
+      const pos = ed.getPosition();
+      if (!pos) return;
+      const text = `${prefix}${suffix}`;
+      const col = pos.column;
+      ed.executeEdits("wrap", [
+        { range: { startLineNumber: pos.lineNumber, startColumn: col, endLineNumber: pos.lineNumber, endColumn: col }, text },
+      ]);
+      ed.setPosition({ lineNumber: pos.lineNumber, column: col + prefix.length });
+      ed.focus();
+      return;
+    }
+    const text = ed.getModel()?.getValueInRange(sel) ?? "";
+    ed.executeEdits("wrap", [
+      { range: sel, text: `${prefix}${text}${suffix}` },
+    ]);
+    ed.focus();
+  };
+
   const insertImage = async () => {
-    if (!openPath) return;
+    if (!active) return;
     try {
       const file = await open({
         multiple: false,
@@ -180,7 +252,7 @@ export default function EditorPane() {
 
   /** Import the clipboard image (screenshot) and open the insert dialog. */
   const importClipboardImage = async () => {
-    if (!openPath) return;
+    if (!active) return;
     try {
       const name = await api.importClipboardImage();
       const root = useProjectStore.getState().root;
@@ -230,6 +302,9 @@ export default function EditorPane() {
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
         doSave();
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        wrapSelection("\\textbf{", "}");
       }
     };
     const onGoto = (e: Event) => {
@@ -267,39 +342,57 @@ export default function EditorPane() {
   return (
     <div className="editor-pane">
       <div className="panel-header">
-        <span className="panel-title">
-          {openPath ?? t("editor.untitled")}
-          {dirty ? " ●" : ""}
+        <span className="editor-tabs">
+          {tabs.map((tab) => (
+            <span
+              key={tab.path}
+              className={`editor-tab ${tab.path === activeTab ? "active" : ""}`}
+              onClick={() => void openFile(tab.path)}
+              title={tab.path}
+            >
+              <span className="editor-tab-name">{tab.path.split("/").pop()}</span>
+              {tab.dirty && <span className="editor-tab-dirty">●</span>}
+              <button
+                className="editor-tab-close"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void closeTab(tab.path);
+                }}
+              >
+                ×
+              </button>
+            </span>
+          ))}
         </span>
         <span className="format-buttons" title={t("editor.insert")}>
-          <button className="btn-mini" title="插入图片" onClick={() => void insertImage()} disabled={!openPath}>
+          <button className="btn-mini" title="插入图片" onClick={() => void insertImage()} disabled={!active}>
             {t("toolbar.image")}
           </button>
-          <button className="btn-mini" title="段落" onClick={() => insertSnippet("\n\n")} disabled={!openPath}>
+          <button className="btn-mini" title="段落" onClick={() => insertSnippet("\n\n")} disabled={!active}>
             ¶
           </button>
-          <button className="btn-mini" title="\\section" onClick={() => insertSnippet("\\section{标题}\n")} disabled={!openPath}>
+          <button className="btn-mini" title="\\section" onClick={() => insertSnippet("\\section{标题}\n")} disabled={!active}>
             H1
           </button>
-          <button className="btn-mini" title="\\subsection" onClick={() => insertSnippet("\\subsection{小节}\n")} disabled={!openPath}>
+          <button className="btn-mini" title="\\subsection" onClick={() => insertSnippet("\\subsection{小节}\n")} disabled={!active}>
             H2
           </button>
-          <button className="btn-mini" title="\\textbf" onClick={() => insertSnippet("\\textbf{加粗文字}")} disabled={!openPath}>
+          <button className="btn-mini" title="\\textbf（Ctrl+Shift+B 包裹选中）" onClick={() => wrapSelection("\\textbf{", "}")} disabled={!active}>
             B
           </button>
-          <button className="btn-mini" title="行内公式 $..$" onClick={() => insertSnippet("$E = mc^2$")} disabled={!openPath}>
+          <button className="btn-mini" title={t("formula.inline")} onClick={() => setFormulaMode("inline")} disabled={!active}>
             Σ
           </button>
-          <button className="btn-mini" title="行间公式 \\[..\\]" onClick={() => insertSnippet("\\[\nE = mc^2\n\\]\n")} disabled={!openPath}>
+          <button className="btn-mini" title={t("formula.display")} onClick={() => setFormulaMode("display")} disabled={!active}>
             ∑
           </button>
-          <button className="btn-mini" title="列表" onClick={() => insertSnippet("\\begin{itemize}\n\\item 第一项\n\\item 第二项\n\\end{itemize}\n")} disabled={!openPath}>
+          <button className="btn-mini" title="列表" onClick={() => insertSnippet("\\begin{itemize}\n\\item 第一项\n\\item 第二项\n\\end{itemize}\n")} disabled={!active}>
             ••
           </button>
-          <button className="btn-mini" title="表格" onClick={() => insertSnippet("\\begin{table}[H]\n\\centering\n\\begin{tabular}{cc}\n列1 & 列2 \\\\\n\\hline\nA & B \\\\\n\\end{tabular}\n\\caption{表注}\n\\label{tab:}\n\\end{table}\n")} disabled={!openPath}>
+          <button className="btn-mini" title="表格" onClick={() => insertSnippet("\\begin{table}[H]\n\\centering\n\\begin{tabular}{cc}\n列1 & 列2 \\\\\n\\hline\nA & B \\\\\n\\end{tabular}\n\\caption{表注}\n\\label{tab:}\n\\end{table}\n")} disabled={!active}>
             ▦
           </button>
-          <button className="btn-mini" title="数学符号" onClick={() => setSymbolOpen((v) => !v)} disabled={!openPath}>
+          <button className="btn-mini" title="数学符号" onClick={() => setSymbolOpen((v) => !v)} disabled={!active}>
             αβ
           </button>
         </span>
@@ -312,7 +405,7 @@ export default function EditorPane() {
               const s = SNIPPETS.find((x) => x.label === e.target.value);
               if (s) insertSnippet(s.insert);
             }}
-            disabled={!openPath}
+            disabled={!active}
           >
             <option value="">{t("editor.insert")}…</option>
             {SNIPPETS.map((s) => (
@@ -321,7 +414,7 @@ export default function EditorPane() {
               </option>
             ))}
           </select>
-          <button className="btn-mini" onClick={doSave} disabled={!dirty}>
+          <button className="btn-mini" onClick={doSave} disabled={!active?.dirty}>
             {t("editor.save")}
           </button>
         </span>
@@ -335,21 +428,20 @@ export default function EditorPane() {
           ))}
         </div>
       )}
-      {openPath ? (
+      {active ? (
         <Editor
           height="100%"
           language="latex"
-          theme="texbutler"
-          path={openPath}
-          value={openContent}
+          theme={monacoTheme}
+          path={active.path}
+          value={active.content}
           beforeMount={beforeMount}
           onMount={handleMount}
-          onChange={(v) =>
-            useProjectStore.setState({
-              openContent: v ?? "",
-              dirty: v !== undefined && v !== null,
-            })
-          }
+          onChange={(v) => {
+            if (v !== undefined && v !== null) {
+              setTabContent(active.path, v);
+            }
+          }}
           options={{
             fontSize: 14,
             minimap: { enabled: false },
@@ -370,6 +462,16 @@ export default function EditorPane() {
           projectRoot={imgModal.root}
           onCancel={() => setImgModal(null)}
           onConfirm={confirmImageInsert}
+        />
+      )}
+      {formulaMode && (
+        <FormulaModal
+          mode={formulaMode}
+          onCancel={() => setFormulaMode(null)}
+          onConfirm={(code) => {
+            insertSnippet(code);
+            setFormulaMode(null);
+          }}
         />
       )}
     </div>

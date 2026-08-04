@@ -32,7 +32,7 @@ export const useCompileStore = create<CompileState>((set, get) => ({
   async compile(target?: "main" | "current") {
     if (get().running) return;
     const override =
-      target === "current" ? useProjectStore.getState().openPath : undefined;
+      target === "current" ? useProjectStore.getState().activeTab : undefined;
     set({
       running: true,
       startedAt: Date.now(),

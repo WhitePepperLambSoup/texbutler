@@ -6,13 +6,13 @@ import { useT } from "../i18n";
 
 export default function BibPanel() {
   const t = useT();
-  const { openPath } = useProjectStore();
+  const activeTab = useProjectStore((s) => s.activeTab);
   const [entries, setEntries] = useState<BibEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const seqRef = useRef(0);
 
   useEffect(() => {
-    if (!openPath) return;
+    if (!activeTab) return;
     const seq = ++seqRef.current;
     setLoading(true);
     void api
@@ -26,13 +26,13 @@ export default function BibPanel() {
       .finally(() => {
         if (seqRef.current === seq) setLoading(false);
       });
-  }, [openPath]);
+  }, [activeTab]);
 
   const insertCite = (key: string) => {
     window.dispatchEvent(new CustomEvent("tb:insert-text", { detail: { text: `\\cite{${key}}` } }));
   };
 
-  if (!openPath) return <div className="panel-empty">{t("tree.noProject")}</div>;
+  if (!activeTab) return <div className="panel-empty">{t("tree.noProject")}</div>;
   if (loading) return <div className="panel-empty">{t("ai.busyDiagnose")}</div>;
   if (entries.length === 0) return <div className="panel-empty">{t("bib.empty")}</div>;
 

@@ -129,13 +129,15 @@ fn rule_states(state: &State<'_, AppState>) -> Vec<RuleState> {
         .collect()
 }
 
-/// Check whether common CJK fonts are installed (Windows font dir).
+/// Check whether common CJK + Latin fonts are installed (Windows font dir).
 /// Used by the settings UI to guide Chinese font troubleshooting.
 #[tauri::command]
 pub fn tb_get_cjk_fonts() -> Vec<CjkFontInfo> {
     let font_dir = std::path::Path::new("C:\\Windows\\Fonts");
     let candidates: &[(&str, &str)] = &[
+        // CJK
         ("simsun.ttc", "宋体 SimSun"),
+        ("simsunb.ttf", "宋体 Bold SimSun-Bold"),
         ("simhei.ttf", "黑体 SimHei"),
         ("msyh.ttc", "微软雅黑 Microsoft YaHei"),
         ("msyhbd.ttc", "微软雅黑 Bold"),
@@ -143,6 +145,23 @@ pub fn tb_get_cjk_fonts() -> Vec<CjkFontInfo> {
         ("simfang.ttf", "仿宋 FangSong"),
         ("Deng.ttf", "等线 DengXian"),
         ("Dengb.ttf", "等线 Bold"),
+        // Latin
+        ("times.ttf", "Times New Roman"),
+        ("timesbd.ttf", "Times New Roman Bold"),
+        ("timesi.ttf", "Times New Roman Italic"),
+        ("arial.ttf", "Arial"),
+        ("arialbd.ttf", "Arial Bold"),
+        ("calibri.ttf", "Calibri"),
+        ("calibrib.ttf", "Calibri Bold"),
+        ("cambria.ttc", "Cambria"),
+        ("cambriab.ttf", "Cambria Bold"),
+        ("georgia.ttf", "Georgia"),
+        ("georgiab.ttf", "Georgia Bold"),
+        ("verdana.ttf", "Verdana"),
+        ("cour.ttf", "Courier New"),
+        ("courbd.ttf", "Courier New Bold"),
+        ("segoeui.ttf", "Segoe UI"),
+        ("segoeuib.ttf", "Segoe UI Bold"),
     ];
     candidates
         .iter()
@@ -161,22 +180,31 @@ pub struct CjkFontInfo {
 
 /// Bundle status for the settings UI.
 #[tauri::command]
-pub fn tb_get_bundle_status() -> serde_json::Value {    let dir = crate::core::compiler::bundler::bundle_dir();
-    let size = dir
-        .read_dir()
-        .map(|rd| {
-            rd.flatten()
-                .filter(|e| e.path().is_file())
-                .map(|e| e.metadata().map(|m| m.len()).unwrap_or(0))
-                .sum::<u64>()
-        })
-        .unwrap_or(0);
-    let texlive = crate::core::compiler::texlive::SystemTexliveCompiler::new().available();    serde_json::json!({
+pub fn tb_get_bundle_status() -> serde_json::Value {
+    let dir = crate::core::compiler::bundler::tectonic_cache_root();
+    let size = dir_size(&dir);
+    let texlive = crate::core::compiler::texlive::SystemTexliveCompiler::new().available();
+    serde_json::json!({
         "bundle_dir": dir.to_string_lossy(),
         "bundle_present": crate::core::compiler::bundler::bundle_available(),
         "bundle_bytes": size,
         "system_texlive": texlive,
     })
+}
+
+/// Recursive size (bytes) of a directory.
+fn dir_size(dir: &std::path::Path) -> u64 {
+    let Ok(rd) = std::fs::read_dir(dir) else { return 0 };
+    rd.flatten()
+        .map(|e| {
+            let p = e.path();
+            if p.is_dir() {
+                dir_size(&p)
+            } else {
+                e.metadata().map(|m| m.len()).unwrap_or(0)
+            }
+        })
+        .sum()
 }
 
 /// Set the engine preference ("auto" | "tectonic" | "system_texlive").
