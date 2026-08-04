@@ -135,6 +135,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         /* keep the tab open if saving fails */
         return;
       }
+      // re-read after the await: if the user kept typing during the write,
+      // write the newer content too so nothing is lost
+      const latest = get().tabs.find((t) => t.path === rel);
+      if (latest && latest.content !== tab.content) {
+        try {
+          await api.writeFile(latest.path, latest.content);
+        } catch {
+          return; // keep the tab open on failure
+        }
+      }
     }
     // re-read after await (the list may have changed meanwhile)
     const cur = get();

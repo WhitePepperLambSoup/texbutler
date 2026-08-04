@@ -3,8 +3,9 @@
 //!
 //! Strategy (binary-driver model):
 //! * tectonic manages its own download cache at
-//!   `%LOCALAPPDATA%\TectonicProject\Tectonic\bundles` (Windows). Files are
-//!   downloaded on demand on first compile.
+//!   `%LOCALAPPDATA%\TectonicProject\Tectonic\{files,formats,...}` (Windows,
+//!   tectonic 0.15 layout — note there is NO `bundles` subdirectory). Files
+//!   are downloaded on demand on first compile.
 //! * "预下载 bundle" (`download_bundle`) compiles a tiny warm-up document
 //!   once, pulling the format + core macro files (incl. ctex/fandol fonts
 //!   for Chinese) into the cache. After that, `-C --only-cached` compiles
