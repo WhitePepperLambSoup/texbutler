@@ -73,7 +73,17 @@ fn serve_project_file(app: &tauri::AppHandle, request: &tauri::http::Request<Vec
     let Some(resolved) = proj.resolve(&decoded) else {
         return bad(StatusCode::FORBIDDEN);
     };
-    let Ok(bytes) = std::fs::read(&resolved) else {
+    // Symlink defense: canonicalize and require the real path to stay
+    // inside the project root (resolve() is lexical; a project-internal
+    // symlink could otherwise point outside).
+    let Ok(canon) = std::fs::canonicalize(&resolved) else {
+        return bad(StatusCode::NOT_FOUND);
+    };
+    let root_canon = std::fs::canonicalize(proj.root.clone()).unwrap_or_else(|_| proj.root.clone());
+    if !canon.starts_with(&root_canon) {
+        return bad(StatusCode::FORBIDDEN);
+    }
+    let Ok(bytes) = std::fs::read(&canon) else {
         return bad(StatusCode::NOT_FOUND);
     };
     let content_type = match ext.as_str() {

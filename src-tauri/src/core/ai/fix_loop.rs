@@ -882,7 +882,16 @@ pub fn rollback_from_backup(project: &Project, backup: &str) -> Result<String, S
     if rel_str.is_empty() {
         return Err("备份路径无效".into());
     }
-    let content = std::fs::read_to_string(path).map_err(|e| format!("读取备份失败: {e}"))?;
+    // Symlink defense: the backup read must resolve inside the backup dir.
+    let Ok(canon) = std::fs::canonicalize(path) else {
+        return Err("备份文件不存在".into());
+    };
+    let backup_canon =
+        std::fs::canonicalize(&backup_dir).unwrap_or_else(|_| backup_dir.clone());
+    if !canon.starts_with(&backup_canon) {
+        return Err("备份路径越界（符号链接指向备份目录外）".into());
+    }
+    let content = std::fs::read_to_string(&canon).map_err(|e| format!("读取备份失败: {e}"))?;
     project.write_file(&rel_str, &content)?;
     Ok(rel_str)
 }
