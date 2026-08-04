@@ -1230,6 +1230,33 @@ mod tests {
     }
 
     #[test]
+    fn rollback_rejects_symlink_outside_backup_dir() {
+        // symlink defense: a link inside backup/ pointing OUTSIDE must be
+        // rejected (canonicalize check). Skipped when the OS denies
+        // creating symlinks (CI without developer mode).
+        #[cfg(windows)]
+        {
+            let root = std::env::temp_dir().join(format!("tb-rollback-sym-{}", std::process::id()));
+            std::fs::create_dir_all(&root).unwrap();
+            let proj = crate::core::project::Project::open(&root).unwrap();
+            let outside = root.join("outside.txt");
+            std::fs::write(&outside, "secret").unwrap();
+            let backup_dir = proj.backup_dir();
+            let ts = backup_dir.join("20260101-000000");
+            std::fs::create_dir_all(&ts).unwrap();
+            let link = ts.join("evil.txt");
+            if std::os::windows::fs::symlink_file(&outside, &link).is_err() {
+                // no symlink privilege on this machine — nothing to assert
+                let _ = std::fs::remove_dir_all(&root);
+                return;
+            }
+            let err = rollback_from_backup(&proj, link.to_string_lossy().as_ref());
+            assert!(err.is_err(), "symlink to outside must be rejected: {err:?}");
+            let _ = std::fs::remove_dir_all(&root);
+        }
+    }
+
+    #[test]
     fn hunk_header_parsing() {
         assert_eq!(parse_hunk_header("@@ -12,4 +12,4 @@").unwrap(), (12, 4));
         assert_eq!(parse_hunk_header("@@ -3 +3 @@").unwrap(), (3, 1));
