@@ -4,6 +4,8 @@
 
 **A local LaTeX compiler with an AI assistant**, built for Chinese academic and report writing. It works out of the box — you don't need to install TeX Live to compile PDFs.
 
+![Liquid Glass UI](docs/liquid-glass-ui.png)
+
 ## Highlights
 
 1. **Self-contained local compilation** — bundles the Tectonic 0.15 engine, so it compiles Chinese LaTeX to PDF even without TeX Live; automatically falls back to a system `xelatex`/`lualatex` when detected.
@@ -12,6 +14,7 @@
 4. **Made for writing (v0.2.0)** — one-click image insertion with generated code, quick-format buttons (sections / formulas / tables / lists), AI code generation from natural language, **Word (.docx) import → AI generates a complete compilable LaTeX document**, user template library, math-symbol panel (36 symbols), day/night theme, and a bilingual UI (中文 / English).
 5. **Smooth writing flow (v0.3.0)** — drag images into the editor or paste screenshots (auto-saved, insert dialog with width/position/caption), an **Outline panel** (section tree, click to jump), a **Bibliography panel** (click a .bib entry to insert `\cite`), LaTeX autocompletion (60+ commands, environment pairs), optional auto-compile after save, session restore on startup, and Ctrl+P quick file open.
 6. **End-to-end verifiable** — real-API + real-compile e2e tests (`cargo test --test e2e_ai -- --ignored`) validate every layer of the fix loop.
+7. **Liquid Glass UI (v0.4.0)** — default glassmorphism theme: animated gradient light blobs behind frosted-glass panels with specular highlights; three themes (liquid glass / classic dark / classic light) switchable from the toolbar and persisted; the Monaco editor theme follows. Monaco is bundled locally — fully offline, no CDN. Always-visible quick math symbols (α β γ δ θ λ π √ ∫ ∞ ± ≤) plus a 90-symbol panel.
 
 ## Tech Stack
 
@@ -90,6 +93,8 @@ On the first compile, Tectonic downloads resources on demand from `https://relay
 │   └── resources/bin/    # bundled tectonic.exe
 ├── assets/sample/        # Chinese regression sample
 ├── assets/demo-project/  # demo project with seeded errors
+├── assets/screenshot-project/ # showcase project used for the README screenshot
+├── assets/e2e/           # e2e fixture projects
 └── docs/                 # ARCHITECTURE.md / PLAN.md
 ```
 
