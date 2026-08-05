@@ -156,6 +156,7 @@ html[data-theme="liquid"] .theme-picker-menu {
 }
 
 html[data-theme="liquid"] .col-tree,
+html[data-theme="liquid"] .col-pdf,
 html[data-theme="liquid"] .bottom {
   background: rgba(17, 22, 42, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.09);
@@ -167,9 +168,11 @@ html[data-theme="liquid"] .bottom {
 /* PDF pane must be FULLY opaque: the Chromium PDF viewer composites with
    a transparent layer, so the animated blobs behind the glass showed
    through on top of the document. Reading area stays clean. */
-html[data-theme="liquid"] .col-pdf,
-html[data-theme="liquid"] .pdf-pane,
-html[data-theme="liquid"] .pdf-frame {
+html[data-theme="liquid"] .col-pdf {
+  background: #11162a;
+}
+
+html[data-theme="liquid"] .pdf-pane {
   background: #11162a;
 }
 
@@ -286,8 +289,7 @@ html[data-theme="liquid"] .col-editor {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 10px 34px rgba(2, 6, 20, 0.4);
 }
 
-html[data-theme="liquid"] .pdf-empty,
-html[data-theme="liquid"] .pdf-frame {
+html[data-theme="liquid"] .pdf-empty {
   background: transparent;
 }
 
