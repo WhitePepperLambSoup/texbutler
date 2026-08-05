@@ -131,10 +131,11 @@ html[data-theme="liquid"] .glass-blobs .blob-3 {
   }
 }
 
-/* Once a PDF is open, fade the whole blob layer out: the blobs visibly
-   leaked through the glassy toolbar/margins around the (opaque) PDF pane
-   and drew the eye away from the document. Reading mode = quiet. */
-html[data-theme="liquid"] .glass-blobs.has-pdf .blob {
+/* When a PDF is open, hide ONLY the right-side blob (blob-2, purple) —
+   it sat right behind the PDF pane and leaked through the glassy toolbar/
+   margins around the (opaque) pane, drawing the eye away. The left and
+   bottom blobs stay: the liquid-glass feel survives while reading. */
+html[data-theme="liquid"] .glass-blobs.has-pdf .blob-2 {
   opacity: 0;
   animation: none;
 }
