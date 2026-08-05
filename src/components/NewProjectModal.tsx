@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useProjectStore } from "../store/projectStore";
 import { useT } from "../i18n";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 interface Props {
   open: boolean;
@@ -12,6 +13,14 @@ interface Props {
 export default function NewProjectModal({ open, onClose }: Props) {
   const [templates, setTemplates] = useState<{ id: string; name: string; source: string }[]>([]);
   const [parent, setParent] = useState("");
+  const browseDir = async () => {
+    try {
+      const dir = await openDialog({ directory: true, title: t("newProject.browseTitle") });
+      if (typeof dir === "string") setParent(dir);
+    } catch {
+      /* cancelled */
+    }
+  };
   const [name, setName] = useState("my-latex-project");
   const [template, setTemplate] = useState("article");
   const [busy, setBusy] = useState(false);
@@ -57,11 +66,16 @@ export default function NewProjectModal({ open, onClose }: Props) {
         <div className="modal-body">
           <label>
             {t("newProject.parent")}
-            <input
-              value={parent}
-              placeholder="如 D:\documents"
-              onChange={(e) => setParent(e.target.value)}
-            />
+            <div className="path-row">
+              <input
+                value={parent}
+                placeholder="如 D:\documents"
+                onChange={(e) => setParent(e.target.value)}
+              />
+              <button className="btn-mini" type="button" onClick={() => void browseDir()}>
+                {t("newProject.browse")}
+              </button>
+            </div>
           </label>
           <label>
             {t("newProject.name")}

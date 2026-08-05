@@ -169,6 +169,21 @@ pub struct AiDiff {
     pub summary: String,
 }
 
+/// One hunk of a proposed fix with a per-hunk explanation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixHunk {
+    /// File the hunk applies to (relative project path).
+    pub file: String,
+    /// Approximate starting line in the current file (1-based).
+    pub line: u32,
+    /// The lines being replaced (without the leading `-`/` ` markers).
+    pub old: String,
+    /// The replacement lines (without the leading `+` markers).
+    pub new: String,
+    /// One-sentence explanation of this change (AI-provided when present).
+    pub why: String,
+}
+
 /// Result of the AI fix loop.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FixReport {
@@ -185,6 +200,11 @@ pub struct FixReport {
     /// Snapshot path of the file content BEFORE the fix was applied.
     /// Present on success so the user can reject the fix (roll back).
     pub backup: Option<String>,
+    /// Per-hunk breakdown with AI explanations (empty in suggest mode
+    /// when the diff was never applied, unless the AI provided them).
+    pub hunks: Vec<FixHunk>,
+    /// True when the fix was produced in suggest mode (nothing written).
+    pub suggested: bool,
 }
 
 /// Round a float to `decimals` and format without floating-point garbage.

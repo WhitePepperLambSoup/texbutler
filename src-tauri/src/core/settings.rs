@@ -32,6 +32,13 @@ pub struct Settings {
     pub texlive_passes: u32,
     /// Recently opened project paths (most recent first).
     pub recent_projects: Vec<String>,
+    /// Check GitHub releases for updates on startup.
+    #[serde(default = "default_true")]
+    pub check_updates: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for Settings {
@@ -42,6 +49,7 @@ impl Default for Settings {
             rules: std::collections::HashMap::new(),
             texlive_passes: 2,
             recent_projects: Vec::new(),
+            check_updates: true,
         }
     }
 }

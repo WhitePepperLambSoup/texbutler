@@ -16,7 +16,7 @@ function renderText(text: string): string {
 }
 
 export default function AiPanel() {
-  const { messages, busy, busyKind, diffPending, acceptDiff, rejectDiff, clearMessages } =
+  const { messages, busy, busyKind, diffPending, acceptDiff, rejectDiff, applyHunk, clearMessages, suggestMode, toggleSuggestMode, pendingSelection, setSelection, askAi } =
     useAiStore();
   const [expandedRaw, setExpandedRaw] = useState<number | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -24,7 +24,17 @@ export default function AiPanel() {
   const [genInput, setGenInput] = useState("");
   const [genBusy, setGenBusy] = useState(false);
   const [genResult, setGenResult] = useState<string | null>(null);
+  const [snapshots, setSnapshots] = useState<{ path: string; ts: string; file: string }[] | null>(null);
   const activeTab = useProjectStore((s) => s.activeTab);
+
+  const loadSnapshots = async () => {
+    try {
+      const list = await api.aiSnapshots();
+      setSnapshots(list);
+    } catch {
+      setSnapshots([]);
+    }
+  };
 
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: "smooth" });
@@ -36,6 +46,16 @@ export default function AiPanel() {
         <span className="panel-title">{t("ai.title")}</span>
         <span className="panel-actions">
           {busy && <span className="ai-busy">{busyKind === "fix" ? t("ai.busyFix") : t("ai.busyDiagnose")}</span>}
+          <button
+            className={`btn-mini ${suggestMode ? "btn-primary" : ""}`}
+            title={t("ai.suggestMode")}
+            onClick={toggleSuggestMode}
+          >
+            {suggestMode ? "●" : "○"} {t("ai.suggestMode")}
+          </button>
+          <button className="btn-mini" title={t("ai.timeline")} onClick={() => void loadSnapshots()}>
+            {t("ai.timeline")}
+          </button>
           <button className="btn-mini" onClick={clearMessages}>
             {t("ai.clear")}
           </button>
@@ -67,26 +87,124 @@ export default function AiPanel() {
       </div>
       {diffPending && (
         <div className="ai-diff-bar">
-          <span>{t("ai.diffBar", { n: diffPending.rounds })}</span>
-          <button className="btn-mini btn-primary" onClick={() => void acceptDiff()}>
-            {t("ai.diffApply")}
-          </button>
+          <span>{diffPending.suggested ? t("ai.suggestBar", { n: diffPending.rounds }) : t("ai.diffBar", { n: diffPending.rounds })}</span>
+          {!diffPending.suggested && (
+            <button className="btn-mini btn-primary" onClick={() => void acceptDiff()}>
+              {t("ai.diffApply")}
+            </button>
+          )}
           <button className="btn-mini" onClick={rejectDiff}>
             {t("ai.diffReject")}
           </button>
         </div>
       )}
+      {diffPending?.suggested && diffPending.hunks && diffPending.hunks.length > 0 && (
+        <div className="ai-hunks">
+          {diffPending.hunks.map((h, i) => (
+            <div key={i} className="ai-hunk">
+              <div className="ai-hunk-head">
+                <span>{h.file}:{h.line}</span>
+                {h.why && <span className="ai-hunk-why">{h.why}</span>}
+              </div>
+              {h.old && <pre className="ai-hunk-old">{h.old}</pre>}
+              {h.new && <pre className="ai-hunk-new">{h.new}</pre>}
+              <button
+                className="btn-mini btn-primary"
+                onClick={() => {
+                  const patch = `--- a/${h.file}\n+++ b/${h.file}\n@@ -${Math.max(1, h.line - 1)},${h.old.split("\n").length} +${h.line},${h.new.split("\n").length} @@\n${h.old
+                    .split("\n")
+                    .map((l) => `-${l}`)
+                    .join("\n")}\n${h.new
+                    .split("\n")
+                    .map((l) => `+${l}`)
+                    .join("\n")}\n`;
+                  void applyHunk(h.file, patch);
+                }}
+              >
+                {t("ai.hunkApply")}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {snapshots != null && (
+        <div className="ai-hunks">
+          <div className="ai-hunk-head">
+            <span>{t("ai.timelineTitle")}</span>
+            <button className="btn-mini" onClick={() => setSnapshots(null)}>
+              {t("ai.timelineClose")}
+            </button>
+          </div>
+          {snapshots.length === 0 && <div className="ai-hunk-why">{t("ai.timelineEmpty")}</div>}
+          {snapshots.map((snap, i) => (
+            <div key={i} className="ai-hunk">
+              <div className="ai-hunk-head">
+                <span>{snap.file}</span>
+                <span className="ai-hunk-why">
+                  {new Date(Number(snap.ts) * 1000).toLocaleString()}
+                </span>
+              </div>
+              <button
+                className="btn-mini btn-primary"
+                onClick={() => {
+                  void api.aiRollback(snap.path).then((rel) => {
+                    useAiStore.getState().pushMessage({
+                      role: "system",
+                      kind: "plain",
+                      text: t("ai.timelineRestored", { file: rel }),
+                    });
+                    const active = useProjectStore.getState().activeTab;
+                    if (active) void useProjectStore.getState().reloadTab(active);
+                    void loadSnapshots();
+                  });
+                }}
+              >
+                {t("ai.timelineRestore")}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="ai-generate">
-        <textarea
-          className="ai-generate-input"
-          placeholder={t("ai.generatePlaceholder")}
-          value={genInput}
-          onChange={(e) => setGenInput(e.target.value)}
-          rows={2}
-        />
-        <div className="ai-generate-actions">
+        <div className="ai-chat-row">
+          <textarea
+            className="ai-generate-input"
+            placeholder={pendingSelection ? t("ai.askPlaceholderSel") : t("ai.askPlaceholder")}
+            value={genInput}
+            onChange={(e) => setGenInput(e.target.value)}
+            rows={2}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                void askAi(genInput);
+                setGenInput("");
+              }
+            }}
+          />
           <button
             className="btn-mini btn-primary"
+            disabled={busy || !genInput.trim()}
+            title={t("ai.askTitle")}
+            onClick={() => {
+              void askAi(genInput);
+              setGenInput("");
+            }}
+          >
+            {t("ai.askSend")}
+          </button>
+        </div>
+        <div className="ai-generate-actions">
+          {pendingSelection && (
+            <button
+              className="btn-mini"
+              title={t("ai.askClearSel")}
+              onClick={() => setSelection(null)}
+            >
+              {t("ai.askSelection", { n: pendingSelection.length })}
+            </button>
+          )}
+          <button
+            className="btn-mini"
             disabled={genBusy || !genInput.trim()}
             onClick={async () => {
               setGenBusy(true);

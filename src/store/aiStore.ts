@@ -20,15 +20,23 @@ interface AiState {
   busy: boolean;
   busyKind: "diagnose" | "fix" | "test" | null;
   diffPending: FixReport | null; // awaiting accept/reject
+  /** Suggest mode: AI proposals are NOT written; the user applies hunks manually. */
+  suggestMode: boolean;
+  /** Editor selection handed to the AI panel for "ask about this selection". */
+  pendingSelection: string | null;
 
   loadSettings: () => Promise<void>;
   diagnoseIssue: (issue: Issue, index: number) => Promise<void>;
   fixIssue: (issue: Issue, index: number) => Promise<void>;
   acceptDiff: () => Promise<void>;
   rejectDiff: () => void;
+  applyHunk: (file: string, patch: string) => Promise<void>;
+  toggleSuggestMode: () => void;
+  setSelection: (sel: string | null) => void;
+  askAi: (question: string) => Promise<void>;
   testConnection: () => Promise<string>;
   saveSettings: (s: AiSettings) => Promise<void>;
-  pushMessage: (m: Omit<AiMessage, "id">) => void;
+  pushMessage: (m: Omit<AiMessage, "id">) => number;
   clearMessages: () => void;
 }
 
@@ -40,6 +48,70 @@ export const useAiStore = create<AiState>((set, get) => ({
   busy: false,
   busyKind: null,
   diffPending: null,
+  suggestMode: false,
+  pendingSelection: null,
+
+  setSelection(sel) {
+    set({ pendingSelection: sel });
+  },
+
+  async askAi(question) {
+    const q = question.trim();
+    if (!q) return;
+    if (get().busy) return;
+    set({ busy: true, busyKind: "diagnose" });
+    const st = useProjectStore.getState();
+    get().pushMessage({ role: "user", kind: "plain", text: q });
+    // streaming answer: collect tb://ai-stream deltas into a live message
+    let streamed = "";
+    const msgId = get().pushMessage({ role: "assistant", kind: "plain", text: "" });
+    const listenP = onEvent<{ delta?: string; done?: boolean; error?: string }>("tb://ai-stream", (payload) => {
+      if (typeof payload.delta === "string") {
+        streamed += payload.delta;
+        useAiStore.setState((s) => ({
+          messages: s.messages.map((m) =>
+            m.id === msgId ? { ...m, text: streamed } : m,
+          ),
+        }));
+      }
+    });
+    try {
+      const answer = await api.aiChatStream(q, st.activeTab, get().pendingSelection);
+      // finalize the live message with the complete answer
+      useAiStore.setState((s) => ({
+        messages: s.messages.map((m) => (m.id === msgId ? { ...m, text: answer } : m)),
+      }));
+    } catch (e) {
+      get().pushMessage({ role: "assistant", kind: "error", text: useI18n.getState().t("ai.chatFailed", { e: String(e) }) });
+    } finally {
+      void listenP.then((fn) => fn());
+    }
+    set({ busy: false, busyKind: null });
+  },
+
+  toggleSuggestMode() {
+    set({ suggestMode: !get().suggestMode });
+  },
+
+  async applyHunk(file, patch) {
+    try {
+      await api.aiApplyPatch(file, patch);
+      get().pushMessage({
+        role: "system",
+        kind: "plain",
+        text: useI18n.getState().t("ai.hunkApplied", { file }),
+      });
+      const active = useProjectStore.getState().activeTab;
+      if (active) await useProjectStore.getState().reloadTab(active);
+      await useCompileStoreRefresh();
+    } catch (e) {
+      get().pushMessage({
+        role: "assistant",
+        kind: "error",
+        text: useI18n.getState().t("ai.hunkFailed", { e: String(e) }),
+      });
+    }
+  },
 
   async loadSettings() {
     try {
@@ -51,7 +123,9 @@ export const useAiStore = create<AiState>((set, get) => ({
   },
 
   pushMessage(m) {
-    set({ messages: [...get().messages, { ...m, id: ++msgId }] });
+    const id = ++msgId;
+    set({ messages: [...get().messages, { ...m, id }] });
+    return id;
   },
 
   async diagnoseIssue(issue, index) {
@@ -93,13 +167,16 @@ export const useAiStore = create<AiState>((set, get) => ({
       issue,
     });
     try {
-      const report: FixReport = await api.aiFix(index, 3);
+      const report: FixReport = await api.aiFix(index, 3, !get().suggestMode);
       if (report.diff) {
         set({ diffPending: report });
         get().pushMessage({
           role: "assistant",
           kind: "fix",
-          text: useI18n.getState().t("ai.diffGenerated", { n: report.rounds }),
+          text: useI18n.getState().t(
+            report.suggested ? "ai.suggestGenerated" : "ai.diffGenerated",
+            { n: report.rounds },
+          ),
           diff: report.diff,
           report,
         });

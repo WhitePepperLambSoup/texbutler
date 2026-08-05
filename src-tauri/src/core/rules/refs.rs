@@ -44,11 +44,75 @@ impl super::Rule for RefsRule {
         }
     }
 
-    /// Project-wide check: every `\ref`/`\cite` vs all labels and bib keys.
+    /// Project-wide check: every `\ref`/`\cite` vs all labels and bib keys,
+    /// duplicate `\label` keys, and user macros that are never used.
     fn check_project(&self, ctx: &ProjectCtx, issues: &mut Vec<Issue>) {
         let mut labels: Vec<String> = Vec::new();
         for (_, content) in &ctx.files {
             labels.extend(collect_labels(content));
+        }
+        // duplicate labels: the same key defined twice breaks cross-refs
+        let mut seen: Vec<(String, String, usize)> = Vec::new();
+        for (file, content) in &ctx.files {
+            for (_cmd, key, line, _col) in collect_cmd_args(content, &["label"]) {
+                if let Some((_prev_key, prev_file, prev_line)) = seen.iter().find(|(k, _, _)| *k == key) {
+                    issues.push(
+                        Issue::new(
+                            Severity::Warning,
+                            IssueKind::RuleCheck,
+                            format!("`\\label{{{key}}}` 重复定义（{prev_file}:{prev_line} 已有同名 label），`\\ref{{{key}}}` 会指向不确定目标。"),
+                        )
+                        .with_file(file.clone())
+                        .with_line(line)
+                        .with_rule("refs", format!("重命名其中一个 `\\label{{{key}}}` 并同步所有引用。")),
+                    );
+                } else {
+                    seen.push((key, file.clone(), line));
+                }
+            }
+        }
+        // user macros defined but never used anywhere in the project
+        let mut defs: Vec<(String, String, usize)> = Vec::new();
+        for (file, content) in &ctx.files {
+            for (idx, l) in content.lines().enumerate() {
+                let trimmed = l.trim_start();
+                let Some(rest) = trimmed
+                    .strip_prefix("\\newcommand{\\")
+                    .or_else(|| trimmed.strip_prefix("\\renewcommand{\\"))
+                    .or_else(|| trimmed.strip_prefix("\\providecommand{\\"))
+                else {
+                    continue;
+                };
+                let name: String = rest
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '@')
+                    .collect();
+                if !name.is_empty() {
+                    defs.push((file.clone(), name, idx + 1));
+                }
+            }
+        }
+        let all_sources: String = ctx
+            .files
+            .iter()
+            .map(|(_, c)| c.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        for (file, name, line) in &defs {
+            let usage = format!("\\{name}");
+            // the definition line itself contains the name once
+            if all_sources.matches(&usage).count() <= 1 {
+                issues.push(
+                    Issue::new(
+                        Severity::Warning,
+                        IssueKind::RuleCheck,
+                        format!("自定义宏 `\\{name}` 定义了但从未在项目中使用，建议删除或补上用途。"),
+                    )
+                    .with_file(file.clone())
+                    .with_line(*line)
+                    .with_rule("refs", format!("删除 `\\newcommand{{\\{name}}}` 或在正文中使用 `\\{name}`。")),
+                );
+            }
         }
         for (file, content) in &ctx.files {
             for (cmd, key, line, col) in collect_cmd_args(content, REF_COMMANDS) {
@@ -196,6 +260,31 @@ mod tests {
         let ctx = ProjectCtx { files, bib_keys };
         RefsRule.check_project(&ctx, &mut issues);
         issues
+    }
+
+    #[test]
+    fn flags_duplicate_labels_project_wide() {
+        let files = [
+            ("a.tex", "\\label{sec:dup}\n正文"),
+            ("b.tex", "\\label{sec:dup}\n另一个文件同样 label"),
+        ];
+        let bib: [&str; 0] = [];
+        let issues = run_project(&files, &bib);
+        assert!(issues.iter().any(|i| i.message.contains("重复定义")), "got: {:?}", issues.iter().map(|i| &i.message).collect::<Vec<_>>());
+        // the report must name the FIRST file that defined the label
+        let dup = issues.iter().find(|i| i.message.contains("重复定义")).expect("dup issue");
+        assert!(dup.message.contains("a.tex"), "must name first file: {}", dup.message);
+    }
+
+    #[test]
+    fn flags_unused_macro_but_allows_used() {
+        let files = [
+            ("a.tex", "\\newcommand{\\unusedmacro}{x}\n\\newcommand{\\usedmacro}{y}\n\\usedmacro 正文"),
+        ];
+        let bib: [&str; 0] = [];
+        let issues = run_project(&files, &bib);
+        assert!(issues.iter().any(|i| i.message.contains("unusedmacro")), "got: {:?}", issues.iter().map(|i| &i.message).collect::<Vec<_>>());
+        assert!(!issues.iter().any(|i| i.message.contains("\\usedmacro`")), "used macro must not be flagged: {:?}", issues.iter().map(|i| &i.message).collect::<Vec<_>>());
     }
 
     #[test]

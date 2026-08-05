@@ -1,6 +1,6 @@
 //! AI commands: diagnose an issue, run the fix loop, manage provider settings.
 
-use crate::core::ai::{AiDiagnosis, ChatMsg, diagnose, fix_loop, rollback_from_backup};
+use crate::core::ai::{AiDiagnosis, AiSettings, ChatMsg, diagnose, fix_loop, rollback_from_backup};
 use crate::core::{FixReport, Issue, SourceContext};
 use crate::state::AppState;
 use tauri::{AppHandle, Emitter, State};
@@ -54,12 +54,15 @@ pub async fn tb_ai_diagnose(
 }
 
 /// Run the AI fix loop on one issue (rounds ≤ max_rounds, auto rollback).
+/// `apply: true` (default) writes the diff and recompiles; `apply: false`
+/// is suggest mode — the proposal is returned without touching the disk.
 #[tauri::command]
 pub async fn tb_ai_fix(
     app: AppHandle,
     state: State<'_, AppState>,
     issue_index: usize,
     max_rounds: Option<u32>,
+    apply: Option<bool>,
 ) -> Result<FixReport, String> {
     let (issue, settings, proj) = {
         let last = state.last_result.read().map_err(|e| e.to_string())?;
@@ -73,10 +76,208 @@ pub async fn tb_ai_fix(
     if settings.api_key.is_none() && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. }) {
         return Err("尚未配置 AI API Key。请在“设置”中填写 provider 配置。".into());
     }
-    let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "fix", "status": "start" }));
-    let report = fix_loop(&issue, &proj, &settings, max_rounds.unwrap_or(3)).await;
-    let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "fix", "status": "done", "ok": report.ok }));
+    let apply = apply.unwrap_or(true);
+    let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "fix", "status": "start", "apply": apply }));
+    let report = fix_loop(&issue, &proj, &settings, max_rounds.unwrap_or(3), apply).await;
+    let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "fix", "status": "done", "ok": report.ok, "suggested": report.suggested }));
     Ok(report)
+}
+
+/// Redact the API key from any error text before it reaches the UI.
+fn redact_key(s: &AiSettings, msg: String) -> String {
+    match &s.api_key {
+        Some(k) if !k.is_empty() && msg.contains(k.as_str()) => msg.replace(k, "***"),
+        _ => msg,
+    }
+}
+
+/// Multi-turn conversation with the AI about the current file: the AI acts
+/// as a LaTeX assistant sitting next to the user. `selection` is optional
+/// editor-selected text to focus the question on; the current file content
+/// (capped) is included as context when it is a `.tex` file.
+#[tauri::command]
+pub async fn tb_ai_chat(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    question: String,
+    file: Option<String>,
+    selection: Option<String>,
+) -> Result<String, String> {
+    let (settings, proj) = {
+        let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
+        let guard = state.project.read().map_err(|e| e.to_string())?;
+        let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?.clone();
+        (settings, proj)
+    };
+    if settings.api_key.is_none() && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. }) {
+        return Err("尚未配置 AI API Key。请在“设置”中填写 provider 配置。".into());
+    }
+    let question = question.trim().to_string();
+    if question.is_empty() {
+        return Err("问题不能为空".into());
+    }
+    let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "chat", "status": "start" }));
+    let answer = crate::core::ai::chat::ask_about_source(&settings, &proj, file.as_deref(), selection.as_deref(), &question)
+        .await
+        .map_err(|e| redact_key(&settings, e));
+    match &answer {
+        Ok(_) => {
+            let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "chat", "status": "done", "ok": true }));
+        }
+        Err(_) => {
+            let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "chat", "status": "done", "ok": false }));
+        }
+    }
+    answer
+}
+
+/// Streaming variant of the AI chat: content chunks are emitted through the
+/// `tb://ai-stream` event (`{delta}` per chunk, `{done: true}` at the end,
+/// `{error}` on failure). The full text is returned as well.
+#[tauri::command]
+pub async fn tb_ai_chat_stream(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    question: String,
+    file: Option<String>,
+    selection: Option<String>,
+) -> Result<String, String> {
+    let (settings, proj) = {
+        let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
+        let guard = state.project.read().map_err(|e| e.to_string())?;
+        let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?.clone();
+        (settings, proj)
+    };
+    if settings.api_key.is_none() && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. }) {
+        return Err("尚未配置 AI API Key。请在“设置”中填写 provider 配置。".into());
+    }
+    let question = question.trim().to_string();
+    if question.is_empty() {
+        return Err("问题不能为空".into());
+    }
+    let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "chat", "status": "start" }));
+    let app2 = app.clone();
+    let result = crate::core::ai::chat::ask_about_source_stream(
+        &settings,
+        &proj,
+        file.as_deref(),
+        selection.as_deref(),
+        &question,
+        move |delta| {
+            let _ = app2.emit("tb://ai-stream", serde_json::json!({ "delta": delta }));
+        },
+    )
+    .await
+    .map_err(|e| redact_key(&settings, e));
+    match &result {
+        Ok(full) => {
+            let _ = app.emit("tb://ai-stream", serde_json::json!({ "done": true }));
+            let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "chat", "status": "done", "ok": true }));
+            Ok(full.clone())
+        }
+        Err(e) => {
+            let _ = app.emit("tb://ai-stream", serde_json::json!({ "error": e }));
+            let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "chat", "status": "done", "ok": false }));
+            Err(e.clone())
+        }
+    }
+}
+
+/// List every AI fix snapshot in the project's `.texbutler/backup/`
+/// directory (newest first). Each snapshot can be restored with
+/// `tb_ai_rollback` (pass its `path`).
+#[tauri::command]
+pub fn tb_ai_snapshots(state: State<'_, AppState>) -> Result<Vec<crate::core::ai::fix_loop::SnapshotInfo>, String> {
+    let proj = {
+        let guard = state.project.read().map_err(|e| e.to_string())?;
+        guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?.clone()
+    };
+    crate::core::ai::fix_loop::list_snapshots(&proj)
+}
+
+/// Check GitHub for a newer TeXButler release. Returns the latest release
+/// info when a newer version exists, `null` otherwise.
+#[tauri::command]
+pub async fn tb_check_updates() -> Result<Option<serde_json::Value>, String> {
+    const REPO: &str = "https://api.github.com/repos/WhitePepperLambSoup/texbutler/releases/latest";
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(REPO)
+        .header("User-Agent", "texbutler-updater")
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| format!("无法连接 GitHub: {e}"))?;
+    if !resp.status().is_success() {
+        return Ok(None); // network/rate-limit: stay quiet
+    }
+    let v: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let latest = v["tag_name"].as_str().unwrap_or("").trim_start_matches('v');
+    let current = env!("CARGO_PKG_VERSION");
+    if latest.is_empty() || version_le(&latest, current) {
+        return Ok(None);
+    }
+    Ok(Some(serde_json::json!({
+        "version": latest,
+        "name": v["name"].as_str().unwrap_or(""),
+        "body": v["body"].as_str().unwrap_or(""),
+        "url": v["html_url"].as_str().unwrap_or(""),
+    })))
+}
+
+/// True when `a` <= `b` (semver-ish dotted comparison).
+fn version_le(a: &str, b: &str) -> bool {
+    let pa: Vec<u64> = a
+        .split('.')
+        .map(|p| p.chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse().unwrap_or(0))
+        .collect();
+    let pb: Vec<u64> = b
+        .split('.')
+        .map(|p| p.chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse().unwrap_or(0))
+        .collect();
+    for i in 0..pa.len().max(pb.len()) {
+        let x = pa.get(i).copied().unwrap_or(0);
+        let y = pb.get(i).copied().unwrap_or(0);
+        if x != y {
+            return x < y;
+        }
+    }
+    true
+}
+
+/// Get the update-check setting.
+#[tauri::command]
+pub fn tb_get_update_check(state: State<'_, AppState>) -> Result<bool, String> {
+    Ok(state.settings.read().map_err(|e| e.to_string())?.check_updates)
+}
+
+/// Set the update-check setting (persisted).
+#[tauri::command]
+pub fn tb_set_update_check(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
+    let mut s = state.settings.write().map_err(|e| e.to_string())?;
+    s.check_updates = enabled;
+    s.save().map_err(|e| e.to_string())
+}
+
+/// Apply a single-file unified-diff patch produced by the AI in suggest
+/// mode (per-hunk manual application). A snapshot is taken before writing
+/// so the change can still be rolled back.
+#[tauri::command]
+pub fn tb_ai_apply_patch(state: State<'_, AppState>, file: String, patch: String) -> Result<String, String> {    let proj = {
+        let guard = state.project.read().map_err(|e| e.to_string())?;
+        guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?.clone()
+    };
+    let rel = proj.relative_path(&file);
+    let src = proj.read_file(&rel)?;
+    let new_content = crate::core::ai::fix_loop::apply_unified_diff(&src, &patch)
+        .map_err(|e| format!("补丁无法应用: {e}"))?;
+    if new_content == src {
+        return Err("补丁没有产生任何修改".into());
+    }
+    // snapshot before writing so the hunk stays reversible
+    let _ = crate::core::ai::fix_loop::snapshot(&proj, &rel, &src);
+    proj.write_file(&rel, &new_content)?;
+    Ok(rel)
 }
 
 /// Roll a file back to the snapshot taken before an AI fix was applied
@@ -157,11 +358,43 @@ pub async fn tb_ai_generate(
         return Err("尚未配置 AI API Key。请在“设置”中填写 provider 配置。".into());
     }
     let system = "你是 TeXButler 内置的 LaTeX 代码生成助手。只输出可直接编译的 LaTeX 代码（含 \\documentclass 的完整片段或局部片段均可，视请求而定），不要输出 Markdown 代码围栏，不要输出解释文字。中文文档默认使用 ctexart，注意中文 LaTeX 规范：百分号转义 \\%、中文字体不用斜体、表格单元格内用 {\\bfseries ...} 而非 \\textbf。";
+    // Inject the project's label/bib index so generated `\ref`/`\cite`
+    // only use keys that actually exist (no hallucinated references).
+    let mut user = request.clone();
+    if let Ok(proj) = state
+        .project
+        .read()
+        .map_err(|e| e.to_string())
+        .and_then(|g| g.as_ref().map(|p| p.clone()).ok_or_else(|| "no project".to_string()))
+    {
+        let labels: Vec<String> = proj
+            .tex_files()
+            .iter()
+            .filter_map(|f| proj.read_file(f).ok())
+            .flat_map(|src| crate::core::rules::refs::scan_labels(&src))
+            .map(|(k, _)| k)
+            .collect();
+        let bib_keys: Vec<String> = proj
+            .tex_files()
+            .iter()
+            .filter(|f| f.ends_with(".bib"))
+            .filter_map(|f| proj.read_file(f).ok())
+            .flat_map(|src| crate::core::bib::parse_bib(&src))
+            .map(|e| e.key)
+            .collect();
+        if !labels.is_empty() || !bib_keys.is_empty() {
+            user = format!(
+                "【项目现有引用索引（生成 \\ref/\\cite 时只能使用这些键，不得编造新键）】\nlabels: {}\nbib: {}\n\n【请求】\n{request}",
+                if labels.is_empty() { "（无）".to_string() } else { labels.join(", ") },
+                if bib_keys.is_empty() { "（无）".to_string() } else { bib_keys.join(", ") },
+            );
+        }
+    }
     let reply = crate::core::ai::chat(
         &settings,
         &[
             crate::core::ai::ChatMsg { role: "system".into(), content: system.into() },
-            crate::core::ai::ChatMsg { role: "user".into(), content: request },
+            crate::core::ai::ChatMsg { role: "user".into(), content: user },
         ],
     )
     .await

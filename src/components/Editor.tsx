@@ -6,6 +6,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { api } from "../api";
 import { useProjectStore } from "../store/projectStore";
 import { useCompileStore } from "../store/compileStore";
+import { useAiStore } from "../store/aiStore";
 import { useT } from "../i18n";
 import ImageInsertModal from "./ImageInsertModal";
 import FormulaModal from "./FormulaModal";
@@ -534,6 +535,21 @@ export default function EditorPane() {
             }}
           >
             {t("editor.translate")}
+          </button>
+          <button
+            className="btn-mini"
+            title={t("editor.askAiTitle")}
+            disabled={!active}
+            onClick={() => {
+              const ed = editorRef.current;
+              if (!ed || !active) return;
+              const sel = ed.getSelection();
+              const text = sel ? ed.getModel()?.getValueInRange(sel) ?? "" : "";
+              useAiStore.getState().setSelection(text.trim() ? text : null);
+              window.dispatchEvent(new CustomEvent("tb:focus-ai-panel"));
+            }}
+          >
+            {t("editor.askAi")}
           </button>
           <button className="btn-mini" title="数学符号" onClick={() => setSymbolOpen((v) => !v)} disabled={!active}>
             αβ

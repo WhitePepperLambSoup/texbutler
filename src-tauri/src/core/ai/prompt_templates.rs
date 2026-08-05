@@ -28,6 +28,16 @@ pub fn diagnose_prompt(issue: &crate::core::Issue, ctx: &crate::core::SourceCont
 /// `project_files` is a listing of files present in the project root (the AI
 /// must NOT reference files that do not exist — e.g. it once suggested
 /// switching an image to `.pdf` although no such file existed).
+/// Cap a dependency file's content so the prompt stays bounded.
+fn truncate_dep(content: &str, max: usize) -> String {
+    if content.chars().count() <= max {
+        content.to_string()
+    } else {
+        let cut: String = content.chars().take(max).collect();
+        format!("{cut}\n…（文件过长已截断）")
+    }
+}
+
 /// `full_source` (round ≥ 2, small files) gives the AI the complete current
 /// file so it stops hallucinating line numbers/context (observed with
 /// DeepSeek on multi-error documents).
@@ -38,11 +48,16 @@ pub fn fix_prompt(
     previous_attempt: Option<&str>,
     project_files: &[String],
     full_source: Option<&str>,
+    deps: &[(String, String)],
 ) -> String {
     let mut p = format!(
         "请修复下面的 LaTeX 编译错误。只输出一个统一 diff（unified diff 文本，含 `---`/`+++`/`@@` 头），\
 不要输出任何解释或 Markdown 代码围栏。diff 的文件路径必须是 `{}`。\n\
-要求：只做能消除该错误的最小改动，不要改动不相关的行，不要引入新的结构。\n\n\
+要求：只做能消除该错误的最小改动，不要改动不相关的行，不要引入新的结构。\n\
+diff 输出完后，另起一行输出逐条修改解释，格式为：\n\
+解释：\n\
+- 行<diff 中新增行起始行号>: <一句话说明这条改动的原因>\n\
+每处改动一行解释（行号必须是 diff 里 `+` 起始行的行号）。如果解释缺失不影响修复本身。\n\n\
 【错误信息（原文）】\n{}\n\n\
 【局部源码上下文】\n```\n{}\n```\n",
         ctx.file,
@@ -70,6 +85,15 @@ pub fn fix_prompt(
         ));
     } else {
         p.push_str("\n【注意】项目中没有可引用的图片/子文件。如果错误与图片有关（如 `File not found` / `Unable to load picture`），不要试图改成其他扩展名或文件名——请直接输出一个空 diff 或说明“文件缺失，无法修复”。");
+    }
+    // Dependency chain: give the AI the actual `\input`/`\include` files
+    // (their contents) so cross-file errors are understandable.
+    if !deps.is_empty() {
+        let mut dep_block = String::from("\n【主文档的依赖文件内容（`\\input`/`\\include` 链）——修复跨文件错误时参考】\n");
+        for (rel, content) in deps {
+            dep_block.push_str(&format!("\n--- 文件 `{rel}` ---\n```\n{}\n```\n", truncate_dep(content, 6000)));
+        }
+        p.push_str(&dep_block);
     }
     p.push_str("\n记住：\n1. 只输出 unified diff 文本；\n2. 保持文件其余部分不变；\n3. 修改必须能真正消除该错误（注意中文 LaTeX 的坑：`%` 要转义、中文字体无斜体、表格单元格内不要用 `\\textbf{...&...}`）。");
     p.push_str("\n针对特定错误类型的处理约定：\n- `Undefined control sequence`（未定义命令）：删除该命令所在行，或把该命令替换为已定义的等价命令；**不允许把该行原样保留（删除行与新增行内容相同等于没有修改）**。\n- 缺少宏包（如 xcolor）：在导言区添加 `\\usepackage{...}` 一行。\n- 文件缺失/图片无法读取：不要修改引用，直接输出说明。");
@@ -104,7 +128,7 @@ mod tests {
     fn fix_prompt_asks_for_diff_only() {
         let issue = Issue::new(Severity::Error, IssueKind::CompileError, "x");
         let ctx = crate::core::SourceContext::around("main.tex", Some(1), "\\foo", 2);
-        let p = fix_prompt(&issue, &ctx, 1, None, &["main.tex".to_string()], None);
+        let p = fix_prompt(&issue, &ctx, 1, None, &["main.tex".to_string()], None, &[]);
         assert!(p.contains("unified diff"));
         assert!(p.contains("---"));
         assert!(p.contains("文件清单"));
@@ -114,7 +138,7 @@ mod tests {
     fn fix_prompt_includes_full_source_on_later_rounds() {
         let issue = Issue::new(Severity::Error, IssueKind::CompileError, "x");
         let ctx = crate::core::SourceContext::around("main.tex", Some(1), "\\foo", 2);
-        let p = fix_prompt(&issue, &ctx, 2, Some("上一轮失败"), &[], Some("\\documentclass{article}\n正文\n"));
+        let p = fix_prompt(&issue, &ctx, 2, Some("上一轮失败"), &[], Some("\\documentclass{article}\n正文\n"), &[]);
         assert!(p.contains("文件当前完整内容"));
         assert!(p.contains("1 | \\documentclass{article}"));
         assert!(p.contains("2 | 正文"));
@@ -124,7 +148,7 @@ mod tests {
     fn fix_prompt_warns_when_no_files() {
         let issue = Issue::new(Severity::Error, IssueKind::CompileError, "x");
         let ctx = crate::core::SourceContext::around("main.tex", Some(1), "\\foo", 2);
-        let p = fix_prompt(&issue, &ctx, 1, None, &[], None);
+        let p = fix_prompt(&issue, &ctx, 1, None, &[], None, &[]);
         assert!(p.contains("文件缺失，无法修复"));
     }
 }

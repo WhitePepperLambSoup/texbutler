@@ -1,6 +1,7 @@
 //! AI layer: multi-provider chat client, diagnosis and fix loop.
 //! All calls are async (tokio) and cancellable.
 
+pub mod chat;
 pub mod diagnose;
 pub mod fix_loop;
 pub mod prompt_templates;

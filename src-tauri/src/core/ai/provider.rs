@@ -101,6 +101,97 @@ pub async fn chat(s: &AiSettings, messages: &[ChatMsg]) -> Result<String, AiErro
     }
 }
 
+/// Streaming variant of `chat` for OpenAI-compatible endpoints (DeepSeek,
+/// Ollama, etc.): `on_delta` is invoked with each content chunk as it
+/// arrives. Returns the full accumulated text.
+pub async fn chat_stream(
+    s: &AiSettings,
+    messages: &[ChatMsg],
+    mut on_delta: impl FnMut(&str),
+) -> Result<String, AiError> {
+    let base_url = match &s.provider {
+        ProviderKind::OpenAiCompatible { base_url } => base_url.clone(),
+        ProviderKind::Ollama { base_url } => base_url.clone(),
+        ProviderKind::Anthropic { base_url: _ } => {
+            // Anthropic has a different streaming format; fall back to the
+            // non-streaming path (still correct, just not token-by-token).
+            return chat(s, messages).await;
+        }
+    };
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let mut body = build_openai_body(s, messages, true);
+    body["stream"] = serde_json::json!(true);
+    let mut req = reqwest::Client::new()
+        .post(&url)
+        // The streaming path must not inherit reqwest's 30s default total
+        // timeout (a long answer would be cut off mid-stream). A generous
+        // 10-minute cap bounds a silent/hung endpoint; the [DONE] marker
+        // and the 8 MiB caps finish well before that in normal operation.
+        .timeout(Duration::from_secs(600))
+        .json(&body);
+    if let Some(key) = &s.api_key {
+        req = req.header("Authorization", format!("Bearer {key}"));
+    }
+    let resp = req.send().await.map_err(|e| AiError::Transport(e.to_string()))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        return Err(AiError::Api { status: status.as_u16(), body: truncate(&text, 500) });
+    }
+    let mut full = String::new();
+    let mut stream = resp.bytes_stream();
+    use futures::StreamExt;
+    let mut buffer: Vec<u8> = Vec::new();
+    let mut done = false;
+    const MAX_BUFFER: usize = 8 * 1024 * 1024; // guard against a broken endpoint
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| AiError::Transport(e.to_string()))?;
+        buffer.extend_from_slice(&chunk);
+        if buffer.len() > MAX_BUFFER {
+            return Err(AiError::Parse("流式响应过大".into()));
+        }
+        // split on `\n` keeping the remainder for the next chunk
+        let mut idx = 0;
+        while let Some(nl) = buffer[idx..].iter().position(|b| *b == b'\n') {
+            let line_end = idx + nl;
+            let line: String = String::from_utf8_lossy(&buffer[idx..line_end]).to_string();
+            idx = line_end + 1;
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            // tolerate both `data: [DONE]` and `data:[DONE]`
+            let Some(data) = line
+                .strip_prefix("data:")
+                .map(|s| s.trim_start().trim_start_matches(" "))
+            else {
+                continue;
+            };
+            if data == "[DONE]" {
+                done = true;
+                break;
+            }
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
+                if let Some(delta) = v["choices"][0]["delta"]["content"].as_str() {
+                    full.push_str(delta);
+                    if full.len() > MAX_BUFFER {
+                        return Err(AiError::Parse("流式响应过大".into()));
+                    }
+                    on_delta(delta);
+                }
+            }
+        }
+        buffer.drain(..idx);
+        if done {
+            break; // [DONE] seen: stop reading immediately
+        }
+    }
+    if full.trim().is_empty() {
+        return Err(AiError::Parse("流式响应中没有内容".into()));
+    }
+    Ok(full)
+}
+
 /// Build the OpenAI-compatible request body (unit-testable).
 fn build_openai_body(s: &AiSettings, messages: &[ChatMsg], allow_thinking_flag: bool) -> serde_json::Value {
     let mut body = serde_json::json!({

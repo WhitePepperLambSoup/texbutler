@@ -44,6 +44,26 @@ export default function App() {
   const [wordCount, setWordCount] = useState<{ chars: number; cjk: number; words: number } | null>(null);
   const t = useT();
 
+  // OTA: check GitHub for a newer release on startup (opt-out in Settings)
+  useEffect(() => {
+    const check = async () => {
+      try {
+        if (!(await api.getUpdateCheck())) return;
+        const info = await api.checkUpdates();
+        if (info) {
+          const go = window.confirm(
+            `${t("app.updateAvailable", { v: info.version })}\n\n${info.body.slice(0, 500)}\n\n${t("app.updateOpen")}`,
+          );
+          if (go) window.open(info.url, "_blank");
+        }
+      } catch {
+        /* offline / rate-limited: stay quiet */
+      }
+    };
+    const timer = window.setTimeout(() => void check(), 2500);
+    return () => window.clearTimeout(timer);
+  }, [t]);
+
   // multi-document roots: every compilable \documentclass file
   useEffect(() => {
     const load = async () => {

@@ -31,6 +31,9 @@ export default function SettingsModal({ open, onClose }: Props) {
   const [apiKey, setApiKey] = useState("");
   const [disableThinking, setDisableThinking] = useState(false);
   const [engine, setEngine] = useState("auto");
+  const [updateCheck, setUpdateCheck] = useState(true);
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; name: string; body: string; url: string } | null>(null);
+  const [updateChecking, setUpdateChecking] = useState(false);
   const [passes, setPasses] = useState(2);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
@@ -53,6 +56,7 @@ export default function SettingsModal({ open, onClose }: Props) {
       })
       .catch((e) => console.error("load settings failed", e));
     void api.getEngine().then(setEngine).catch(() => setEngine("auto"));
+  void api.getUpdateCheck().then(setUpdateCheck).catch(() => setUpdateCheck(true));
     void api.getTexlivePasses().then(setPasses).catch(() => setPasses(2));
     void api.ruleStates().then(setRuleStates).catch(() => setRuleStates([]));
     void api.cjkFonts().then(setFonts).catch(() => setFonts([]));
@@ -266,8 +270,7 @@ export default function SettingsModal({ open, onClose }: Props) {
             >
               <option value="auto">{t("settings.engineAuto")}</option>
               <option value="tectonic">{t("settings.engineTectonic")}</option>
-              <option value="system_texlive">{t("settings.engineSystem")}</option>
-            </select>
+              <option value="system_texlive">{t("settings.engineSystem")}</option>            </select>
           </label>
           <label>
             {t("settings.passes")}
@@ -283,6 +286,54 @@ export default function SettingsModal({ open, onClose }: Props) {
             </select>
           </label>
           <p className="bundle-status">{bundleStatus}</p>
+
+          <h4>{t("settings.updates")}</h4>
+          <label className="row">
+            <input
+              type="checkbox"
+              checked={updateCheck}
+              onChange={async (e) => {
+                const v = e.target.checked;
+                setUpdateCheck(v);
+                await api.setUpdateCheck(v).catch(() => undefined);
+              }}
+            />
+            {t("settings.updatesCheck")}
+          </label>
+          <div className="path-row">
+            <button
+              className="btn-mini"
+              disabled={updateChecking}
+              onClick={async () => {
+                setUpdateChecking(true);
+                try {
+                  const info = await api.checkUpdates();
+                  setUpdateInfo(info);
+                } catch {
+                  setUpdateInfo(null);
+                }
+                setUpdateChecking(false);
+              }}
+            >
+              {updateChecking ? t("settings.updatesChecking") : t("settings.updatesNow")}
+            </button>
+            {updateInfo && (
+              <a className="btn-mini btn-primary" href={updateInfo.url} target="_blank" rel="noreferrer">
+                {t("settings.updatesGo", { v: updateInfo.version })}
+              </a>
+            )}
+          </div>
+          {updateInfo && (
+            <p className="bundle-status">
+              <strong>{updateInfo.name}</strong>
+              <br />
+              {updateInfo.body.slice(0, 600)}
+            </p>
+          )}
+          {updateInfo === null && !updateChecking && (
+            <p className="bundle-status">{t("settings.updatesNone")}</p>
+          )}
+
           <div className="modal-actions">
             <button
               className="btn-mini"

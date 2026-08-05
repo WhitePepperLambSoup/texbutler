@@ -46,6 +46,14 @@ export interface CompileProgress {
   message: string;
 }
 
+export interface FixHunk {
+  file: string;
+  line: number;
+  old: string;
+  new: string;
+  why: string;
+}
+
 export interface FixReport {
   ok: boolean;
   rounds: number;
@@ -54,6 +62,8 @@ export interface FixReport {
   issues_after: Issue[];
   rolled_back: boolean;
   backup?: string | null;
+  hunks: FixHunk[];
+  suggested: boolean;
 }
 
 export interface RefLabel {
@@ -164,6 +174,14 @@ export const api = {
     invoke<string>("tb_export", { file, format }),
   aiTranslate: (text: string, target: string) =>
     invoke<string>("tb_ai_translate", { text, target }),
+  aiChat: (question: string, file?: string | null, selection?: string | null) =>
+    invoke<string>("tb_ai_chat", { question, file: file ?? null, selection: selection ?? null }),
+  aiChatStream: (question: string, file?: string | null, selection?: string | null) =>
+    invoke<string>("tb_ai_chat_stream", { question, file: file ?? null, selection: selection ?? null }),
+  aiSnapshots: () => invoke<{ path: string; ts: string; file: string }[]>("tb_ai_snapshots"),
+  checkUpdates: () => invoke<{ version: string; name: string; body: string; url: string } | null>("tb_check_updates"),
+  getUpdateCheck: () => invoke<boolean>("tb_get_update_check"),
+  setUpdateCheck: (enabled: boolean) => invoke<void>("tb_set_update_check", { enabled }),
   importDocx: (sourcePath: string) =>
     invoke<{ file: string; preview: string; chars: number }>("tb_import_docx", { sourcePath }),
 
@@ -172,8 +190,10 @@ export const api = {
 
   // ai
   aiDiagnose: (issueIndex: number) => invoke<AiDiagnosis>("tb_ai_diagnose", { issueIndex }),
-  aiFix: (issueIndex: number, maxRounds?: number) =>
-    invoke<FixReport>("tb_ai_fix", { issueIndex, maxRounds: maxRounds ?? null }),
+  aiFix: (issueIndex: number, maxRounds?: number, apply?: boolean) =>
+    invoke<FixReport>("tb_ai_fix", { issueIndex, maxRounds: maxRounds ?? null, apply: apply ?? true }),
+  aiApplyPatch: (file: string, patch: string) =>
+    invoke<string>("tb_ai_apply_patch", { file, patch }),
   aiRollback: (backup: string) => invoke<string>("tb_ai_rollback", { backup }),
   aiGetSettings: () => invoke<AiSettings>("tb_ai_get_settings"),
   aiSetSettings: (s: {

@@ -72,7 +72,7 @@ async fn e2e_diagnose_real_error() {
 async fn e2e_fix_loop_fixes_undefined_command() {
     let s = ai_settings();
     let (proj, _result, issue) = make_project("broken-undefined.tex", "fix");
-    let report: FixReport = fix_loop(&issue, &proj, &s, 3).await;
+    let report: FixReport = fix_loop(&issue, &proj, &s, 3, true).await;
     println!("fix report: ok={} rounds={} summary={}", report.ok, report.rounds, report.summary);
     assert!(report.ok, "修复应使编译通过: {}", report.summary);
     let _ = std::fs::remove_dir_all(proj.root.clone());
@@ -85,7 +85,7 @@ async fn e2e_fix_loop_fixes_undefined_command() {
 async fn e2e_fix_loop_refuses_missing_image_extension_swap() {
     let s = ai_settings();
     let (proj, _result, issue) = make_project("missing-image.tex", "img");
-    let report: FixReport = fix_loop(&issue, &proj, &s, 3).await;
+    let report: FixReport = fix_loop(&issue, &proj, &s, 3, true).await;
     println!("fix report: ok={} summary={}", report.ok, report.summary);
     // 图片不存在 → 无法通过 AI 修复编译；最终错误必须明确缺失文件
     assert!(!report.ok, "缺图场景不应被 AI 修好（文件不存在）");
@@ -125,7 +125,7 @@ async fn e2e_demo_project_fix_loop() {
     assert!(!result.ok, "演示项目应编译失败");
     let issue = result.issues.first().cloned().unwrap();
 
-    let report: FixReport = fix_loop(&issue, &proj, &s, 3).await;
+    let report: FixReport = fix_loop(&issue, &proj, &s, 3, true).await;
     println!("demo fix: ok={} rounds={} summary={}", report.ok, report.rounds, report.summary);
     assert!(report.ok, "AI 修复应让演示项目编译通过: {}", report.summary);
     let _ = std::fs::remove_dir_all(root);

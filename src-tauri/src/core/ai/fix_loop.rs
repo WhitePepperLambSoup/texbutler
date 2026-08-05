@@ -22,6 +22,14 @@ pub fn apply_unified_diff(original: &str, diff: &str) -> Result<String, String> 
     let mut current: Vec<&str> = Vec::new();
 
     for line in lines {
+        // The AI appends per-hunk explanations after the diff
+        // (`解释：` / `Explanation:`). They must not be parsed as diff
+        // lines — a `- 8: ...` explanation starts with `-` and would be
+        // treated as a removal line.
+        let trimmed = line.trim();
+        if trimmed == "解释：" || trimmed == "解释:" || trimmed == "Explanation:" {
+            break;
+        }
         if line.starts_with("@@") {
             if !current.is_empty() {
                 hunks.push(std::mem::take(&mut current));
@@ -529,12 +537,24 @@ fn chrono_like_timestamp() -> String {
     format!("{:010}", now.as_secs())
 }
 
+/// Redact the API key from an error string before it reaches the UI.
+fn redact_key_in(s: &AiSettings, err: &super::provider::AiError) -> String {
+    let msg = err.to_string();
+    match &s.api_key {
+        Some(k) if !k.is_empty() && msg.contains(k.as_str()) => msg.replace(k, "***"),
+        _ => msg,
+    }
+}
+
 /// The full fix loop. `compile` is injected so tests can stub it.
+/// `apply: true` (default) writes the diff and recompiles; `apply: false`
+/// is suggest mode — the AI diff is returned without touching the disk.
 pub async fn fix_loop(
     issue: &Issue,
     project: &Project,
     s: &AiSettings,
     max_rounds: u32,
+    apply: bool,
 ) -> FixReport {
     let max_rounds = max_rounds.clamp(1, 5);
     let file = issue
@@ -551,6 +571,8 @@ pub async fn fix_loop(
             issues_after: vec![],
             rolled_back: false,
             backup: None,
+            hunks: vec![],
+            suggested: !apply,
         };
     };
 
@@ -569,6 +591,15 @@ pub async fn fix_loop(
     // do not exist (e.g. suggesting `image.pdf` when only `image.png` is
     // missing entirely — see the q1_zh user report).
     let project_files = project_file_listing(project);
+    // Dependency chain of the target file: `\input`/`\include` reachable
+    // files with contents, so the AI can fix cross-file errors.
+    let deps: Vec<(String, String)> = if apply {
+        let mut chain = project.dependency_chain(&file);
+        chain.retain(|(rel, _)| rel != &file);
+        chain
+    } else {
+        Vec::new()
+    };
 
     for round in 1..=max_rounds {
         // Fail fast on missing-file errors (e.g. `Unable to load picture`):
@@ -585,14 +616,19 @@ pub async fn fix_loop(
                 issues_after: issues_after.clone(),
                 rolled_back: false,
                 backup: None,
+                hunks: vec![],
+                suggested: !apply,
             };
         }
         // Deterministic fixes first: unambiguous errors (missing xcolor,
         // standalone undefined commands, missing \end{document}) are fixed
         // without the AI — it repeatedly failed to add `\usepackage{xcolor}`
         // or delete `\undefinedcommand` (rewrote them instead).
-        if let Some(det_content) = deterministic_fix(&current_content, &current_issue) {
-            if det_content != current_content {
+        // Suggest mode skips deterministic fixes: they have no diff to
+        // preview, so the AI proposal is the only thing the user can review.
+        if apply {
+            if let Some(det_content) = deterministic_fix(&current_content, &current_issue) {
+                if det_content != current_content {
                 // keep a backup snapshot before the deterministic write so a
                 // crash mid-loop cannot leave an unrecoverable file
                 let snap_det = snapshot(project, &file, &current_content)
@@ -622,6 +658,8 @@ pub async fn fix_loop(
                             issues_after: det_result.issues,
                             rolled_back: false,
                             backup: snap_det,
+                            hunks: vec![],
+                            suggested: false,
                         };
                     }
                     issues_after = det_result.issues.clone();
@@ -637,6 +675,8 @@ pub async fn fix_loop(
                             issues_after,
                             rolled_back: false,
                             backup: None,
+                            hunks: vec![],
+                            suggested: !apply,
                         };
                     }
                     last_error = issues_after
@@ -659,6 +699,7 @@ pub async fn fix_loop(
                 }
             }
         }
+        }
         // Round ≥ 2 with a small file: hand the AI the complete numbered
         // source so diff line numbers/context stop hallucinating.
         let full_source = if round > 1 && original.lines().count() < 300 {
@@ -673,6 +714,7 @@ pub async fn fix_loop(
             if round > 1 { Some(&last_error) } else { None },
             &project_files,
             full_source,
+            &deps,
         );
         let messages = vec![
             ChatMsg { role: "system".into(), content: prompt_templates::SYSTEM_PROMPT.to_string() },
@@ -690,10 +732,12 @@ pub async fn fix_loop(
                     ok: false,
                     rounds: round - 1,
                     diff: None,
-                    summary: format!("AI 调用失败: {e}"),
+                    summary: format!("AI 调用失败: {}", redact_key_in(s, &e)),
                     issues_after: vec![],
                     rolled_back: false,
                     backup: None,
+                    hunks: vec![],
+                    suggested: !apply,
                 };
             }
         };
@@ -713,6 +757,8 @@ pub async fn fix_loop(
                 issues_after: vec![],
                 rolled_back: false,
                 backup: None,
+                hunks: vec![],
+                suggested: !apply,
             };
         }
         let diff_text = strip_code_fences(trimmed_reply);
@@ -730,6 +776,8 @@ pub async fn fix_loop(
                 issues_after: vec![],
                 rolled_back: false,
                 backup: None,
+                hunks: vec![],
+                suggested: !apply,
             };
         }
 
@@ -752,6 +800,25 @@ pub async fn fix_loop(
             last_error = audit_err;
             // give the AI one more round with the audit feedback
             continue;
+        }
+
+        // ---- suggest mode: return the proposal without touching the disk ----
+        if !apply {
+            let mut hunks = build_hunks(&diff_text, &file);
+            attach_explanations(&mut hunks, &trimmed_reply);
+            return FixReport {
+                ok: true,
+                rounds: round,
+                diff: Some(diff_text.clone()),
+                summary: format!(
+                    "已生成修复建议（第 {round} 轮，未应用）。你可以逐块审阅后手动应用，或切换回自动模式重试。"
+                ),
+                issues_after: vec![],
+                rolled_back: false,
+                backup: None,
+                hunks,
+                suggested: true,
+            };
         }
 
         // apply with rollback snapshot
@@ -787,9 +854,13 @@ pub async fn fix_loop(
                 issues_after,
                 rolled_back: false,
                 backup: None,
+                hunks: vec![],
+                suggested: !apply,
             };
         }
         if result.ok {
+            let mut hunks = build_hunks(&diff_text, &file);
+            attach_explanations(&mut hunks, &trimmed_reply);
             return FixReport {
                 ok: true,
                 rounds: round,
@@ -798,6 +869,8 @@ pub async fn fix_loop(
                 issues_after,
                 rolled_back: false,
                 backup: snap,
+                hunks,
+                suggested: false,
             };
         }
         // failed: revert this round's edit (back to current_content, which
@@ -847,7 +920,173 @@ pub async fn fix_loop(
         issues_after,
         rolled_back: true,
         backup: None,
+        hunks: vec![],
+        suggested: !apply,
     }
+}
+
+/// Split a unified diff into per-hunk (line, old, new) summaries for the
+/// frontend's per-hunk review UI (suggest mode / diff details).
+pub fn build_hunks(diff: &str, file: &str) -> Vec<crate::core::FixHunk> {
+    let mut out = Vec::new();
+    let mut current: Vec<&str> = Vec::new();
+    let mut start_line: Option<u32> = None;
+    let flush = |hunk: &mut Vec<&str>, line: Option<u32>, out: &mut Vec<crate::core::FixHunk>| {
+        if hunk.is_empty() {
+            return;
+        }
+        let mut old = String::new();
+        let mut new = String::new();
+        for l in hunk.iter().skip(1) {
+            if let Some(rest) = l.strip_prefix('-') {
+                if !rest.starts_with('-') {
+                    old.push_str(rest);
+                    old.push('\n');
+                }
+            } else if let Some(rest) = l.strip_prefix('+') {
+                if !rest.starts_with('+') {
+                    new.push_str(rest);
+                    new.push('\n');
+                }
+            } else if let Some(rest) = l.strip_prefix(' ') {
+                // context line: keep it on BOTH sides so the rebuilt
+                // per-hunk patch keeps its anchor and can be applied
+                // even when the hunk text appears multiple times
+                old.push_str(rest);
+                old.push('\n');
+                new.push_str(rest);
+                new.push('\n');
+            }
+        }
+        out.push(crate::core::FixHunk {
+            file: file.to_string(),
+            line: line.unwrap_or(0),
+            old: old.trim_end().to_string(),
+            new: new.trim_end().to_string(),
+            why: String::new(),
+        });
+    };
+    for line in diff.lines() {
+        let trimmed = line.trim();
+        if trimmed == "解释：" || trimmed == "解释:" || trimmed == "Explanation:" {
+            break;
+        }
+        if line.starts_with("@@") {
+            if !current.is_empty() {
+                flush(&mut current, start_line, &mut out);
+            }
+            start_line = parse_hunk_line_no(line);
+            current.clear();
+            current.push(line);
+        } else if line.starts_with("+++ ") || line.starts_with("--- ") {
+            continue;
+        } else if !current.is_empty() {
+            if is_valid_diff_line(line) {
+                current.push(line);
+            } else {
+                flush(&mut current, start_line, &mut out);
+                current.clear();
+            }
+        }
+    }
+    if !current.is_empty() {
+        flush(&mut current, start_line, &mut out);
+    }
+    out
+}
+
+/// Parse `@@ -old,n +new,n @@` and return the new-file start line.
+fn parse_hunk_line_no(line: &str) -> Option<u32> {
+    let rest = line.strip_prefix("@@")?;
+    let plus = rest.find('+')?;
+    let after_plus = &rest[plus + 1..];
+    let start: String = after_plus
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    start.parse().ok()
+}
+
+/// Parse AI-provided per-hunk explanations appended after the diff:
+///
+/// ```text
+/// 解释：
+/// - 行12: 缺少宏包 xcolor，补上后颜色命令可用
+/// - 行45: 未定义命令 \foo 被删除
+/// ```
+///
+/// Lines are matched to hunks by their start line. Explanations are
+/// best-effort: missing or malformed ones leave `why` empty.
+pub fn attach_explanations(hunks: &mut [crate::core::FixHunk], reply: &str) {
+    let mut want_explain = false;
+    for line in reply.lines() {
+        let l = line.trim();
+        if l == "解释：" || l == "Explanation:" || l == "解释:" {
+            want_explain = true;
+            continue;
+        }
+        if !want_explain {
+            continue;
+        }
+        if l.is_empty() {
+            continue;
+        }
+        let Some(rest) = l.strip_prefix("- 行") else {
+            // a non-explanation line ends the section
+            want_explain = false;
+            continue;
+        };
+        let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+        let Ok(num) = digits.parse::<u32>() else { continue };
+        let why = rest[digits.len()..]
+            .trim_start_matches(':')
+            .trim_start_matches('：')
+            .trim()
+            .to_string();
+        if why.is_empty() {
+            continue;
+        }
+        for h in hunks.iter_mut() {
+            if h.line == num && h.why.is_empty() {
+                h.why = why.clone();
+                break;
+            }
+        }
+    }
+}
+
+/// A snapshot entry in the project's backup timeline.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SnapshotInfo {
+    /// Full path to the snapshot file (pass to `tb_ai_rollback`).
+    pub path: String,
+    /// Unix timestamp (seconds) of the snapshot.
+    pub ts: String,
+    /// The project-relative file it backs up.
+    pub file: String,
+}
+
+/// List every snapshot in `<root>/.texbutler/backup/` newest first.
+pub fn list_snapshots(project: &Project) -> Result<Vec<SnapshotInfo>, String> {
+    let dir = project.backup_dir();
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Ok(Vec::new());
+    };
+    let mut out: Vec<SnapshotInfo> = Vec::new();
+    for e in entries.flatten() {
+        let ts = e.file_name().to_string_lossy().to_string();
+        let Ok(files) = std::fs::read_dir(e.path()) else { continue };
+        for f in files.flatten() {
+            let file = f.file_name().to_string_lossy().to_string();
+            out.push(SnapshotInfo {
+                path: f.path().to_string_lossy().to_string(),
+                ts: ts.clone(),
+                file,
+            });
+        }
+    }
+    out.sort_by(|a, b| b.ts.cmp(&a.ts));
+    Ok(out)
 }
 
 /// Restore a file from a snapshot created by `snapshot()` (reject flow).
@@ -922,6 +1161,60 @@ fn truncate(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn build_hunks_keeps_context_lines() {
+        // context lines (` ` prefix) must survive into old AND new so the
+        // rebuilt per-hunk patch keeps its anchor
+        let diff = "@@ -1,3 +1,3 @@\n context-a\n-old line\n+new line\n context-b\n";
+        let hunks = build_hunks(diff, "main.tex");
+        assert_eq!(hunks.len(), 1);
+        assert!(hunks[0].old.contains("context-a"), "old keeps context: {:?}", hunks[0].old);
+        assert!(hunks[0].new.contains("context-a"), "new keeps context: {:?}", hunks[0].new);
+        assert!(hunks[0].old.contains("old line"));
+        assert!(hunks[0].new.contains("new line"));
+    }
+
+    #[test]
+    fn explanations_after_diff_are_not_parsed_as_lines() {
+        // The AI appends `解释：` after the diff; the explanation lines
+        // start with `- 行N:` and must not be treated as diff removals.
+        let src = "\\documentclass{article}\n\\begin{document}\n\\undefinedcmd\n\\end{document}\n";
+        let diff = "--- a/main.tex\n+++ b/main.tex\n@@ -3,1 +3,1 @@\n-\\undefinedcmd\n+\n解释：\n- 行3: 删除未定义的命令\n";
+        let out = apply_unified_diff(src, diff).expect("explanation lines must be ignored");
+        assert!(!out.contains("undefinedcmd"));
+        assert!(!out.contains("行3"));
+    }
+
+    #[test]
+    fn build_hunks_splits_multiple_hunks() {
+        let diff = "--- a/main.tex\n+++ b/main.tex\n@@ -1,2 +1,3 @@\n-old line\n+new line\n+extra\n@@ -10,1 +10,1 @@\n-second change\n+first change\n";
+        let hunks = build_hunks(diff, "main.tex");
+        assert_eq!(hunks.len(), 2);
+        assert_eq!(hunks[0].line, 1);
+        assert!(hunks[0].old.contains("old line"));
+        assert!(hunks[0].new.contains("new line"));
+        assert!(hunks[0].new.contains("extra"));
+        assert_eq!(hunks[1].line, 10);
+        assert_eq!(hunks[0].file, "main.tex");
+    }
+
+    #[test]
+    fn attach_explanations_matches_by_line() {
+        let diff = "@@ -1,2 +1,3 @@\n-old\n+new\n";
+        let reply = format!("{diff}\n解释：\n- 行1: 修复了格式问题\n- 行10: 未匹配的解释\n");
+        let mut hunks = build_hunks(&diff, "main.tex");
+        attach_explanations(&mut hunks, &reply);
+        assert_eq!(hunks[0].why, "修复了格式问题");
+    }
+
+    #[test]
+    fn attach_explanations_ignores_garbage() {
+        let diff = "@@ -1,1 +1,1 @@\n-a\n+b\n";
+        let mut hunks = build_hunks(&diff, "main.tex");
+        attach_explanations(&mut hunks, "无解释段的回复");
+        assert!(hunks[0].why.is_empty());
+    }
 
     #[test]
     fn deterministic_fix_adds_missing_xcolor() {

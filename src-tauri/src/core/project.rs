@@ -262,11 +262,96 @@ impl Project {
         String::from_utf8(bytes.to_vec()).map_err(|_| "文件不是 UTF-8 编码（中文 LaTeX 请保存为 UTF-8）".to_string())
     }
 
-    /// Write a file (creating parent dirs as needed).
+    /// BFS over the `\input`/`\include` dependency graph starting at
+    /// `start` (relative path). Returns the reachable files (start first,
+    /// then its transitive dependencies) with their contents. Used to give
+    /// the AI the real dependency chain instead of a flat file listing.
+    /// Depth and total size are capped so a huge project cannot blow up
+    /// the prompt.
+    pub fn dependency_chain(&self, start: &str) -> Vec<(String, String)> {
+        const MAX_DEPTH: usize = 4;
+        const MAX_TOTAL_CHARS: usize = 200_000;
+        let mut out: Vec<(String, String)> = Vec::new();
+        let mut visited: Vec<String> = Vec::new();
+        let mut queue: Vec<(String, usize)> = vec![(start.to_string(), 0)];
+        let mut total = 0usize;
+        while let Some((rel, depth)) = queue.pop() {
+            if visited.contains(&rel) || depth > MAX_DEPTH {
+                continue;
+            }
+            let Ok(content) = self.read_file(&rel) else { continue };
+            visited.push(rel.clone());
+            total += content.len();
+            out.push((rel.clone(), content.clone()));
+            if total > MAX_TOTAL_CHARS {
+                break;
+            }
+            // discover dependencies of this file
+            for line in content.lines() {
+                for cmd in ["\\input", "\\include", "\\subfile"] {
+                    let mut idx = 0;
+                    while let Some(pos) = line[idx..].find(cmd) {
+                        let after = &line[idx + pos + cmd.len()..];
+                        let after = after.trim_start();
+                        if let Some(open) = after.find('{') {
+                            if let Some(close) = after[open + 1..].find('}') {
+                                let name = after[open + 1..open + 1 + close].trim();
+                                let dep = if name.ends_with(".tex") {
+                                    name.to_string()
+                                } else {
+                                    format!("{name}.tex")
+                                };
+                                // `\input` is relative to the including
+                                // file's directory, not the project root
+                                let dep_rel = match rel.rfind('/') {
+                                    Some(i) => format!("{}/{dep}", &rel[..i]),
+                                    None => dep,
+                                };
+                                if !visited.contains(&dep_rel) {
+                                    queue.push((dep_rel, depth + 1));
+                                }
+                            }
+                        }
+                        idx += pos + cmd.len() + 1;
+                        if idx >= line.len() {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Write a file (creating parent dirs as needed). The resolved parent
+    /// directory is canonicalized and verified to stay inside the project
+    /// root, so a symlinked directory inside the project cannot redirect
+    /// the write outside the project (defense in depth, mirrors the read
+    /// side of `read_file`).
     pub fn write_file(&self, rel: &str, content: &str) -> Result<(), String> {
         let p = self.resolve(rel).ok_or_else(|| "路径越界".to_string())?;
         if let Some(parent) = p.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            if !parent.exists() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            let canon_parent = std::fs::canonicalize(parent).map_err(|e| e.to_string())?;
+            let root_canon = std::fs::canonicalize(&self.root).unwrap_or_else(|_| self.root.clone());
+            if !canon_parent.starts_with(&root_canon) {
+                return Err("路径越界（符号链接指向项目外）".to_string());
+            }
+        }
+        // a file-level symlink pointing outside the project must not be
+        // followed either (mirrors the read side in lib.rs). A dangling
+        // symlink is rejected too: `fs::write` would otherwise CREATE the
+        // target file outside the project.
+        if p.exists() {
+            let canon_file = std::fs::canonicalize(&p).map_err(|e| e.to_string())?;
+            let root_canon = std::fs::canonicalize(&self.root).unwrap_or_else(|_| self.root.clone());
+            if !canon_file.starts_with(&root_canon) {
+                return Err("路径越界（文件符号链接指向项目外）".to_string());
+            }
+        } else if std::fs::symlink_metadata(&p).map(|m| m.file_type().is_symlink()).unwrap_or(false) {
+            return Err("路径越界（悬空符号链接）".to_string());
         }
         std::fs::write(&p, content).map_err(|e| e.to_string())
     }
@@ -359,6 +444,7 @@ pub fn templates() -> Vec<(&'static str, &'static str, &'static str)> {
         ("report", "中文报告（ctexrep，含目录）", TEMPLATE_REPORT),
         ("beamer", "中文幻灯片（ctexbeamer）", TEMPLATE_BEAMER),
         ("blank", "空白（article）", TEMPLATE_BLANK),
+        ("article-en", "English article", TEMPLATE_ARTICLE_EN),
     ]
 }
 
@@ -372,6 +458,67 @@ fn template_body(id: &str) -> &'static str {
 
 /// Default starter main.tex for new projects (Chinese ctex template).
 pub const DEFAULT_MAIN_TEX: &str = TEMPLATE_ARTICLE;
+
+/// English starter template — for users who write LaTeX in English.
+pub const TEMPLATE_ARTICLE_EN: &str = r#"\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{amsmath, amssymb}
+\usepackage{hyperref}
+
+\title{A New TeXButler Project}
+\author{Author Name}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+
+Write your introduction here. A common structure is: state the problem,
+summarize related work, then present your contribution.
+
+\section{Methods}
+
+\subsection{Setup}
+
+Describe the experimental setup. Use equations when needed:
+
+\begin{equation}
+E = mc^2
+\label{eq:energy}
+\end{equation}
+
+\subsection{Results}
+
+Tables are easy with \texttt{booktabs}:
+
+\begin{table}[H]
+\centering
+\caption{Results overview}
+\label{tab:results}
+\begin{tabular}{lcc}
+\toprule
+Metric & Value A & Value B \\
+\midrule
+Accuracy & 0.94 & 0.91 \\
+F1-score & 0.92 & 0.89 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Conclusion}
+
+Summarize the findings and outline future work.
+
+\begin{thebibliography}{9}
+\bibitem{example} Author, A. \emph{An Example Reference}. Journal, 2026.
+\end{thebibliography}
+
+\end{document}
+"#;
 
 pub const TEMPLATE_ARTICLE: &str = r#"\documentclass[UTF8]{ctexart}
 \usepackage{graphicx}
@@ -602,6 +749,82 @@ mod tests {
         // normal name works
         assert!(Project::create_with_template(&dir, "ok-name", "article").is_ok());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dependency_chain_follows_inputs() {
+        let dir = std::env::temp_dir().join(format!("tb-depchain-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let proj = Project::open(std::path::Path::new(&dir)).expect("open project");
+        proj.write_file("main.tex", "\\input{chapters/intro}\n\\include{chapters/methods}\n正文").unwrap();
+        proj.write_file("chapters/intro.tex", "引言内容\n\\input{sub.tex}\n").unwrap();
+        proj.write_file("chapters/methods.tex", "方法内容").unwrap();
+        proj.write_file("chapters/sub.tex", "子文件").unwrap();
+        let chain = proj.dependency_chain("main.tex");
+        let rels: Vec<&str> = chain.iter().map(|(r, _)| r.as_str()).collect();
+        assert!(rels.contains(&"main.tex"));
+        assert!(rels.contains(&"chapters/intro.tex"));
+        assert!(rels.contains(&"chapters/methods.tex"));
+        assert!(rels.contains(&"chapters/sub.tex"), "transitive dep must be found: {rels:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dependency_chain_missing_file_skipped() {
+        let dir = std::env::temp_dir().join(format!("tb-depchain2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let proj = Project::open(std::path::Path::new(&dir)).expect("open project");
+        proj.write_file("main.tex", "\\input{missing.tex}\n正文").unwrap();
+        let chain = proj.dependency_chain("main.tex");
+        assert_eq!(chain.len(), 1, "only main survives: {chain:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_file_rejects_symlink_parent_outside_project() {
+        let dir = std::env::temp_dir().join(format!("tb-symwrite-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let proj = Project::open(std::path::Path::new(&dir)).expect("open project");
+        proj.write_file("main.tex", "正文").unwrap();
+        // create a symlink inside the project pointing outside
+        let outside = std::env::temp_dir().join(format!("tb-symwrite-out-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&outside);
+        std::fs::create_dir_all(&outside).unwrap();
+        #[cfg(windows)]
+        let link_ok = std::os::windows::fs::symlink_dir(&outside, dir.join("evil"));
+        #[cfg(not(windows))]
+        let link_ok = std::os::unix::fs::symlink(&outside, dir.join("evil"));
+        if link_ok.is_ok() {
+            let r = proj.write_file("evil/escape.tex", "越界内容");
+            assert!(r.is_err(), "symlinked parent must be rejected: {:?}", r);
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    #[test]
+    fn write_file_rejects_dangling_symlink() {
+        let dir = std::env::temp_dir().join(format!("tb-symdangling-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let proj = Project::open(std::path::Path::new(&dir)).expect("open project");
+        proj.write_file("main.tex", "正文").unwrap();
+        let target = std::env::temp_dir().join(format!("tb-symdangling-out-{}", std::process::id()));
+        let _ = std::fs::remove_file(&target);
+        #[cfg(windows)]
+        let link_ok = std::os::windows::fs::symlink_file(&target, dir.join("evil.tex"));
+        #[cfg(not(windows))]
+        let link_ok = std::os::unix::fs::symlink(&target, dir.join("evil.tex"));
+        if link_ok.is_ok() {
+            let r = proj.write_file("evil.tex", "越界内容");
+            assert!(r.is_err(), "dangling symlink must be rejected: {:?}", r);
+            assert!(!target.exists(), "target must not be created outside the project");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_file(&target);
     }
 
     #[test]
