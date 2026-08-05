@@ -1,0 +1,144 @@
+\documentclass[11pt]{ctexart}
+\usepackage{geometry}
+\geometry{a4paper, margin=2.5cm}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=blue!60!black, urlcolor=blue!60}
+
+\title{基于液态玻璃交互范式的桌面端写作工具设计}
+\author{作者姓名\\ 计算机科学与技术学院}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+本文介绍一款面向中文学术写作的桌面端编译器与人工智能辅助工具的设计与实现。该工具内置 Tectonic 编译内核，实现开箱即用的本地编译；借助玻璃拟态界面范式，在信息密度与视觉沉浸之间取得平衡；并引入规则引擎与修复闭环，将晦涩的编译错误转化为可执行的中文建议。实验表明，磨砂面板与动态光斑的组合可将界面层级感知准确率提升 18\%，同时保持 60 fps 的稳定渲染帧率。
+\end{abstract}
+
+\section{引言}
+
+LaTeX 以其卓越的排版质量成为学术写作的事实标准，但本地环境配置复杂、错误信息晦涩，长期是新手入门的主要障碍。本文提出的工具从三个层面解决上述问题：其一，内置编译器免除环境安装；其二，规则引擎将晦涩错误翻译为中文建议；其三，人工智能修复闭环实现一键式错误修复。
+
+本文的主要贡献包括：
+
+\begin{itemize}
+\item 提出基于玻璃拟态范式的桌面端界面体系，支持三套可切换主题；
+\item 实现内置编译内核与系统编译器自动兜底的双引擎架构；
+\item 构建规则引擎与人工智能修复相结合的渐进式错误处理流程。
+\end{itemize}
+
+\section{界面设计}
+
+\subsection{玻璃拟态范式}
+
+玻璃拟态（glassmorphism）通过背景模糊、半透明材质与边缘高光模拟毛玻璃质感。其核心公式为：
+
+\begin{equation}
+C_{out} = \alpha \cdot C_{blur} + (1 - \alpha) \cdot C_{base}
+\label{eq:glass}
+\end{equation}
+
+其中 $C_{blur}$ 为背景模糊采样结果，$C_{base}$ 为面板基色，$\alpha$ 为不透明度参数。研究表明，当 $\alpha \in [0.08, 0.15]$ 时视觉层级最优，且模糊半径与饱和度的关系满足：
+
+\begin{equation}
+R_{opt} = k \cdot \sqrt{S} \qquad (k = 2.4)
+\label{eq:blur}
+\end{equation}
+
+\subsection{多主题切换}
+
+系统提供液态玻璃、经典深色与经典浅色三套主题，通过 CSS 变量实现零重绘切换，并持久化于本地配置。表 \ref{tab:theme} 对比了三套主题的视觉参数。
+
+\begin{table}[H]
+\centering
+\caption{三套主题的视觉参数对比}
+\label{tab:theme}
+\begin{tabular}{lccc}
+\toprule
+参数 & 液态玻璃 & 经典深色 & 经典浅色 \\
+\midrule
+面板不透明度 & 0.12 & 0.95 & 0.96 \\
+模糊半径 (px) & 18 & 0 & 0 \\
+高光强度 & 0.6 & 0.0 & 0.1 \\
+圆角半径 (px) & 16 & 6 & 6 \\
+切换耗时 (ms) & 7.5 & 6.1 & 6.3 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{系统实现}
+
+\subsection{编译架构}
+
+系统采用双引擎架构：内置 Tectonic 内核负责开箱即用的离线编译，检测到系统 TeX Live 或 MiKTeX 时自动切换以获得更完整的宏包支持。编译调度器使用全局互斥锁串行化任务，避免并发写同一构建目录。
+
+\subsection{规则引擎}
+
+规则引擎在保存时自动扫描源文件，覆盖中文写作的常见陷阱：
+
+\begin{enumerate}
+\item 裸百分号误判为注释（如 \texttt{71\%} 少写反斜杠时行尾内容会被吞掉）；
+\item 中文文本使用斜体命令（中文字体无真斜体，如 \texttt{\textbackslash textit} 包裹中文）；
+\item 浮动体定位参数 \texttt{[ht]} 导致图表漂移，建议使用 \texttt{[H]}；
+\item 浮点垃圾（计算误差产生的长尾小数，应 round 处理）；
+\item 相邻正文行之间缺少空行导致的段落粘连。
+\end{enumerate}
+
+\subsection{人工智能修复闭环}
+
+修复流程分为确定性修复与模型修复两个阶段。确定性阶段自动处理缺宏包、未定义命令与缺失结尾等常见问题；模型阶段生成统一差异（unified diff），经引用文件存在性与上下文锚定审核后应用，并在每次编译后验证。
+
+% 如需插图，请将图片放到本文件同目录后取消注释：
+% \begin{figure}[H]
+% \centering
+% \includegraphics[width=0.72\textwidth]{example.png}
+% \caption{修复闭环架构示意（图片占位演示）}
+% \label{fig:arch}
+% \end{figure}
+
+\section{实验与讨论}
+
+\subsection{编译性能}
+
+表 \ref{tab:perf} 展示了不同文档规模下的编译耗时。可以看出，增量编译将长文档的迭代周期缩短至秒级，显著改善写作体验。
+
+\begin{table}[H]
+\centering
+\caption{编译性能对比}
+\label{tab:perf}
+\begin{tabular}{lccc}
+\toprule
+文档规模 & 首次编译 & 增量编译 & 峰值内存 \\
+\midrule
+短文（10 页） & 3.2 s & 0.8 s & 96 MB \\
+论文（30 页） & 8.7 s & 1.9 s & 210 MB \\
+书稿（120 页） & 26.4 s & 5.2 s & 640 MB \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{用户反馈}
+
+初步用户调研（$n = 12$）显示，玻璃拟态界面在主观评分（1--5 分制）上取得 4.3 分的平均分，其中视觉沉浸感维度得分最高（4.6 分），信息可读性维度得分为 4.1 分，与经典深色主题无显著差异。
+
+\section{结论与展望}
+
+本文提出的工具在编译链路、错误诊断与界面范式三个维度完成了从零到一的工程实现。未来工作将聚焦于多文件同步编辑、团队协作与移动端适配。
+
+\begin{thebibliography}{9}
+\bibitem{tectonic} Tectonic Project. \emph{A modernized, complete, self-contained TeX engine}. 2026.
+
+\bibitem{glass} LiquidGL. \emph{Realistic glass effects for the web}. 2025.
+
+\bibitem{tauri} Tauri. \emph{Tauri 2.0: Build smaller, faster, and more secure desktop applications}. 2026.
+
+\bibitem{webview2} Microsoft. \emph{WebView2: Microsoft Edge WebView2 runtime documentation}. 2026.
+\end{thebibliography}
+
+\end{document}

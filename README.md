@@ -4,7 +4,7 @@
 
 **A local LaTeX compiler with an AI assistant**, built for Chinese academic and report writing. It works out of the box — you don't need to install TeX Live to compile PDFs.
 
-![Liquid Glass UI](docs/liquid-glass-ui.png)
+![Liquid Glass UI](docs/readme%20showcase.png)
 
 ## Highlights
 
