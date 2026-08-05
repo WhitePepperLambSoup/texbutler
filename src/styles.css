@@ -131,6 +131,14 @@ html[data-theme="liquid"] .glass-blobs .blob-3 {
   }
 }
 
+/* Once a PDF is open, fade the whole blob layer out: the blobs visibly
+   leaked through the glassy toolbar/margins around the (opaque) PDF pane
+   and drew the eye away from the document. Reading mode = quiet. */
+html[data-theme="liquid"] .glass-blobs.has-pdf .blob {
+  opacity: 0;
+  animation: none;
+}
+
 /* app content sits above the blobs */
 html[data-theme="liquid"] .app {
   position: relative;
