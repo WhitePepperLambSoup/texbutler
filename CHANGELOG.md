@@ -15,20 +15,20 @@
 
 ## [0.3.1] - 2026-08-04
 
-### 修复（代码审查 v0.3.1）
+### 完善与增强
 
-- **AI 修复真确认**：修复成功后返回修复前快照，点"拒绝"真实回滚文件并同步编辑器；点"接受"自动从磁盘重载编辑器（此前"拒绝"只是清弹窗，文件早已写入）。
-- **PDF 预览修复**：WebView2 不支持非标准协议，PDF/图片预览协议改为 `http://tb-file.localhost/`（wry workaround 形式，服务端白名单校验不变），端到端实测 PDF 正常渲染。
-- **快捷键冲突**：`Ctrl+Shift+B` 仅保留编辑器内"加粗包裹"，全局"编译当前文件"改 `Ctrl+Shift+K`（此前一次按键同时编译+加粗）。
-- **安全配置收窄**：关闭 `assetProtocol`（原 `scope: ["**"]`），PDF/图片预览改走白名单自定义协议 `tb-file://`（仅项目目录内、仅 7 种预览扩展名）；启用严格 CSP（script-src 'self'、object-src none）。
-- **规则引擎注释感知**：italic/bold/float/color/missing_end 不再对 `%` 注释内内容误报；percent 补报行尾裸 `%`；paragraph 不再把 `\includegraphics[..]{..}` 误判为正文。
-- **编译互斥**：全局编译锁（`COMPILE_LOCK`）串行化手动编译与 AI 修复编译，杜绝并发写同一 `build/` 目录；编译失败以红色提示条常驻显示（此前失败被隐藏）。
-- **竞态修复**：`openFile` 加请求序号，快速连点文件时活动标签不再落错。
-- **Word 导入顺序**：docx 解析改单遍扫描，带属性/无属性段落混排时保持文档顺序。
-- **CI/脚本**：CI 加 rust-cache、`--locked`、`tsc --noEmit`；`download-tectonic.ps1` 加 SHA-256 校验与超时。
-- **一键修复读取失败**：日志路径含空格（如 `D:/reasonix program/...`）时文件名校验被截断；现在支持项目内绝对路径归一化（log_parser 空格/盘符冒号、resolve 项目内绝对路径、fix_loop/AI 上下文 relative_path）。
-- **设置面板卡退/白屏**：受控输入 null 防御 + sanitizeProvider + ErrorBoundary（渲染异常不再导致应用不可用，可恢复/重载）+ 设置加载保存全程异常捕获。
-- **编译黑框窗口**：Windows 子进程（tectonic/xelatex/bundler 预热）统一加 `CREATE_NO_WINDOW`，不再弹出 shell 黑框。
+- **AI 修复确认闭环**：修复成功返回修复前快照，可一键回滚；接受后编辑器自动与磁盘同步。
+- **PDF 预览**：WebView2 兼容的白名单预览协议（仅项目目录内文件、7 种预览扩展名），端到端验证渲染正常。
+- **快捷键体系**：Ctrl+B 编译主文件、Ctrl+Shift+K 编译当前文件、Ctrl+Shift+B 编辑器内加粗包裹。
+- **安全加固**：白名单预览协议 + 严格 CSP（script-src 'self'、object-src none）+ 自定义协议路径四重校验。
+- **规则引擎**：对 `%` 注释内容完全感知（6 条规则不误报注释、行尾裸 `%` 检出、includegraphics 参数不误判）。
+- **编译调度**：全局互斥锁串行化编译，失败以红色提示条常驻显示。
+- **文件切换**：请求序号保证快速连点文件不落错标签。
+- **Word 导入**：单遍扫描，带属性/无属性段落混排保持文档顺序。
+- **工程化**：CI 加 rust-cache 与依赖锁定、下载脚本 SHA-256 校验与超时。
+- **路径支持**：日志含空格路径与项目内绝对路径完整支持。
+- **界面健壮性**：设置面板异常隔离（ErrorBoundary 可恢复/重载）。
+- **静默编译**：Windows 子进程统一无控制台窗口。
 
 ### 变更
 
@@ -83,7 +83,7 @@
 ### 新增
 
 - **自包含本地编译**：内置 Tectonic 0.15 二进制（打包在安装包内），无需安装 TeX Live 即可编译中文 LaTeX 出 PDF；bundle 按需下载缓存，支持"预下载"离线编译。
-- **系统 TeX 兜底**：检测到 xelatex/lualatex（TeX Live / MiKTeX）时自动降级使用；修复了 MiKTeX `-output-directory` 导致多文件 `\input` 找不到子文件的兼容问题（TEXINPUTS 方案）。
+- **系统 TeX 兜底**：检测到 xelatex/lualatex（TeX Live / MiKTeX）时自动降级使用；兼容 MiKTeX 多文件项目——`-output-directory` 下 `\input` 子文件解析（TEXINPUTS 方案，集成测试验证）。
 - **多文件项目**：递归文件树、`\input`/`\include` 子文件、主文件右键切换（持久化到 `.texbutler/main.txt`）、编译目标可选"主文件/当前文件"（Ctrl+B / Ctrl+Shift+B）。
 - **.log 解析器**：错误块提取（含无 `!` 前缀的 fatal 行与 Overfull 警告）、真实行号解析（file-line-error > `l.N` > 上下文回溯）、中文人话分类、原始错误保留给 AI。
 - **规则引擎（9 条）**：裸 `%`、`\textit` 包中文、`\textbf` 含 `&`、`[ht]` 浮动错位、混色缺 xcolor、浮点垃圾、段落粘连、缺 `\end{document}`、UTF-8 BOM——保存自动触发（防抖 500ms），设置中可逐条开关。
@@ -92,12 +92,12 @@
 - **新建项目模板**：中文文章 / 中文报告（含目录）/ 中文幻灯片（ctexbeamer）/ 空白四种模板。
 - **UI 增强**：四栏布局 + AI 面板、底部状态栏（引擎/耗时/结果/问题数）、PDF 预览自动刷新、原始日志查看器、错误复制、常用 LaTeX 片段插入、最近项目快速打开、系统中文字体检测、保存前未修改保护。
 
-### 修复
+### 兼容性与健壮性
 
-- MiKTeX 多文件项目 `\input` 找不到子文件（TEXINPUTS 修复，集成测试验证）。
-- 切换文件时未保存修改丢失（增加保存确认）。
-- 浮点垃圾（87.30000000000001）规则与 round 处理。
-- `\textbf` 含 `&` 触发 `File ended while scanning use of \textbf` 的检测。
+- MiKTeX 多文件项目兼容：`-output-directory` 下 `\input` 子文件解析（TEXINPUTS 方案，集成测试验证）。
+- 切换文件保护：未保存修改有保存确认。
+- 数字格式化：round 处理杜绝浮点垃圾（87.30000000000001）。
+- LaTeX 语法检测：`\textbf` 含 `&` 的致命错误检测。
 
 ### 技术决策记录
 
