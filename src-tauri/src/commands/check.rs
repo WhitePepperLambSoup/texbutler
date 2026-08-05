@@ -38,7 +38,7 @@ pub async fn tb_run_check(
     };
 
     let mut issues: Vec<Issue> = Vec::new();
-    let tex_files: Vec<String> = match only_file.filter(|f| !f.is_empty()) {
+    let tex_files: Vec<String> = match only_file.clone().filter(|f| !f.is_empty()) {
         Some(f) => vec![proj.relative_path(&f)],
         None => {
             let mut all: Vec<String> = Vec::new();
@@ -50,6 +50,38 @@ pub async fn tb_run_check(
             files
         }
     };
+    // Rule toggles from settings (missing = default).
+    let enabled_base = |id: &str| {
+        enabled_map.get(id).copied().unwrap_or_else(|| {
+            rules::all_rules()
+                .iter()
+                .find(|r| r.id() == id)
+                .map(|r| r.default_enabled())
+                .unwrap_or(true)
+        })
+    };
+    // Per-file checks skip "refs" on full scans (the project-wide check
+    // below covers it without duplicating findings).
+    let enabled = |id: &str| {
+        if only_file.is_none() && id == "refs" {
+            return false;
+        }
+        enabled_base(id)
+    };
+
+    // Full scans also run the project-wide checks (dangling refs/cites).
+    let mut project_files: Vec<(String, String)> = Vec::new();
+    let mut bib_keys: Vec<String> = Vec::new();
+    if only_file.is_none() {
+        for rel in proj.bib_files() {
+            let Ok(content) = proj.read_file(&rel) else { continue };
+            for entry in crate::core::bib::parse_bib(&content) {
+                if !bib_keys.contains(&entry.key) {
+                    bib_keys.push(entry.key);
+                }
+            }
+        }
+    }
 
     for rel in &tex_files {
         let Ok(src) = proj.read_file(rel) else { continue };
@@ -65,15 +97,14 @@ pub async fn tb_run_check(
         } else {
             src
         };
-        rules::check_source(&src, rel, &|id| {
-            enabled_map.get(id).copied().unwrap_or_else(|| {
-                rules::all_rules()
-                    .iter()
-                    .find(|r| r.id() == id)
-                    .map(|r| r.default_enabled())
-                    .unwrap_or(true)
-            })
-        }, &mut issues);
+        rules::check_source(&src, rel, &enabled, &mut issues);
+        if only_file.is_none() {
+            project_files.push((rel.clone(), src));
+        }
+    }
+    if only_file.is_none() && !project_files.is_empty() {
+        let ctx = rules::ProjectCtx { files: project_files, bib_keys };
+        rules::check_project(&ctx, &enabled_base, &mut issues);
     }
     // sort: errors first, then by file/line
     issues.sort_by_key(|i| {
@@ -280,4 +311,41 @@ pub async fn tb_download_bundle(app: AppHandle) -> Result<String, String> {
 
 fn mb(bytes: u64) -> f64 {
     crate::core::round_f64(bytes as f64 / 1024.0 / 1024.0, 1)
+}
+
+/// Word count for the current file or the whole project (comments and
+/// command names excluded, command arguments counted as body text).
+#[tauri::command]
+pub fn tb_count_words(
+    state: State<'_, AppState>,
+    file: Option<String>,
+) -> Result<crate::core::word_count::WordCount, String> {
+    let guard = state.project.read().map_err(|e| e.to_string())?;
+    let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
+    let mut total = crate::core::word_count::WordCount {
+        chars: 0,
+        cjk_chars: 0,
+        words: 0,
+        lines: 0,
+    };
+    match file.filter(|f| !f.is_empty()) {
+        Some(f) => {
+            let rel = proj.relative_path(&f);
+            if let Ok(src) = proj.read_file(&rel) {
+                total = crate::core::word_count::count_source(&src);
+            }
+        }
+        None => {
+            for rel in proj.tex_files() {
+                if let Ok(src) = proj.read_file(&rel) {
+                    let w = crate::core::word_count::count_source(&src);
+                    total.chars += w.chars;
+                    total.cjk_chars += w.cjk_chars;
+                    total.words += w.words;
+                    total.lines += w.lines;
+                }
+            }
+        }
+    }
+    Ok(total)
 }

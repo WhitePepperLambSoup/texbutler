@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import ProjectTree from "./components/ProjectTree";
 import OutlinePanel from "./components/OutlinePanel";
@@ -36,10 +36,64 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pdfRev, setPdfRev] = useState(0);
   const [leftTab, setLeftTab] = useState<"tree" | "outline" | "bib">("tree");
-  const [compileTarget, setCompileTarget] = useState<"main" | "current">("main");
+  const [compileTarget, setCompileTarget] = useState<string>("main");
+  const [roots, setRoots] = useState<string[]>([]);
+  const [pdfPage, setPdfPage] = useState<number | null>(null);
   const [quickOpen, setQuickOpen] = useState(false);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
+  const [wordCount, setWordCount] = useState<{ chars: number; cjk: number; words: number } | null>(null);
   const t = useT();
+
+  // multi-document roots: every compilable \documentclass file
+  useEffect(() => {
+    const load = async () => {
+      const st = useProjectStore.getState();
+      if (!st.root) return;
+      try {
+        setRoots(await api.listRoots());
+      } catch {
+        setRoots([]);
+      }
+    };
+    void load();
+    const unsub = useProjectStore.subscribe((s, prev) => {
+      if (s.root !== prev.root) void load();
+    });
+    // SyncTeX forward search: jump the PDF viewer to a page
+    const onSynctex = (e: Event) => {
+      const page = (e as CustomEvent<number>).detail;
+      setPdfPage(page);
+    };
+    window.addEventListener("tb:synctex-page", onSynctex);
+    return () => {
+      unsub();
+      window.removeEventListener("tb:synctex-page", onSynctex);
+    };
+  }, []);
+  const refreshWordCount = useCallback(async () => {
+    const st = useProjectStore.getState();
+    if (!st.activeTab) {
+      setWordCount(null);
+      return;
+    }
+    try {
+      const w = await api.countWords(st.activeTab);
+      setWordCount({ chars: w.chars, cjk: w.cjk_chars, words: w.words });
+    } catch {
+      setWordCount(null);
+    }
+  }, []);
+  useEffect(() => {
+    void refreshWordCount();
+    const unsub = useProjectStore.subscribe((s, prev) => {
+      if (s.activeTab !== prev.activeTab) void refreshWordCount();
+    });
+    window.addEventListener("tb:file-saved", refreshWordCount);
+    return () => {
+      unsub();
+      window.removeEventListener("tb:file-saved", refreshWordCount);
+    };
+  }, [refreshWordCount]);
   const [theme, setTheme] = useState<ThemeId>(loadTheme());
 
   // apply theme to <html data-theme>
@@ -88,8 +142,16 @@ export default function App() {
         });
     }
     let timer: number | undefined;
+    let ruleTimer: number | undefined;
     const onSaved = () => {
       const f = loadFlow();
+      // refresh the ref/cite index + run the rule check (debounced) so the
+      // dangling-ref rule and autocompletion stay current after a save
+      window.clearTimeout(ruleTimer);
+      ruleTimer = window.setTimeout(() => {
+        void useProjectStore.getState().loadRefIndex();
+        void useCompileStore.getState().runCheck();
+      }, 600);
       if (!f.autoCompile) return;
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
@@ -108,6 +170,7 @@ export default function App() {
       window.removeEventListener("tb:file-saved", onSaved);
       window.removeEventListener("keydown", onKey);
       window.clearTimeout(timer);
+      window.clearTimeout(ruleTimer);
     };
   }, []);
 
@@ -187,15 +250,17 @@ export default function App() {
         <select
           className="compile-target"
           value={compileTarget}
-          onChange={(e) => setCompileTarget(e.target.value as "main" | "current")}
+          onChange={(e) => setCompileTarget(e.target.value)}
           disabled={running}
-          title={
-            compileTarget === "main"
-              ? t("toolbar.target.main", { file: mainFile })
-              : t("toolbar.target.current", { file: activeTab?.split("/").pop() ?? "" })
-          }
         >
           <option value="main">{t("toolbar.target.main", { file: mainFile || "main.tex" })}</option>
+          {roots
+            .filter((r) => r !== mainFile)
+            .map((r) => (
+              <option key={r} value={r}>
+                {t("toolbar.target.root", { file: r })}
+              </option>
+            ))}
           <option value="current" disabled={!activeTab}>
             {activeTab
               ? t("toolbar.target.current", { file: activeTab.split("/").pop() ?? "" })
@@ -213,6 +278,40 @@ export default function App() {
         <button className="btn" onClick={() => void importWord()} disabled={!root}>
           Word→LaTeX
         </button>
+        {root && activeTab?.endsWith(".tex") && (
+          <>
+            <button
+              className="btn"
+              title={t("toolbar.exportMdTitle")}
+              onClick={async () => {
+                if (!activeTab) return;
+                try {
+                  const out = await api.exportFile(activeTab, "md");
+                  window.alert(t("toolbar.exported", { file: out }));
+                } catch (e) {
+                  window.alert(String(e));
+                }
+              }}
+            >
+              {t("toolbar.exportMd")}
+            </button>
+            <button
+              className="btn"
+              title={t("toolbar.exportDocxTitle")}
+              onClick={async () => {
+                if (!activeTab) return;
+                try {
+                  const out = await api.exportFile(activeTab, "docx");
+                  window.alert(t("toolbar.exported", { file: out }));
+                } catch (e) {
+                  window.alert(String(e));
+                }
+              }}
+            >
+              {t("toolbar.exportDocx")}
+            </button>
+          </>
+        )}
         <button
           className="btn theme-picker-btn"
           title={t("theme.title")}
@@ -289,7 +388,7 @@ export default function App() {
           <EditorPane />
         </main>
         <aside className={`col-pdf ${pdfPath ? "has-pdf" : ""}`}>
-          <PdfPreview revision={pdfRev} />
+          <PdfPreview revision={pdfRev} page={pdfPage ?? undefined} />
         </aside>
       </div>
       <div className="bottom">
@@ -318,6 +417,11 @@ export default function App() {
           </span>
         )}
         <span className="status-item">{t("status.issues", { n: totalIssues })}</span>
+        {wordCount && (
+          <span className="status-item" title={t("status.wordsTitle")}>
+            {t("status.words", { chars: wordCount.chars, cjk: wordCount.cjk, words: wordCount.words })}
+          </span>
+        )}
         <span className="status-spacer" />
         <span className="status-item status-root" title={root}>
           {root || t("status.noProject")}

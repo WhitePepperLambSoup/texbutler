@@ -1,4 +1,4 @@
-//! Project commands: open / create / save / file tree / read-write files.
+﻿//! Project commands: open / create / save / file tree / read-write files.
 
 use crate::core::project::{Project, flatten_tree};
 use crate::state::AppState;
@@ -317,120 +317,17 @@ pub fn tb_list_bib_entries(state: State<'_, AppState>) -> Result<Vec<BibEntry>, 
     let mut out: Vec<BibEntry> = Vec::new();
     for rel in proj.bib_files() {
         let Some(content) = proj.read_file(&rel).ok() else { continue };
-        for entry in parse_bib(&content) {
-            out.push(entry);
+        for entry in crate::core::bib::parse_bib(&content) {
+            out.push(BibEntry {
+                key: entry.key,
+                entry_type: entry.entry_type,
+                title: entry.title,
+                author: entry.author,
+                year: entry.year,
+            });
         }
     }
     Ok(out)
-}
-
-/// Parse `@type{key, field = {value}, ...}` blocks from a .bib source.
-fn parse_bib(content: &str) -> Vec<BibEntry> {
-    let mut out = Vec::new();
-    let mut rest = content;
-    while let Some(at) = rest.find('@') {
-        let after = &rest[at + 1..];
-        // skip comments like @comment{...}
-        if after.trim_start().to_ascii_lowercase().starts_with("comment") {
-            if let Some(close) = after.find('}') {
-                rest = &after[close + 1..];
-                continue;
-            }
-            break;
-        }
-        // entry type
-        let Some(type_end) = after.find('{') else { break };
-        let entry_type = after[..type_end].trim().to_string();
-        let body_start = type_end + 1;
-        // find the matching closing brace (first `}` at depth 0)
-        let mut depth = 1usize;
-        let mut end = body_start;
-        let bytes = after.as_bytes();
-        while end < bytes.len() && depth > 0 {
-            match bytes[end] {
-                b'{' => depth += 1,
-                b'}' => depth -= 1,
-                _ => {}
-            }
-            end += 1;
-        }
-        if depth != 0 {
-            break;
-        }
-        let body = &after[body_start..end - 1];
-        // skip @comment / @string / @preamble pseudo-entries
-        let low_type = entry_type.to_ascii_lowercase();
-        if !matches!(low_type.as_str(), "comment" | "string" | "preamble") {
-            let key = body.split(',').next().unwrap_or("").trim().to_string();
-            if !key.is_empty() {
-                out.push(BibEntry {
-                    key,
-                    entry_type,
-                    title: extract_bib_field(body, "title"),
-                    author: extract_bib_field(body, "author"),
-                    year: extract_bib_field(body, "year"),
-                });
-            }
-        }
-        rest = &after[end..];
-    }
-    out
-}
-
-/// Extract `name = {value}` (or `name = "value"`) from a bib entry body.
-/// The field name must not be preceded by an alphanumeric (so `title` does
-/// not match inside `subtitle`).
-fn extract_bib_field(body: &str, name: &str) -> String {
-    let mut rest = body;
-    while !rest.is_empty() {
-        // locate `name` at a field boundary (previous char not alphanumeric)
-        let mut idx = None;
-        let mut probe = rest;
-        let mut base = 0;
-        while let Some(i) = probe.find(name) {
-            let prev = probe[..i].chars().next_back();
-            let ok = prev.map(|c| !c.is_ascii_alphanumeric()).unwrap_or(true);
-            if ok {
-                idx = Some(base + i);
-                break;
-            }
-            probe = &probe[i + name.len()..];
-            base += i + name.len();
-        }
-        let Some(idx) = idx else { break };
-        let after = &rest[idx + name.len()..];
-        // the field name must be followed by `=` (whitespace allowed)
-        let after_eq = after.trim_start();
-        let Some(eq) = after_eq.find('=') else { break };
-        let value = after_eq[eq + 1..].trim_start();
-        let v = if let Some(v) = value.strip_prefix('{') {
-            // match the closing brace at depth 0 (nested braces allowed)
-            let mut depth = 1usize;
-            let bytes = v.as_bytes();
-            let mut end = 0;
-            while end < bytes.len() && depth > 0 {
-                match bytes[end] {
-                    b'{' => depth += 1,
-                    b'}' => depth -= 1,
-                    _ => {}
-                }
-                end += 1;
-            }
-            let end = if depth == 0 { end - 1 } else { v.len() };
-            v[..end].trim().to_string()
-        } else if let Some(v) = value.strip_prefix('"') {
-            let end = v.find('"').unwrap_or(v.len());
-            v[..end].trim().to_string()
-        } else {
-            let end = value.find(|c: char| c == ',' || c == '\n').unwrap_or(value.len());
-            value[..end].trim().to_string()
-        };
-        if !v.is_empty() {
-            return v;
-        }
-        rest = after;
-    }
-    String::new()
 }
 
 /// Import a Word (.docx) document: parse its structure, let the AI convert
@@ -612,6 +509,151 @@ pub fn tb_recent_projects(state: State<'_, AppState>) -> Vec<String> {
     state.settings.read().map(|s| s.recent_projects.clone()).unwrap_or_default()
 }
 
+/// Project-wide dangling-reference check (rule "refs"): every `\ref` must
+/// match a `\label` somewhere in the project, every `\cite` must match a
+/// `.bib` key. Returns the same `Issue` list the rule engine emits.
+#[tauri::command]
+pub fn tb_check_refs(state: State<'_, AppState>) -> Result<Vec<crate::core::Issue>, String> {
+    let guard = state.project.read().map_err(|e| e.to_string())?;
+    let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
+    let mut ctx = crate::core::rules::ProjectCtx {
+        files: Vec::new(),
+        bib_keys: Vec::new(),
+    };
+    for rel in proj.tex_files() {
+        if let Ok(content) = proj.read_file(&rel) {
+            ctx.files.push((rel, content));
+        }
+    }
+    for rel in proj.bib_files() {
+        if let Ok(content) = proj.read_file(&rel) {
+            for entry in crate::core::bib::parse_bib(&content) {
+                if !ctx.bib_keys.contains(&entry.key) {
+                    ctx.bib_keys.push(entry.key);
+                }
+            }
+        }
+    }
+    let mut issues = Vec::new();
+    let enabled = |_id: &str| true;
+    crate::core::rules::check_project(&ctx, &enabled, &mut issues);
+    Ok(issues)
+}
+
+/// A `\label{key}` found in the project (for ref/cite autocompletion).
+#[derive(serde::Serialize)]
+pub struct RefLabel {
+    pub key: String,
+    pub file: String,
+    pub line: usize,
+}
+
+/// Index of every label and bib entry in the project, used by the Monaco
+/// `\ref`/`\cite` completion providers.
+#[tauri::command]
+pub fn tb_ref_index(state: State<'_, AppState>) -> Result<RefIndex, String> {
+    let guard = state.project.read().map_err(|e| e.to_string())?;
+    let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
+    let mut labels: Vec<RefLabel> = Vec::new();
+    for rel in proj.tex_files() {
+        let Ok(content) = proj.read_file(&rel) else { continue };
+        for (key, line) in crate::core::rules::refs::scan_labels(&content) {
+            labels.push(RefLabel { key, file: rel.clone(), line });
+        }
+    }
+    let mut bib: Vec<crate::core::bib::BibEntry> = Vec::new();
+    for rel in proj.bib_files() {
+        let Ok(content) = proj.read_file(&rel) else { continue };
+        bib.extend(crate::core::bib::parse_bib(&content));
+    }
+    Ok(RefIndex { labels, bib })
+}
+
+#[derive(serde::Serialize)]
+pub struct RefIndex {
+    pub labels: Vec<RefLabel>,
+    pub bib: Vec<crate::core::bib::BibEntry>,
+}
+
+/// Every compilable document root in the project (files containing
+/// `\documentclass`) — the multi-document compile-target dropdown.
+#[tauri::command]
+pub fn tb_list_roots(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let guard = state.project.read().map_err(|e| e.to_string())?;
+    let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
+    Ok(proj.document_roots())
+}
+
+/// SyncTeX forward search: map (tex file, line) to the PDF page number.
+/// Prefers the system `synctex` CLI (handles the compact MiKTeX/TeX Live
+/// v1 format), falls back to parsing `<build>/<main stem>.synctex.gz`
+/// (classic format produced by tectonic).
+#[tauri::command]
+pub fn tb_synctex_forward(
+    state: State<'_, AppState>,
+    file: String,
+    line: usize,
+) -> Result<Option<u32>, String> {
+    let guard = state.project.read().map_err(|e| e.to_string())?;
+    let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
+    let build_dir = proj.root.join(".texbutler").join("build");
+    let main_rel = proj.relative_path(&proj.main_file);
+    let stem = main_rel.trim_end_matches(".tex");
+    let pdf_path = build_dir.join(format!("{stem}.pdf"));
+
+    // 1) system synctex CLI (MiKTeX / TeX Live ship it); the synctex.gz
+    // records absolute paths, so pass the absolute source path. The path
+    // is validated to stay inside the project (no traversal into the CLI).
+    let rel = proj.relative_path(&file);
+    if pdf_path.exists() && proj.resolve(&rel).is_some() {
+        let abs = proj.root.join(&rel);
+        if let Some(page) = crate::core::synctex::system_forward("synctex", &pdf_path, &abs.to_string_lossy(), line) {
+            return Ok(Some(page));
+        }
+    }
+    // 2) classic .synctex.gz parse (tectonic)
+    let gz_path = build_dir.join(format!("{stem}.synctex.gz"));
+    if let Ok(gz) = std::fs::read(&gz_path) {
+        if let Some(page) = crate::core::synctex::forward_search(&gz, &rel, line) {
+            return Ok(Some(page));
+        }
+    }
+    Ok(None)
+}
+
+/// Export a project file to Markdown or Word. Returns the exported file
+/// path (written next to the source file, `<stem>.md` / `<stem>.docx`).
+#[tauri::command]
+pub fn tb_export(
+    state: State<'_, AppState>,
+    file: String,
+    format: String,
+) -> Result<String, String> {
+    let guard = state.project.read().map_err(|e| e.to_string())?;
+    let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
+    let rel = proj.relative_path(&file);
+    let src = proj.read_file(&rel)?;
+    let md = crate::core::export::to_markdown(&src);
+    // output path next to the source, validated to stay inside the project
+    let stem = rel.trim_end_matches(".tex");
+    let out_rel = proj.resolve(&format!("{stem}.md")).ok_or_else(|| "非法导出路径".to_string())?;
+    match format.to_ascii_lowercase().as_str() {
+        "md" | "markdown" => {
+            let out = proj.root.join(&out_rel);
+            std::fs::write(&out, md).map_err(|e| e.to_string())?;
+            Ok(out.to_string_lossy().to_string())
+        }
+        "docx" | "word" => {
+            let bytes = crate::core::export::to_docx(&md)?;
+            let out_rel = proj.resolve(&format!("{stem}.docx")).ok_or_else(|| "非法导出路径".to_string())?;
+            let out = proj.root.join(&out_rel);
+            std::fs::write(&out, bytes).map_err(|e| e.to_string())?;
+            Ok(out.to_string_lossy().to_string())
+        }
+        other => Err(format!("不支持的导出格式: {other}（支持 md / docx）")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -619,7 +661,7 @@ mod tests {
     #[test]
     fn parses_simple_bib_entry() {
         let src = "@article{smith2024,\n  title = {A Study on Chinese Typesetting},\n  author = {Smith, John and Li, Wei},\n  year = {2024},\n  journal = {J. Typography}\n}\n";
-        let entries = parse_bib(src);
+        let entries = crate::core::bib::parse_bib(src);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].key, "smith2024");
         assert_eq!(entries[0].entry_type, "article");
@@ -631,7 +673,7 @@ mod tests {
     #[test]
     fn parses_multiple_entries_and_skips_comments() {
         let src = "@comment{a note}\n@book{knuth1984,\n  title = {The TeXbook},\n  author = {Knuth, Donald},\n  year = {1984}\n}\n@inproceedings{li2020, title={X}, year={2020}}\n";
-        let entries = parse_bib(src);
+        let entries = crate::core::bib::parse_bib(src);
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].key, "knuth1984");
         assert_eq!(entries[0].entry_type, "book");
@@ -642,7 +684,7 @@ mod tests {
     #[test]
     fn handles_string_quoted_fields_and_nested_braces() {
         let src = "@article{nested2023,\n  title = {Nested {Braces} Inside},\n  author = \"Doe, Jane\",\n  year = {2023}\n}\n";
-        let entries = parse_bib(src);
+        let entries = crate::core::bib::parse_bib(src);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].title, "Nested {Braces} Inside");
         assert_eq!(entries[0].author, "Doe, Jane");
@@ -650,14 +692,14 @@ mod tests {
 
     #[test]
     fn empty_input_yields_nothing() {
-        assert!(parse_bib("").is_empty());
-        assert!(parse_bib("no entries here").is_empty());
+        assert!(crate::core::bib::parse_bib("").is_empty());
+        assert!(crate::core::bib::parse_bib("no entries here").is_empty());
     }
 
     #[test]
     fn skips_string_and_preamble_entries() {
         let src = "@string{jour = {Journal of X}}\n@article{key2020, title={T}, year={2020}}\n@preamble{\"\\\\newcommand\"}\n";
-        let entries = parse_bib(src);
+        let entries = crate::core::bib::parse_bib(src);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].key, "key2020");
         assert_eq!(entries[0].title, "T");
@@ -666,7 +708,7 @@ mod tests {
     #[test]
     fn field_boundary_ignores_subtitle() {
         let src = "@article{b2021,\n  title = {Real Title},\n  subtitle = {Sub},\n  year = {2021}\n}\n";
-        let entries = parse_bib(src);
+        let entries = crate::core::bib::parse_bib(src);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].title, "Real Title");
         assert_eq!(entries[0].year, "2021");

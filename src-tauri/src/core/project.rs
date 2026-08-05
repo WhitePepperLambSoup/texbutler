@@ -126,6 +126,34 @@ impl Project {
         out
     }
 
+    /// Candidate "document roots": every `.tex` file containing a
+    /// `\documentclass` (multi-document projects: each chapter can be its
+    /// own compilable document). Comments are stripped line-by-line so a
+    /// magic comment on the first line (`% !TeX program=...`) does not
+    /// hide the root. Sorted for a stable dropdown.
+    pub fn document_roots(&self) -> Vec<String> {
+        let mut roots: Vec<String> = Vec::new();
+        for rel in self.tex_files() {
+            let Ok(content) = self.read_file(&rel) else { continue };
+            let mut is_root = false;
+            for line in content.lines() {
+                let l = match crate::core::rules::comment_start(line) {
+                    Some(at) => &line[..at],
+                    None => line,
+                };
+                if l.contains("\\documentclass") {
+                    is_root = true;
+                    break;
+                }
+            }
+            if is_root {
+                roots.push(rel);
+            }
+        }
+        roots.sort();
+        roots
+    }
+
     /// All `.bib` files relative to the root (recursive).
     pub fn bib_files(&self) -> Vec<String> {
         let mut out = Vec::new();
@@ -528,6 +556,30 @@ pub type FileCache = HashMap<String, String>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn document_roots_sees_documentclass_after_magic_comment() {
+        // regression: the first-line magic comment used to truncate the
+        // whole file for comment_start, hiding the \documentclass
+        let dir = std::env::temp_dir().join(format!("tb-roots-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("main.tex"),
+            "% !TeX program = xelatex\n\\documentclass{ctexart}\n\\begin{document}\n正文\n\\end{document}\n",
+        )
+        .unwrap();
+        std::fs::write(dir.join("notes.txt"), "not tex").unwrap();
+        let proj = Project::open(&dir).unwrap();
+        let roots = proj.document_roots();
+        assert_eq!(roots.len(), 1, "magic comment must not hide the root");
+        assert!(
+            roots[0].replace('\\', "/").ends_with("main.tex"),
+            "unexpected root: {}",
+            roots[0]
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn resolve_prevents_escape() {

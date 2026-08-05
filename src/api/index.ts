@@ -56,6 +56,24 @@ export interface FixReport {
   backup?: string | null;
 }
 
+export interface RefLabel {
+  key: string;
+  file: string;
+  line: number;
+}
+
+export interface RefIndex {
+  labels: RefLabel[];
+  bib: BibEntry[];
+}
+
+export interface WordCount {
+  chars: number;
+  cjk_chars: number;
+  words: number;
+  lines: number;
+}
+
 export interface BibEntry {
   key: string;
   entry_type: string;
@@ -136,6 +154,16 @@ export const api = {
   importImage: (sourcePath: string) => invoke<string>("tb_import_image", { sourcePath }),
   importClipboardImage: () => invoke<string>("tb_import_clipboard_image"),
   listBibEntries: () => invoke<BibEntry[]>("tb_list_bib_entries"),
+  refIndex: () => invoke<RefIndex>("tb_ref_index"),
+  countWords: (file?: string) =>
+    invoke<WordCount>("tb_count_words", { file: file ?? null }),
+  listRoots: () => invoke<string[]>("tb_list_roots"),
+  synctexForward: (file: string, line: number) =>
+    invoke<number | null>("tb_synctex_forward", { file, line }),
+  exportFile: (file: string, format: "md" | "docx") =>
+    invoke<string>("tb_export", { file, format }),
+  aiTranslate: (text: string, target: string) =>
+    invoke<string>("tb_ai_translate", { text, target }),
   importDocx: (sourcePath: string) =>
     invoke<{ file: string; preview: string; chars: number }>("tb_import_docx", { sourcePath }),
 

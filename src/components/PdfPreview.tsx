@@ -9,7 +9,7 @@ import { useT } from "../i18n";
  * project; `assetProtocol` is disabled). We render it in an iframe with a
  * reload key that bumps on every successful compile.
  */
-export default function PdfPreview({ revision }: { revision: number }) {
+export default function PdfPreview({ revision, page }: { revision: number; page?: number }) {
   const { pdfPath, root } = useProjectStore();
   const t = useT();
 
@@ -24,7 +24,8 @@ export default function PdfPreview({ revision }: { revision: number }) {
     );
   }
 
-  const src = `http://tb-file.localhost/${encodeURIComponent(pdfPath)}`;
+  // SyncTeX forward search: `#page=N` is honored by the Edge PDF viewer
+  const src = `http://tb-file.localhost/${encodeURIComponent(pdfPath)}${page ? `#page=${page}` : ""}`;
   return (
     <div className="pdf-pane">
       <div className="panel-header">

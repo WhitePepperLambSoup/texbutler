@@ -123,6 +123,7 @@ impl Compiler for SystemTexliveCompiler {
             cmd.arg("-interaction=nonstopmode")
                 .arg("-halt-on-error")
                 .arg("-file-line-error")
+                .arg("-synctex=1")
                 .env("TEXINPUTS", &texinputs)
                 .arg(&main_path)
                 .current_dir(&build_dir);
@@ -147,6 +148,7 @@ impl Compiler for SystemTexliveCompiler {
             cmd.arg("-interaction=nonstopmode")
                 .arg("-halt-on-error")
                 .arg("-file-line-error")
+                .arg("-synctex=1")
                 .env("TEXINPUTS", &texinputs)
                 .arg(&main_path)
                 .current_dir(&build_dir);

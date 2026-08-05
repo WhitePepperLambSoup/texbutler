@@ -9,6 +9,7 @@ import { useCompileStore } from "../store/compileStore";
 import { useT } from "../i18n";
 import ImageInsertModal from "./ImageInsertModal";
 import FormulaModal from "./FormulaModal";
+import TableModal from "./TableModal";
 
 // Load Monaco from the LOCAL npm package instead of the jsdelivr CDN.
 // @monaco-editor/react defaults to the CDN — when the network is slow or
@@ -162,6 +163,54 @@ const beforeMount: BeforeMount = (monaco) => {
       return { suggestions: items };
     },
   });
+
+  // --- \ref / \cite smart completion from the project index ---
+  const REF_CMDS = new Set(["ref", "eqref", "pageref", "autoref", "cref", "nameref"]);
+  const CITE_CMDS = new Set(["cite", "citep", "citet", "parencite", "textcite", "citealp", "citeauthor", "nocite"]);
+  monaco.languages.registerCompletionItemProvider("latex", {
+    triggerCharacters: ["{", ","],
+    provideCompletionItems: (model, position) => {
+      const lineText = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
+      const m = lineText.match(/\\([a-zA-Z@]+)\{([^}]*)$/);
+      if (!m) return { suggestions: [] };
+      const cmd = m[1];
+      const prefix = m[2];
+      const idx = useProjectStore.getState().refIndex;
+      let keys: { key: string; detail: string }[] = [];
+      if (REF_CMDS.has(cmd)) {
+        keys = idx.labels
+          .filter((l) => l.key.startsWith(prefix))
+          .map((l) => ({ key: l.key, detail: `标签 ${l.file}:${l.line}` }));
+      } else if (CITE_CMDS.has(cmd)) {
+        keys = idx.bib
+          .filter((b) => b.key.startsWith(prefix))
+          .map((b) => ({
+            key: b.key,
+            detail: `${b.entry_type}: ${b.title || b.author || "(无标题)"}`.slice(0, 60),
+          }));
+      } else {
+        return { suggestions: [] };
+      }
+      const startColumn = position.column - prefix.length;
+      const replaceRange = {
+        startLineNumber: position.lineNumber,
+        endLineNumber: position.lineNumber,
+        startColumn,
+        endColumn: position.column,
+      };
+      return {
+        suggestions: keys.map((k) => ({
+          label: k.key,
+          kind: REF_CMDS.has(cmd)
+            ? monaco.languages.CompletionItemKind.Reference
+            : monaco.languages.CompletionItemKind.Constant,
+          detail: k.detail,
+          insertText: k.key,
+          range: replaceRange,
+        })),
+      };
+    },
+  });
 };
 
 /** Common LaTeX snippets for the insert menu. */
@@ -209,6 +258,7 @@ export default function EditorPane() {
   const [symbolOpen, setSymbolOpen] = useState(false);
   const [imgModal, setImgModal] = useState<{ fileName: string; root: string } | null>(null);
   const [formulaMode, setFormulaMode] = useState<"inline" | "display" | null>(null);
+  const [tableOpen, setTableOpen] = useState(false);
   const [monacoTheme, setMonacoTheme] = useState<"texbutler" | "texbutler-dark" | "texbutler-liquid">(
     () => monacoThemeFor(document.documentElement.dataset.theme)
   );
@@ -457,8 +507,33 @@ export default function EditorPane() {
           <button className="btn-mini" title="列表" onClick={() => insertSnippet("\\begin{itemize}\n\\item 第一项\n\\item 第二项\n\\end{itemize}\n")} disabled={!active}>
             ••
           </button>
-          <button className="btn-mini" title="表格" onClick={() => insertSnippet("\\begin{table}[H]\n\\centering\n\\begin{tabular}{cc}\n列1 & 列2 \\\\\n\\hline\nA & B \\\\\n\\end{tabular}\n\\caption{表注}\n\\label{tab:}\n\\end{table}\n")} disabled={!active}>
+          <button className="btn-mini" title={t("table.title")} onClick={() => setTableOpen(true)} disabled={!active}>
             ▦
+          </button>
+          <button
+            className="btn-mini"
+            title={t("editor.translateTitle")}
+            disabled={!active}
+            onClick={async () => {
+              const ed = editorRef.current;
+              if (!ed || !active) return;
+              const sel = ed.getSelection();
+              const text = sel ? ed.getModel()?.getValueInRange(sel) ?? "" : "";
+              if (!text.trim()) {
+                window.alert(t("editor.translateEmpty"));
+                return;
+              }
+              try {
+                const translated = await api.aiTranslate(text, t("editor.translateTarget"));
+                if (sel) {
+                  ed.executeEdits("translate", [{ range: sel, text: translated }]);
+                }
+              } catch (e) {
+                window.alert(String(e));
+              }
+            }}
+          >
+            {t("editor.translate")}
           </button>
           <button className="btn-mini" title="数学符号" onClick={() => setSymbolOpen((v) => !v)} disabled={!active}>
             αβ
@@ -484,6 +559,26 @@ export default function EditorPane() {
           </select>
           <button className="btn-mini" onClick={doSave} disabled={!active?.dirty}>
             {t("editor.save")}
+          </button>
+          <button
+            className="btn-mini"
+            title={t("editor.locateInPdfTitle")}
+            disabled={!active}
+            onClick={async () => {
+              const ed = editorRef.current;
+              if (!ed || !active) return;
+              const line = ed.getPosition()?.lineNumber ?? 1;
+              try {
+                const page = await api.synctexForward(active.path, line);
+                if (page != null) {
+                  window.dispatchEvent(new CustomEvent("tb:synctex-page", { detail: page }));
+                }
+              } catch {
+                /* no synctex file yet */
+              }
+            }}
+          >
+            {t("editor.locateInPdf")}
           </button>
         </span>
       </div>
@@ -539,6 +634,15 @@ export default function EditorPane() {
           onConfirm={(code) => {
             insertSnippet(code);
             setFormulaMode(null);
+          }}
+        />
+      )}
+      {tableOpen && (
+        <TableModal
+          onCancel={() => setTableOpen(false)}
+          onConfirm={(code) => {
+            insertSnippet(code);
+            setTableOpen(false);
           }}
         />
       )}

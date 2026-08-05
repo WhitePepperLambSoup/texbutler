@@ -13,7 +13,7 @@ interface CompileState {
   startedAt: number | null;
   elapsedSec: number | null;
 
-  compile: (target?: "main" | "current") => Promise<void>;
+  compile: (target?: "main" | "current" | string) => Promise<void>;
   cancel: () => void;
   runCheck: (onlyFile?: string) => Promise<void>;
   refreshDiagnostics: () => Promise<void>;
@@ -29,10 +29,15 @@ export const useCompileStore = create<CompileState>((set, get) => ({
   startedAt: null,
   elapsedSec: null,
 
-  async compile(target?: "main" | "current") {
+  async compile(target?: "main" | "current" | string) {
     if (get().running) return;
-    const override =
-      target === "current" ? useProjectStore.getState().activeTab : undefined;
+    let override: string | undefined;
+    if (target === "current") {
+      override = useProjectStore.getState().activeTab ?? undefined;
+    } else if (target && target !== "main") {
+      // multi-document root: compile that file directly
+      override = target;
+    }
     set({
       running: true,
       startedAt: Date.now(),

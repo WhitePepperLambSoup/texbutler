@@ -2,12 +2,16 @@
 //! Chinese-LaTeX rule engine and AI layer. All UI-agnostic logic lives here.
 
 pub mod ai;
+pub mod bib;
 pub mod compiler;
 pub mod docx;
+pub mod export;
 pub mod log_parser;
 pub mod project;
 pub mod rules;
 pub mod settings;
+pub mod synctex;
+pub mod word_count;
 
 use serde::{Deserialize, Serialize};
 

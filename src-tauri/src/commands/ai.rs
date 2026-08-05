@@ -5,6 +5,25 @@ use crate::core::{FixReport, Issue, SourceContext};
 use crate::state::AppState;
 use tauri::{AppHandle, Emitter, State};
 
+/// AI-translate a LaTeX snippet while preserving its structure.
+#[tauri::command]
+pub async fn tb_ai_translate(
+    state: State<'_, AppState>,
+    text: String,
+    target: String,
+) -> Result<String, String> {
+    let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
+    if settings.api_key.is_none()
+        && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. })
+    {
+        return Err("尚未配置 AI API Key。请在“设置”中填写 provider 配置。".into());
+    }
+    if text.trim().is_empty() {
+        return Err("没有可翻译的内容：请先在编辑器中选中一段文本。".into());
+    }
+    crate::core::ai::translate::translate(&text, &target, &settings).await
+}
+
 /// AI-diagnose one compile issue (by index into the last result's issues).
 #[tauri::command]
 pub async fn tb_ai_diagnose(

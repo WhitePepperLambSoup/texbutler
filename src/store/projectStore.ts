@@ -2,7 +2,7 @@
 // content + dirty flag; switching tabs never loses edits and never blocks.
 
 import { create } from "zustand";
-import { api, type Issue, type ProjectFileNode, type ProjectInfo } from "../api";
+import { api, type Issue, type ProjectFileNode, type ProjectInfo, type RefIndex } from "../api";
 import { useI18n } from "../i18n";
 import { saveFlow } from "../flow";
 
@@ -24,6 +24,8 @@ interface ProjectState {
   /** Path of the active tab (null = none). */
   activeTab: string | null;
   pdfPath: string | null;
+  /** Project-wide \label + .bib index for ref/cite autocompletion. */
+  refIndex: RefIndex;
 
   openProject: (path?: string) => Promise<void>;
   createProject: (parent: string, name: string, template?: string) => Promise<void>;
@@ -34,6 +36,8 @@ interface ProjectState {
   closeTab: (rel: string) => Promise<void>;
   setTabContent: (rel: string, content: string) => void;
   closeProject: () => void;
+  /** Refresh the label/bib index from the backend. */
+  loadRefIndex: () => Promise<void>;
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
@@ -43,6 +47,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   tabs: [],
   activeTab: null,
   pdfPath: null,
+  refIndex: { labels: [], bib: [] },
 
   async openProject(path) {
     const info: ProjectInfo = await api.openProject(path);
@@ -56,6 +61,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     // keep tabs from a previous project? no — reset, then auto-open main
     set({ tabs: [], activeTab: null });
     await get().openFile(info.main_file);
+    void get().loadRefIndex();
   },
 
   async createProject(parent, name, template?: string) {
@@ -74,6 +80,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   async refresh() {
     const info = await api.projectInfo();
     set({ files: info.files, pdfPath: info.pdf_url ?? null });
+    void get().loadRefIndex();
+  },
+
+  async loadRefIndex() {
+    try {
+      const idx = await api.refIndex();
+      set({ refIndex: idx });
+    } catch {
+      /* project not open yet */
+    }
   },
 
   async openFile(rel) {

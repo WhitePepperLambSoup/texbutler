@@ -118,6 +118,7 @@ impl TectonicCompiler {
         cmd.arg("--color").arg("never");
         cmd.arg("--chatter").arg("minimal");
         cmd.arg("-r").arg("2");
+        cmd.arg("--synctex");
         for b in self.resolve_bundle_args() {
             cmd.arg(b);
         }

@@ -10,11 +10,12 @@
 
 1. **Self-contained local compilation** — bundles the Tectonic 0.15 engine, so it compiles Chinese LaTeX to PDF even without TeX Live; automatically falls back to a system `xelatex`/`lualatex` when detected.
 2. **AI error diagnosis & repair** — turns cryptic LaTeX errors into plain language with the real error line; one-click fix: deterministic fixes (missing packages / undefined commands / missing `\end{document}`) → AI diff → audit (referenced-file existence check) → apply → recompile, with automatic rollback on failure.
-3. **Chinese-LaTeX specific checks** — 9 rules (bare `%`, `\textit` with CJK, `[ht]` float drift, floating-point garbage, glued paragraphs, …) that run automatically on save.
+3. **Chinese-LaTeX specific checks** — 10 rules (bare `%`, `\textit` with CJK, `[ht]` float drift, floating-point garbage, glued paragraphs, dangling refs/cites, …) that run automatically on save.
 4. **Made for writing (v0.2.0)** — one-click image insertion with generated code, quick-format buttons (sections / formulas / tables / lists), AI code generation from natural language, **Word (.docx) import → AI generates a complete compilable LaTeX document**, user template library, math-symbol panel (36 symbols), day/night theme, and a bilingual UI (中文 / English).
 5. **Smooth writing flow (v0.3.0)** — drag images into the editor or paste screenshots (auto-saved, insert dialog with width/position/caption), an **Outline panel** (section tree, click to jump), a **Bibliography panel** (click a .bib entry to insert `\cite`), LaTeX autocompletion (60+ commands, environment pairs), optional auto-compile after save, session restore on startup, and Ctrl+P quick file open.
 6. **End-to-end verifiable** — real-API + real-compile e2e tests (`cargo test --test e2e_ai -- --ignored`) validate every layer of the fix loop.
 7. **Liquid Glass UI (v0.4.0)** — default glassmorphism theme: animated gradient light blobs behind frosted-glass panels with specular highlights; three themes (liquid glass / classic dark / classic light) switchable from the toolbar and persisted; the Monaco editor theme follows. Monaco is bundled locally — fully offline, no CDN. Always-visible quick math symbols (α β γ δ θ λ π √ ∫ ∞ ± ≤) plus a 90-symbol panel.
+8. **Dangling-ref rule + smart completions (v0.5.0)** — rule #10 checks every `\ref` against the project's `\label`s and every `\cite` against the `.bib` keys before you compile; `\ref{` / `\cite{` autocomplete from the live project index. Word count (comments/commands excluded) in the status bar; visual booktabs table generator; AI translate that preserves the LaTeX structure; SyncTeX forward search ("locate in PDF"); multi-document compile targets; LaTeX → Markdown/Word export; debounced save-triggered auto compile.
 
 ## Tech Stack
 
@@ -61,7 +62,7 @@ On the first compile, Tectonic downloads resources on demand from `https://relay
 2. Open `main.tex` in the file tree and edit (`Ctrl+S` saves & triggers rule checks; `Ctrl+B` compiles, `Ctrl+Shift+B` compiles the current file; right-click a `.tex` file to set it as main);
 3. Click **▶ Compile** → PDF preview on the right; the "Compile errors" panel lists errors with real line numbers (click to jump); the "Log" button shows the raw `main.log`;
 4. Select an error → **AI explain** (plain-Chinese explanation + fix advice) or **AI fix** (deterministic fix → AI diff → audit → apply → recompile → auto-rollback);
-5. The "Rule check" tab shows the 9 Chinese-LaTeX rule hits (with fix hints), toggleable in Settings;
+5. The "Rule check" tab shows the 10 Chinese-LaTeX rule hits (with fix hints), toggleable in Settings;
 6. The status bar shows engine / duration / issue count; Settings shows system-font detection and bundle status.
 
 ### v0.2.0 writing aids
@@ -98,7 +99,7 @@ On the first compile, Tectonic downloads resources on demand from `https://relay
 └── docs/                 # ARCHITECTURE.md / PLAN.md
 ```
 
-## Rule Engine (9 rules)
+## Rule Engine (10 rules)
 
 | ID | Rule | Level |
 |---|---|---|

@@ -11,8 +11,17 @@ pub mod missing_end;
 pub mod numbers;
 pub mod paragraph;
 pub mod percent;
+pub mod refs;
 
 use crate::core::{Issue, Severity};
+
+/// Project-level context for cross-file rules (dangling refs/cites).
+pub struct ProjectCtx {
+    /// (relative path, content) for every `.tex` file in the project.
+    pub files: Vec<(String, String)>,
+    /// Every bib key found in the project's `.bib` files.
+    pub bib_keys: Vec<String>,
+}
 
 /// A single check over one source file.
 pub trait Rule: Send + Sync {
@@ -26,6 +35,8 @@ pub trait Rule: Send + Sync {
     }
     /// Run the check, appending findings to `issues`.
     fn check(&self, src: &str, file: &str, issues: &mut Vec<Issue>);
+    /// Project-wide check (cross-file rules). Default: no-op.
+    fn check_project(&self, _ctx: &ProjectCtx, _issues: &mut Vec<Issue>) {}
 }
 
 /// Build the registry of all rules. Add new rules here.
@@ -40,6 +51,7 @@ pub fn all_rules() -> Vec<Box<dyn Rule>> {
         Box::new(paragraph::ParagraphRule),
         Box::new(missing_end::MissingEndRule),
         Box::new(bom::BomRule),
+        Box::new(refs::RefsRule),
     ]
 }
 
@@ -74,6 +86,15 @@ pub fn check_source(
     for rule in all_rules() {
         if enabled(rule.id()) {
             rule.check(src, file, issues);
+        }
+    }
+}
+
+/// Run project-wide checks (cross-file rules like dangling refs/cites).
+pub fn check_project(ctx: &ProjectCtx, enabled: &dyn Fn(&str) -> bool, issues: &mut Vec<Issue>) {
+    for rule in all_rules() {
+        if enabled(rule.id()) {
+            rule.check_project(ctx, issues);
         }
     }
 }
@@ -135,9 +156,9 @@ mod tests {
     }
 
     #[test]
-    fn registry_has_nine_rules() {
+    fn registry_has_ten_rules() {
         let rules = all_rules();
-        assert_eq!(rules.len(), 9);
+        assert_eq!(rules.len(), 10);
         let ids: Vec<_> = rules.iter().map(|r| r.id()).collect();
         for expected in [
             "percent",
@@ -149,6 +170,7 @@ mod tests {
             "paragraph",
             "missing_end",
             "bom",
+            "refs",
         ] {
             assert!(ids.contains(&expected), "missing rule {}", expected);
         }
