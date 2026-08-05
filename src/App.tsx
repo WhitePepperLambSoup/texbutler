@@ -29,7 +29,7 @@ function loadTheme(): ThemeId {
 }
 
 export default function App() {
-  const { root, mainFile, activeTab } = useProjectStore();
+  const { root, mainFile, activeTab, pdfPath } = useProjectStore();
   const { running, progress, compile, lastResult, elapsedSec, compileIssues, ruleIssues } =
     useCompileStore();
   const busy = useAiStore((s) => s.busy);
@@ -288,7 +288,7 @@ export default function App() {
         <main className="col-editor">
           <EditorPane />
         </main>
-        <aside className="col-pdf">
+        <aside className={`col-pdf ${pdfPath ? "has-pdf" : ""}`}>
           <PdfPreview revision={pdfRev} />
         </aside>
       </div>

@@ -166,24 +166,16 @@ html[data-theme="liquid"] .bottom {
 }
 
 /* PDF pane: glassy when EMPTY (blobs glow through, "原来那样"), but fully
-   opaque once the PDF iframe is mounted — the Chromium PDF viewer
-   composites on a transparent layer, so blobs would otherwise show
-   through the document. `:has()` needs WebView2 (Chromium 105+). */
+   opaque once a PDF exists — App.tsx toggles the `has-pdf` class from the
+   store (JS-driven, no :has dependency). The Chromium PDF viewer composites
+   on a transparent layer, so blobs would otherwise show through the
+   document. */
 html[data-theme="liquid"] .col-pdf {
   background: rgba(17, 22, 42, 0.55);
 }
 
-html[data-theme="liquid"] .col-pdf:has(.pdf-frame) {
+html[data-theme="liquid"] .col-pdf.has-pdf {
   background: #11162a;
-}
-
-/* Fallback for WebView2 < 105 (no :has): keep the pane opaque whenever a
-   PDF frame exists is impossible, so fall back to always-opaque — the
-   reading area stays clean, only the empty-state glass is lost. */
-@supports not selector(:has(*)) {
-  html[data-theme="liquid"] .col-pdf {
-    background: #11162a;
-  }
 }
 
 /* floating layout: gaps + rounded panes */
