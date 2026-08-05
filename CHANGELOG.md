@@ -11,6 +11,8 @@
 - **工具栏公式符号**：12 个常驻快捷符号（α β γ δ θ λ π √ ∫ ∞ ± ≤）+ 符号面板扩至 90 个。
 - **修复**：PDF 预览空白（WebView2 自定义协议兼容）、液态玻璃闪屏（去大面积 blur）、编辑器永久 loading（Monaco CDN → 本地）、小窗口遮挡（紧凑模式）。
 
+## [0.3.1] - 2026-08-04
+
 ### 修复（代码审查 v0.3.1）
 
 - **AI 修复真确认**：修复成功后返回修复前快照，点"拒绝"真实回滚文件并同步编辑器；点"接受"自动从磁盘重载编辑器（此前"拒绝"只是清弹窗，文件早已写入）。
@@ -22,6 +24,13 @@
 - **竞态修复**：`openFile` 加请求序号，快速连点文件时活动标签不再落错。
 - **Word 导入顺序**：docx 解析改单遍扫描，带属性/无属性段落混排时保持文档顺序。
 - **CI/脚本**：CI 加 rust-cache、`--locked`、`tsc --noEmit`；`download-tectonic.ps1` 加 SHA-256 校验与超时。
+- **一键修复读取失败**：日志路径含空格（如 `D:/reasonix program/...`）时文件名校验被截断；现在支持项目内绝对路径归一化（log_parser 空格/盘符冒号、resolve 项目内绝对路径、fix_loop/AI 上下文 relative_path）。
+- **设置面板卡退/白屏**：受控输入 null 防御 + sanitizeProvider + ErrorBoundary（渲染异常不再导致应用不可用，可恢复/重载）+ 设置加载保存全程异常捕获。
+- **编译黑框窗口**：Windows 子进程（tectonic/xelatex/bundler 预热）统一加 `CREATE_NO_WINDOW`，不再弹出 shell 黑框。
+
+### 变更
+
+- AI 模型预设更新为 2026-08 官方最新：OpenAI `gpt-5.6-luna`/`gpt-5.6-terra`、DeepSeek `deepseek-v4-flash`/`deepseek-v4-pro`、通义千问 `qwen3.7-plus`、Anthropic `claude-sonnet-5`/`claude-haiku-4-5`、Ollama `qwen3.5:9b`；后端默认模型改为 `gpt-5.6-luna`。
 
 ## [0.3.0] - 2026-08-04
 
@@ -66,18 +75,6 @@
 - 模板/项目名路径遍历封堵（validate_template_name / validate_project_name 全覆盖）。
 - docx 解析 zip-bomb 防护（20MB 双保险 + 截断检测）。
 - AI 生成/导入输出 2MB 上限。
-
-## [Unreleased] - 2026-08
-
-### 修复
-
-- **一键修复读取失败**：日志路径含空格（如 `D:/reasonix program/...`）时文件名校验被截断；现在支持项目内绝对路径归一化（log_parser 空格/盘符冒号、resolve 项目内绝对路径、fix_loop/AI 上下文 relative_path）。
-- **设置面板卡退/白屏**：受控输入 null 防御 + sanitizeProvider + ErrorBoundary（渲染异常不再导致应用不可用，可恢复/重载）+ 设置加载保存全程异常捕获。
-- **编译黑框窗口**：Windows 子进程（tectonic/xelatex/bundler 预热）统一加 `CREATE_NO_WINDOW`，不再弹出 shell 黑框。
-
-### 变更
-
-- AI 模型预设更新为 2026-08 官方最新：OpenAI `gpt-5.6-luna`/`gpt-5.6-terra`、DeepSeek `deepseek-v4-flash`/`deepseek-v4-pro`、通义千问 `qwen3.7-plus`、Anthropic `claude-sonnet-5`/`claude-haiku-4-5`、Ollama `qwen3.5:9b`；后端默认模型改为 `gpt-5.6-luna`。
 
 ## [0.1.0] - 2026-06-18
 
