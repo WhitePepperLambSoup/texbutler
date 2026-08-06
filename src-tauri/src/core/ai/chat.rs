@@ -160,7 +160,10 @@ pub fn is_editable_doc(rel: &str) -> bool {
     let low = rel_clean.to_lowercase();
     let allowed_ext = [".tex", ".bib", ".sty", ".cls"];
     let is_doc = allowed_ext.iter().any(|e| low.ends_with(e));
-    let is_protected = low == super::guide::GUIDE_FILE || low.starts_with(".texbutler/");
+    // note: GUIDE_FILE is uppercase; compare against its lowercased form so
+    // the explicit AI_GUIDE.md protection actually fires (case-insensitive
+    // filesystems treat ai_guide.md the same)
+    let is_protected = low == super::guide::GUIDE_FILE.to_lowercase() || low.starts_with(".texbutler/");
     is_doc && !is_protected
 }
 
@@ -330,9 +333,12 @@ mod tests {
         assert!(is_editable_doc("refs.bib"));
         assert!(is_editable_doc("preamble.sty"));
         assert!(!is_editable_doc("AI_GUIDE.md"));
+        assert!(!is_editable_doc("ai_guide.md"));
         assert!(!is_editable_doc(".texbutler/backup/1/main.tex"));
         assert!(!is_editable_doc("./.texbutler\\x.tex"));
+        assert!(!is_editable_doc(".TEXBUTLER/x.TEX"));
         assert!(!is_editable_doc("image.png"));
+        assert!(!is_editable_doc("IMAGE.PNG"));
         assert!(!is_editable_doc("../outside.tex"));
         assert!(!is_editable_doc(".//.texbutler/x.tex"));
     }
