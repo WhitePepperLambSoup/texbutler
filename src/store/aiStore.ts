@@ -83,18 +83,21 @@ export const useAiStore = create<AiState>((set, get) => ({
     });
     // collaborative edit: AI applied a diff to the project; remember the
     // snapshot so the user can roll it back after compiling
+    let editedThisRound = false;
     const listenEditP = onEvent<{ file?: string; backup?: string }>("tb://ai-edit", (payload) => {
       if (payload.file && payload.backup) {
+        editedThisRound = true;
         useAiStore.setState({ lastEdit: { file: payload.file!, backup: payload.backup! } });
       }
     });
     try {
       const answer = await api.aiChatStream(q, st.activeTab, get().pendingSelection);
       // finalize the live message with the complete answer; mark it as
-      // applied when the AI performed a collaborative edit this round
+      // applied only when the AI edited files THIS round (a leftover
+      // lastEdit from a previous round must not flag a plain chat reply)
       useAiStore.setState((s) => ({
         messages: s.messages.map((m) =>
-          m.id === msgId ? { ...m, text: answer, applied: Boolean(s.lastEdit) } : m,
+          m.id === msgId ? { ...m, text: answer, applied: editedThisRound } : m,
         ),
       }));
     } catch (e) {
