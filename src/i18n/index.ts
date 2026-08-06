@@ -72,6 +72,7 @@ const zh: Dict = {
   "editor.save": "保存 (Ctrl+S)",
   "editor.locateInPdf": "定位到 PDF",
   "editor.locateInPdfTitle": "SyncTeX：跳转到 PDF 中光标所在行对应的页面（需编译时启用 SyncTeX）",
+  "editor.locatePdfNoSync": "暂无 SyncTeX 同步数据，请先编译一次再定位",
   "editor.translate": "翻译",
   "editor.translateTitle": "AI 翻译选中文本（保留 LaTeX 结构，中英互译）",
   "editor.translateEmpty": "请先选中要翻译的文本",
