@@ -161,6 +161,11 @@ pub async fn tb_ai_fix(
     Ok(report)
 }
 
+/// True when the issue has a deterministic fix (never needs the AI).
+fn is_deterministic_rule_issue(issue: &Issue) -> bool {
+    issue.rule_id.as_deref() == Some("paragraph")
+}
+
 /// Fix a RULE issue (e.g. paragraph gluing, dangling refs): the issue is
 /// passed directly because rule issues live outside the compile-issue list
 /// that `tb_ai_fix` indexes. Deterministic fixes (paragraph gluing etc.)
@@ -179,11 +184,14 @@ pub async fn tb_fix_rule_issue(
         let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?.clone();
         (settings, proj)
     };
-    if settings.api_key.is_none() && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. }) {
-        // deterministic fixes do not need a key, but the AI fallback does;
-        // allow the call and let deterministic fixes succeed keylessly
-    }
+    let has_key = settings.api_key.is_some()
+        || matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. });
     let apply = apply.unwrap_or(true);
+    // Deterministic fixes (paragraph gluing etc.) never call the AI, so a
+    // missing key is fine for them; only the AI fallback needs one.
+    if !has_key && !is_deterministic_rule_issue(&issue) {
+        return Err("尚未配置 AI API Key，且该问题没有确定性修复方案。请在“设置”中填写 provider 配置。".into());
+    }
     let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "fix", "status": "start", "apply": apply }));
     let report = fix_loop(&issue, &proj, &settings, max_rounds.unwrap_or(3), apply).await;
     let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "fix", "status": "done", "ok": report.ok, "suggested": report.suggested }));

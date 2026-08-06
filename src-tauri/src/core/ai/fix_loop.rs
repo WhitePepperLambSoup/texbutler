@@ -379,10 +379,11 @@ fn deterministic_fix(content: &str, issue: &Issue) -> Option<String> {
 }
 
 /// Insert a blank line between every pair of adjacent prose lines (both
-/// ≥ 4 chars, per the paragraph rule heuristic). Command lines, comments,
-/// environment delimiters and table rows are left untouched (the rule's
-/// `is_prose_line` already excludes them). Scans the whole file so a batch
-/// of gluing issues is repaired in a single deterministic pass.
+/// ≥ 4 chars, per the paragraph rule heuristic). Command lines, comments
+/// (`%`-prefixed, matching the rule's own check), environment delimiters
+/// and table rows are left untouched. Scans the whole file so a batch of
+/// gluing issues is repaired in a single deterministic pass. The trailing
+/// newline of the original file is preserved.
 fn fix_paragraph_gluing(content: &str) -> Option<String> {
     let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
     let mut changed = false;
@@ -390,8 +391,10 @@ fn fix_paragraph_gluing(content: &str) -> Option<String> {
     while i + 1 < lines.len() {
         let a = lines[i].trim();
         let b = lines[i + 1].trim();
-        let a_prose = crate::core::rules::paragraph::is_prose_line(a);
-        let b_prose = crate::core::rules::paragraph::is_prose_line(b);
+        // comment lines never take part in gluing (rule check skips them)
+        let no_comment = !a.starts_with('%') && !b.starts_with('%');
+        let a_prose = no_comment && crate::core::rules::paragraph::is_prose_line(a);
+        let b_prose = no_comment && crate::core::rules::paragraph::is_prose_line(b);
         if a_prose && b_prose && a.chars().count() >= 4 && b.chars().count() >= 4 {
             lines.insert(i + 1, String::new());
             changed = true;
@@ -400,7 +403,14 @@ fn fix_paragraph_gluing(content: &str) -> Option<String> {
             i += 1;
         }
     }
-    changed.then(|| lines.join("\n"))
+    if !changed {
+        return None;
+    }
+    let mut out = lines.join("\n");
+    if content.ends_with('\n') {
+        out.push('\n');
+    }
+    Some(out)
 }
 
 /// Extract the undefined command name from a raw error block.
