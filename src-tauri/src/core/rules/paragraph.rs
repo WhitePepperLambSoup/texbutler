@@ -65,7 +65,10 @@ impl Rule for ParagraphRule {
 }
 
 /// Heuristic: is this line "prose" (not a command-only / table / list line)?
-fn is_prose_line(line: &str) -> bool {
+/// `pub` so the deterministic paragraph fix (fix_loop) can reuse the exact
+/// same definition — the fixer and the rule must agree on what a prose
+/// line is.
+pub fn is_prose_line(line: &str) -> bool {
     if line.starts_with("\\item") {
         return false; // list item
     }

@@ -145,6 +145,38 @@ export default function ProblemsPanel() {
                     </button>
                   </>
                 )}
+                {tab === "rules" && (
+                  <button
+                    className="btn-mini btn-primary"
+                    disabled={busy}
+                    title={t("problems.ruleFixTitle")}
+                    onClick={() => {
+                      setAiBusyIdx(i);
+                      void (async () => {
+                        try {
+                          const report = await api.fixRuleIssue(issue, 3, true);
+                          await runCheck();
+                          useAiStore
+                            .getState()
+                            .pushMessage({
+                              role: "assistant",
+                              kind: "fix",
+                              text: report.summary,
+                              report,
+                            });
+                        } catch (e) {
+                          useAiStore
+                            .getState()
+                            .pushMessage({ role: "assistant", kind: "error", text: String(e) });
+                        } finally {
+                          setAiBusyIdx(null);
+                        }
+                      })();
+                    }}
+                  >
+                    {aiBusyIdx === i ? "…" : t("problems.ruleFix")}
+                  </button>
+                )}
               </span>
             </div>
           ))

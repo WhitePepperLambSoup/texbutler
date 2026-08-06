@@ -176,6 +176,7 @@ pub fn run() {
     commands::ai::tb_token_usage_reset,
     commands::ai::tb_ai_create_guide,
     commands::ai::tb_ai_rollback,
+    commands::ai::tb_fix_rule_issue,
             commands::ai::tb_check_updates,
             commands::ai::tb_get_update_check,
             commands::ai::tb_set_update_check,

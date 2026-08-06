@@ -366,7 +366,41 @@ fn deterministic_fix(content: &str, issue: &Issue) -> Option<String> {
         }
     }
 
+    // 4) Paragraph gluing (rule "paragraph"): adjacent prose lines with no
+    //    blank line between them → insert blank lines. This is a
+    //    deterministic, machine-verifiable fix applied to ALL glued pairs
+    //    at once (the user's 143-issue report gets fixed in one pass
+    //    instead of one AI round per issue).
+    if issue.rule_id.as_deref() == Some("paragraph") {
+        return fix_paragraph_gluing(content);
+    }
+
     None
+}
+
+/// Insert a blank line between every pair of adjacent prose lines (both
+/// ≥ 4 chars, per the paragraph rule heuristic). Command lines, comments,
+/// environment delimiters and table rows are left untouched (the rule's
+/// `is_prose_line` already excludes them). Scans the whole file so a batch
+/// of gluing issues is repaired in a single deterministic pass.
+fn fix_paragraph_gluing(content: &str) -> Option<String> {
+    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+    let mut changed = false;
+    let mut i = 0;
+    while i + 1 < lines.len() {
+        let a = lines[i].trim();
+        let b = lines[i + 1].trim();
+        let a_prose = crate::core::rules::paragraph::is_prose_line(a);
+        let b_prose = crate::core::rules::paragraph::is_prose_line(b);
+        if a_prose && b_prose && a.chars().count() >= 4 && b.chars().count() >= 4 {
+            lines.insert(i + 1, String::new());
+            changed = true;
+            i += 2; // skip the inserted blank
+        } else {
+            i += 1;
+        }
+    }
+    changed.then(|| lines.join("\n"))
 }
 
 /// Extract the undefined command name from a raw error block.
@@ -1280,6 +1314,34 @@ mod tests {
         assert_eq!(lines[1], "正文");
         assert_eq!(lines[2], "\\undefinedcommand");
         assert_eq!(lines[3], "\\end{document}");
+    }
+
+    #[test]
+    fn deterministic_fix_fixes_all_paragraph_gluing_at_once() {
+        // three glued pairs + a legitimately separated pair: all glued
+        // pairs get a blank line inserted in ONE pass; command/table lines
+        // and already-separated prose stay untouched
+        let content = "\\documentclass{article}\n\\begin{document}\n第一段文字内容\n第二段文字内容\n\\section*{标题}\n第三段文字内容\n第四段文字内容\n\n第五段文字内容\n\\begin{tabular}{cc}\na & b \\\\\n\\end{tabular}\n第六段文字内容\n\\end{document}\n";
+        let issue = Issue::new(crate::core::Severity::Info, crate::core::IssueKind::RuleCheck, "段落粘连")
+            .with_rule("paragraph", "在两行之间插入一个空行。");
+        let fixed = deterministic_fix(content, &issue).expect("paragraph fix applies");
+        let lines: Vec<&str> = fixed.lines().collect();
+        // blank lines inserted between every adjacent prose pair
+        let p1 = lines.iter().position(|l| l.contains("第一段")).unwrap();
+        let p2 = lines.iter().position(|l| l.contains("第二段")).unwrap();
+        let p3 = lines.iter().position(|l| l.contains("第三段")).unwrap();
+        let p4 = lines.iter().position(|l| l.contains("第四段")).unwrap();
+        assert_eq!(p2, p1 + 2, "第一段与第二段之间应有空行: {lines:?}");
+        assert_eq!(p4, p3 + 2, "第三段与第四段之间应有空行: {lines:?}");
+        // command / table lines untouched
+        assert!(fixed.contains("\\section*{标题}"));
+        assert!(fixed.contains("\\begin{tabular}{cc}"));
+        // already-separated pair untouched: 第五段 keeps its blank line
+        let p5 = lines.iter().position(|l| l.contains("第五段")).unwrap();
+        assert!(lines[p5 - 1].trim().is_empty(), "第五段前的空行保留");
+        // a re-run finds nothing more to fix (idempotent)
+        let fixed2 = deterministic_fix(&fixed, &issue).unwrap_or_else(|| fixed.clone());
+        assert_eq!(fixed2, fixed);
     }
 
     #[test]

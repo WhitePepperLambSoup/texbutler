@@ -161,6 +161,35 @@ pub async fn tb_ai_fix(
     Ok(report)
 }
 
+/// Fix a RULE issue (e.g. paragraph gluing, dangling refs): the issue is
+/// passed directly because rule issues live outside the compile-issue list
+/// that `tb_ai_fix` indexes. Deterministic fixes (paragraph gluing etc.)
+/// run first and fix the whole file in one pass — no AI round needed.
+#[tauri::command]
+pub async fn tb_fix_rule_issue(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    issue: Issue,
+    max_rounds: Option<u32>,
+    apply: Option<bool>,
+) -> Result<FixReport, String> {
+    let (settings, proj) = {
+        let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
+        let guard = state.project.read().map_err(|e| e.to_string())?;
+        let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?.clone();
+        (settings, proj)
+    };
+    if settings.api_key.is_none() && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. }) {
+        // deterministic fixes do not need a key, but the AI fallback does;
+        // allow the call and let deterministic fixes succeed keylessly
+    }
+    let apply = apply.unwrap_or(true);
+    let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "fix", "status": "start", "apply": apply }));
+    let report = fix_loop(&issue, &proj, &settings, max_rounds.unwrap_or(3), apply).await;
+    let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "fix", "status": "done", "ok": report.ok, "suggested": report.suggested }));
+    Ok(report)
+}
+
 /// Redact the API key from any error text before it reaches the UI.
 fn redact_key(s: &AiSettings, msg: String) -> String {
     match &s.api_key {

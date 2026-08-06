@@ -197,6 +197,8 @@ export const api = {
   aiDiagnose: (issueIndex: number) => invoke<AiDiagnosis>("tb_ai_diagnose", { issueIndex }),
   aiFix: (issueIndex: number, maxRounds?: number, apply?: boolean) =>
     invoke<FixReport>("tb_ai_fix", { issueIndex, maxRounds: maxRounds ?? null, apply: apply ?? true }),
+  fixRuleIssue: (issue: Issue, maxRounds?: number, apply?: boolean) =>
+    invoke<FixReport>("tb_fix_rule_issue", { issue, maxRounds: maxRounds ?? null, apply: apply ?? true }),
   aiApplyPatch: (file: string, patch: string) =>
     invoke<string>("tb_ai_apply_patch", { file, patch }),
   aiRollback: (backup: string) => invoke<string>("tb_ai_rollback", { backup }),
