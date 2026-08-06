@@ -27,7 +27,7 @@ interface AiState {
   /** Editor selection handed to the AI panel for "ask about this selection". */
   pendingSelection: string | null;
   /** Last collaborative edit applied by the AI (snapshot path for rollback). */
-  lastEdit: { file: string; backup: string } | null;
+  lastEdit: { file: string; backup: string; diff?: string } | null;
 
   loadSettings: () => Promise<void>;
   diagnoseIssue: (issue: Issue, index: number) => Promise<void>;
@@ -84,10 +84,10 @@ export const useAiStore = create<AiState>((set, get) => ({
     // collaborative edit: AI applied a diff to the project; remember the
     // snapshot so the user can roll it back after compiling
     let editedThisRound = false;
-    const listenEditP = onEvent<{ file?: string; backup?: string }>("tb://ai-edit", (payload) => {
+    const listenEditP = onEvent<{ file?: string; backup?: string; diff?: string }>("tb://ai-edit", (payload) => {
       if (payload.file && payload.backup) {
         editedThisRound = true;
-        useAiStore.setState({ lastEdit: { file: payload.file!, backup: payload.backup! } });
+        useAiStore.setState({ lastEdit: { file: payload.file!, backup: payload.backup!, diff: payload.diff } });
       }
     });
     try {

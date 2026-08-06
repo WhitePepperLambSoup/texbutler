@@ -23,7 +23,7 @@ pub async fn ask_about_source(
     selection: Option<&str>,
     question: &str,
 ) -> Result<String, String> {
-    let messages = build_messages(project, file, selection, question);
+    let messages = build_messages(project, file, selection, question, 8000);
     let reply = chat(s, &messages).await.map_err(|e| e.to_string())?;
     Ok(reply.trim().to_string())
 }
@@ -38,7 +38,7 @@ pub async fn ask_about_source_stream(
     question: &str,
     on_delta: impl FnMut(&str),
 ) -> Result<String, String> {
-    let messages = build_messages(project, file, selection, question);
+    let messages = build_messages(project, file, selection, question, 8000);
     let reply = super::provider::chat_stream(s, &messages, on_delta)
         .await
         .map_err(|e| e.to_string())?;
@@ -57,9 +57,11 @@ pub async fn ask_about_source_edit_stream(
     selection: Option<&str>,
     question: &str,
     on_delta: impl FnMut(&str),
-    mut on_edit: impl FnMut(&str, &str),
+    mut on_edit: impl FnMut(&str, &str, &str),
 ) -> Result<String, String> {
-    let mut messages = build_messages(project, file, selection, question);
+    // editing needs the FULL file (a truncated view makes the AI guess
+    // context lines past the cut → diff application fails on real files)
+    let mut messages = build_messages(project, file, selection, question, 30000);
     // project style guide (AI_GUIDE.md) injected into the system prompt
     let guide = super::guide::guide_system_fragment(project);
     // tell the AI it may edit files by emitting a unified diff
@@ -117,7 +119,7 @@ diff 输出完后可另起一行以 `解释：` 开头附一段修改说明。\
                         // "applied / roll back" only when the file really changed
                         match project.write_file(&rel_clean, &new_content) {
                             Ok(()) => {
-                                on_edit(&rel_clean, &snap_s);
+                                on_edit(&rel_clean, &snap_s, &diff);
                                 return Ok(format!(
                                     "{reply}\n\n✅ 已自动应用修改（{rel_clean}）。编译检查后不满意可在 AI 面板点击“回滚此修改”。\n{summary}"
                                 ));
@@ -275,6 +277,7 @@ fn build_messages(
     file: Option<&str>,
     selection: Option<&str>,
     question: &str,
+    max_file_chars: usize,
 ) -> Vec<ChatMsg> {
     let mut user = String::new();
     if let Some(sel) = selection {
@@ -287,9 +290,8 @@ fn build_messages(
         if f.ends_with(".tex") {
             if let Ok(content) = project.read_file(&f) {
                 user.push_str(&format!(
-                    "【当前文件 `{f}` 的内容（前 {} 字符）】\n```latex\n{}\n```\n\n",
-                    8000,
-                    truncate(&content, 8000)
+                    "【当前文件 `{f}` 的内容（前 {max_file_chars} 字符）】\n```latex\n{}\n```\n\n",
+                    truncate(&content, max_file_chars)
                 ));
             }
         }

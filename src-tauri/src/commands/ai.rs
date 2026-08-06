@@ -245,8 +245,8 @@ pub async fn tb_ai_chat_stream(
         move |delta| {
             let _ = app2.emit("tb://ai-stream", serde_json::json!({ "delta": delta }));
         },
-        move |file, backup| {
-            let _ = app3.emit("tb://ai-edit", serde_json::json!({ "file": file, "backup": backup }));
+        move |file, backup, diff| {
+            let _ = app3.emit("tb://ai-edit", serde_json::json!({ "file": file, "backup": backup, "diff": diff }));
         },
     )
     .await

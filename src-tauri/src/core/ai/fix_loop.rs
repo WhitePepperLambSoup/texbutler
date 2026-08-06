@@ -60,11 +60,23 @@ pub fn apply_unified_diff(original: &str, diff: &str) -> Result<String, String> 
     }
 
     let mut result = original.to_string();
-    // Apply hunks bottom-up so line numbers stay valid.
-    for hunk in hunks.iter().rev() {
-        result = apply_hunk(&result, hunk)?;
+    // Apply hunks bottom-up so line numbers stay valid. Report which hunk
+    // failed so the user/AI knows exactly what could not be applied.
+    let total = hunks.len();
+    for (i, hunk) in hunks.iter().rev().enumerate() {
+        match apply_hunk(&result, hunk) {
+            Ok(r) => result = r,
+            Err(e) => return Err(format!("第 {}/{} 个 hunk 无法应用：{e}", total - i, total)),
+        }
     }
     Ok(result)
+}
+
+/// Compare a diff line against the file content, tolerating trailing
+/// whitespace differences (`\r` from CRLF files, trailing spaces an LLM
+/// dropped). Leading whitespace is significant (LaTeX indentation).
+fn diff_line_matches(old: &str, want: &str) -> bool {
+    old.trim_end() == want.trim_end()
 }
 
 /// A valid unified-diff body line starts with `+`, `-` or a space
@@ -113,7 +125,7 @@ fn apply_hunk(original: &str, hunk: &[&str]) -> Result<String, String> {
                 if let Some(next) = body.get(i + 1) {
                     if next.starts_with('+') && &next[1..] == expected {
                         match target.get(old_idx) {
-                            Some(old) if old == expected => {
+                            Some(old) if diff_line_matches(old, expected) => {
                                 out.push(old.clone());
                                 old_idx = match old_idx.checked_add(1) {
                                     Some(v) => v,
@@ -131,7 +143,7 @@ fn apply_hunk(original: &str, hunk: &[&str]) -> Result<String, String> {
                 // it), never ANY line — otherwise a malformed `-\n` would
                 // delete arbitrary content after anchor calibration
                 match target.get(old_idx) {
-                    Some(old_line) if old_line == expected => {}
+                    Some(old_line) if diff_line_matches(old_line, expected) => {}
                     Some(old_line) => {
                         return Err(format!(
                             "diff 上下文不匹配：第 {} 行期望 `{}`，实际 `{}`",
@@ -158,7 +170,7 @@ fn apply_hunk(original: &str, hunk: &[&str]) -> Result<String, String> {
                 // context line: keep old line and advance both
                 let context = line.strip_prefix(' ').unwrap_or(line);
                 if let Some(old_line) = target.get(old_idx) {
-                    if old_line != context {
+                    if !diff_line_matches(old_line, context) {
                         return Err(format!(
                             "diff 上下文不匹配：第 {} 行期望 `{}`，实际 `{}`",
                             old_idx + 1,
@@ -465,7 +477,7 @@ fn hunk_matches_at(target: &[String], body: &[&str], mut idx: usize) -> bool {
                 // content consumes one old line without requiring changes
                 if let Some(next) = body.get(bi + 1) {
                     if next.starts_with('+') && &next[1..] == expected {
-                        if target.get(idx).map(|o| o == expected).unwrap_or(false) {
+                        if target.get(idx).map(|o| diff_line_matches(o, expected)).unwrap_or(false) {
                             idx = match idx.checked_add(1) {
                                 Some(v) => v,
                                 None => return false,
@@ -479,7 +491,7 @@ fn hunk_matches_at(target: &[String], body: &[&str], mut idx: usize) -> bool {
                 // `-` removes an empty line — never any line); removing the
                 // file's final (empty) line is allowed
                 match target.get(idx) {
-                    Some(old) if old == expected => {}
+                    Some(old) if diff_line_matches(old, expected) => {}
                     None if expected.is_empty() => {}
                     _ => return false,
                 }
@@ -492,7 +504,7 @@ fn hunk_matches_at(target: &[String], body: &[&str], mut idx: usize) -> bool {
             _ => {
                 let context = line.strip_prefix(' ').unwrap_or(line);
                 match target.get(idx) {
-                    Some(old) if old == context => {}
+                    Some(old) if diff_line_matches(old, context) => {}
                     _ => return false,
                 }
                 idx = match idx.checked_add(1) {
@@ -1411,6 +1423,30 @@ mod tests {
         let diff = "@@ -1,3 +1,3 @@\n a\n-b\n+B\n c\n";
         let result = apply_unified_diff(original, diff).unwrap();
         assert_eq!(result, "a\nB\nc");
+    }
+
+    #[test]
+    fn tolerates_trailing_whitespace_in_context() {
+        // CRLF file + LLM dropped trailing spaces: must still apply
+        let original = "\\documentclass{article}\r\n\\begin{document}\r\n正文\r\n\\end{document}\r\n";
+        let diff = "@@ -1,4 +1,5 @@\n \\documentclass{article}\n+\\usepackage{float}\n \\begin{document}\n 正文\n \\end{document}\n";
+        let result = apply_unified_diff(original, diff).unwrap();
+        assert!(result.contains("\\usepackage{float}"));
+        // trailing space on a context/removed line is tolerated too; the
+        // file's original line (with its trailing spaces) is preserved
+        let original2 = "a  \nb\n";
+        let diff2 = "@@ -1,2 +1,2 @@\n a\n-b\n+B\n";
+        assert_eq!(apply_unified_diff(original2, diff2).unwrap(), "a  \nB");
+    }
+
+    #[test]
+    fn reports_failing_hunk_index() {
+        // 2 hunks, second one has mismatched context → error names the hunk
+        let original = "a\nb\nc\nd\ne\nf\n";
+        let diff = "@@ -1,2 +1,3 @@\n a\n+x\n b\n@@ -5,2 +6,2 @@\n z\n-e\n+E\n";
+        let err = apply_unified_diff(original, diff).unwrap_err();
+        assert!(err.contains("hunk 无法应用"), "{err}");
+        assert!(err.contains("2/2"), "{err}");
     }
 
     #[test]

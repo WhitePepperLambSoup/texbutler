@@ -15,6 +15,36 @@ function renderText(text: string): string {
     .replace(/\n/g, "<br/>");
 }
 
+/** Highlight a unified diff for the AI-applied edit: added lines green,
+ * removed lines red, context grey — so the user can SEE what changed. */
+function DiffHighlight({ diff }: { diff: string }) {
+  const rows = diff.split("\n").map((line, i) => {
+    let cls = "ctx";
+    let text = line;
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      cls = "add";
+      text = line.slice(1);
+    } else if (line.startsWith("-") && !line.startsWith("---")) {
+      cls = "del";
+      text = line.slice(1);
+    } else if (line.startsWith("@@")) {
+      cls = "hunk";
+    } else if (line.startsWith("+++") || line.startsWith("---")) {
+      cls = "head";
+      text = line.slice(4);
+    } else if (line.startsWith(" ")) {
+      text = line.slice(1);
+    }
+    return (
+      <div key={i} className={`diff-line ${cls}`}>
+        <span className="diff-mark">{cls === "add" ? "+" : cls === "del" ? "−" : ""}</span>
+        <span className="diff-text">{text || "\u00A0"}</span>
+      </div>
+    );
+  });
+  return <div className="diff-view">{rows}</div>;
+}
+
 export default function AiPanel() {
   const { messages, busy, busyKind, diffPending, acceptDiff, rejectDiff, applyHunk, clearMessages, suggestMode, toggleSuggestMode, pendingSelection, setSelection, askAi, lastEdit, rollbackEdit } =
     useAiStore();
@@ -133,6 +163,7 @@ export default function AiPanel() {
                 Only the newest applied message shows the button. */}
             {m.role === "assistant" && m.applied && lastEdit && m.id === newestAppliedId && (
               <div className="ai-msg-actions">
+                {lastEdit.diff && <DiffHighlight diff={lastEdit.diff} />}
                 <button className="btn-mini btn-danger" onClick={() => void rollbackEdit()}>
                   {t("ai.rollback", { file: lastEdit.file })}
                 </button>

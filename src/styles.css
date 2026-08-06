@@ -1196,8 +1196,7 @@ body {
   display: flex;
   gap: 8px;
   align-items: center;
-  background: var(--bg2);
-  font-size: 12.5px;
+  background: var(--bg2);  font-size: 12.5px;
 }
 
 .ai-diff-bar span {
@@ -1816,4 +1815,43 @@ body {
 .sym-quick-btn:hover {
   background: var(--accent2) !important;
   color: #fff;
+}
+
+/* AI-applied edit diff: added green / removed red / context grey */
+.ai-msg-actions {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+.diff-view {
+  width: 100%;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+.diff-line {
+  display: flex;
+  padding: 0 6px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.diff-line.add { background: rgba(46, 160, 67, 0.16); color: #3fb950; }
+.diff-line.del { background: rgba(248, 81, 73, 0.14); color: #f85149; }
+.diff-line.hunk { background: var(--bg2); color: var(--accent2); }
+.diff-line.head { background: var(--bg2); color: var(--fg-dim); }
+.diff-line.ctx { color: var(--fg-dim); }
+.diff-mark {
+  width: 14px;
+  flex-shrink: 0;
+  user-select: none;
+}
+.diff-text {
+  flex: 1;
 }
