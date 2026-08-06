@@ -127,6 +127,15 @@ export default function AiPanel() {
             {m.diff && (
               <pre className="ai-diff">{m.diff}</pre>
             )}
+            {/* collaborative edit: the AI changed a file — roll back right
+                inside the message bubble (compile-check then decide) */}
+            {m.role === "assistant" && lastEdit && m.text.includes("已自动应用修改") && (
+              <div className="ai-msg-actions">
+                <button className="btn-mini btn-danger" onClick={() => void rollbackEdit()}>
+                  {t("ai.rollback", { file: lastEdit.file })}
+                </button>
+              </div>
+            )}
             {m.raw && (
               <div className="ai-raw-toggle">
                 <button className="btn-mini" onClick={() => setExpandedRaw(expandedRaw === m.id ? null : m.id)}>
@@ -247,7 +256,7 @@ export default function AiPanel() {
           </button>
         </div>
         <div className="ai-generate-actions">
-          {lastEdit && (
+          {lastEdit && !messages.some((m) => m.role === "assistant" && m.text.includes("已自动应用修改")) && (
             <button
               className="btn-mini btn-danger"
               title={t("ai.rollbackTitle")}

@@ -16,6 +16,27 @@ import { useT } from "./i18n";
 import { loadFlow } from "./flow";
 import QuickOpenModal from "./components/QuickOpenModal";
 
+/** Overleaf-style collapsible right rail hosting the AI panel: a thin
+ * vertical strip when collapsed (does not take space), a full panel when
+ * open. The state persists across launches. */
+function AiRail() {
+  const [open, setOpen] = useState(() => localStorage.getItem("tb-ai-rail") !== "0");
+  const t = useT();
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    localStorage.setItem("tb-ai-rail", next ? "1" : "0");
+  };
+  return (
+    <aside className={`ai-rail ${open ? "open" : "collapsed"}`}>
+      <button className="ai-rail-toggle" onClick={toggle} title={open ? t("ai.collapse") : t("ai.expand")}>
+        {open ? "▸" : "AI"}
+      </button>
+      {open && <AiPanel />}
+    </aside>
+  );
+}
+
 export type ThemeId = "liquid" | "dark" | "light";
 
 function loadTheme(): ThemeId {
@@ -410,10 +431,10 @@ export default function App() {
         <aside className={`col-pdf ${pdfPath ? "has-pdf" : ""}`}>
           <PdfPreview revision={pdfRev} page={pdfPage ?? undefined} />
         </aside>
+        <AiRail />
       </div>
       <div className="bottom">
         <ProblemsPanel />
-        <AiPanel />
       </div>
       <div className="statusbar">
         <span className="status-item" title={t("status.engine")}>

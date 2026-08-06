@@ -1,13 +1,7 @@
-\documentclass[12pt,a4paper]{ctexart}
-\usepackage[margin=2.54cm, left=3.17cm, right=3.17cm]{geometry}
-\setlength{\parindent}{2em}
-\linespread{1.5}
-\zihao{-4}\songti
+﻿\documentclass{article}
 \begin{document}
 \section{引言}\label{sec:intro}
-参见第 \ref{sec:intro} 节。
-引用 \cite{knuth84}。
-\begin{thebibliography}{9}
-\bibitem{knuth84} Donald E. Knuth. 《The \TeX book》. Addison-Wesley, 1984.
-\end{thebibliography}
+参见 \ref{sec:intro} 与 \ref{sec:missing}。
+引用 \cite{knuth84} 与 \cite{ghost}。
 \end{document}
+未闭合引用测试：\ref{中文未闭合

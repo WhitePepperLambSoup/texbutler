@@ -179,6 +179,8 @@ export const api = {
   aiChatStream: (question: string, file?: string | null, selection?: string | null) =>
     invoke<string>("tb_ai_chat_stream", { question, file: file ?? null, selection: selection ?? null }),
   aiSnapshots: () => invoke<{ path: string; ts: string; file: string }[]>("tb_ai_snapshots"),
+  // note: tb_ai_generate stays in the backend (harmless), the UI is
+  // chat-driven only — see askAboutSource in the AI panel
   tokenUsage: () => invoke<{ prompt_tokens: number; completion_tokens: number; requests: number; cost_usd: number; provider: string }>("tb_token_usage"),
   tokenUsageReset: () => invoke<void>("tb_token_usage_reset"),
   aiCreateGuide: (requirements: string) => invoke<string>("tb_ai_create_guide", { requirements }),

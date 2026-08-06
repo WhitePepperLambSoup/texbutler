@@ -653,10 +653,49 @@ body {
   min-width: 300px;
 }
 
-.bottom > .ai-panel {
-  flex: 1 1 45%;
-  min-width: 280px;
+/* ---------- AI rail (Overleaf-style collapsible right strip) ---------- */
+.ai-rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   border-left: 1px solid var(--border);
+  transition: width 0.18s ease;
+  flex-shrink: 0;
+}
+.ai-rail.open {
+  width: 340px;
+}
+.ai-rail.collapsed {
+  width: 34px;
+}
+.ai-rail-toggle {
+  flex-shrink: 0;
+  height: 100%;
+  width: 34px;
+  border: none;
+  background: transparent;
+  color: var(--fg-dim);
+  cursor: pointer;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 12px;
+  letter-spacing: 2px;
+  padding: 8px 0;
+}
+.ai-rail-toggle:hover {
+  color: var(--accent2);
+  background: var(--bg2);
+}
+.ai-rail.collapsed .ai-rail-toggle {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  writing-mode: vertical-rl;
+}
+.ai-rail > .ai-panel {
+  flex: 1;
+  min-height: 0;
 }
 
 /* ---------- status bar ---------- */
