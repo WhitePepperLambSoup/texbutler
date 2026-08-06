@@ -238,10 +238,12 @@ fn parse_tool_calls(reply: &str) -> Vec<ToolCall> {
 }
 
 /// Execute all tool calls in the reply. Two-phase: every call is computed
-/// and validated against the CURRENT file content first; only when all
-/// succeed is ONE snapshot taken and the edits written one by one, with a
-/// single on_edit event — so the user's single "roll back" undoes the whole
-/// batch, and a mid-batch failure leaves the file untouched.
+/// and validated against the CURRENT file content first; batches of calls
+/// to the same file are chained into one final content, so the common case
+/// is ONE snapshot + ONE write + ONE rollback for the whole batch.
+/// Individual call failures are collected and reported; files whose calls
+/// all succeeded still get applied (partial success is explicit, not
+/// silent).
 async fn execute_tool_calls(
     project: &Project,
     reply: &str,
@@ -292,12 +294,12 @@ async fn execute_tool_calls(
     if per_file.is_empty() {
         return ToolOutcome::Applied(0, failures, reply.trim().to_string());
     }
-    // phase 2: snapshot + write each file, then ONE on_edit event (the
-    // frontend shows a single "roll back" that restores the last written
-    // file — the common case is a batch of edits to one file, which this
-    // handles as a single snapshot + single write)
+    // phase 2: snapshot + write per file. A batch of calls to ONE file was
+    // already chained into a single (rel, content) in phase 1, so the
+    // common case is one snapshot + one write + one event (one rollback
+    // undoes the whole batch). Multi-file batches emit one event per file,
+    // each with its own snapshot, so every file stays rollback-able.
     let mut applied = 0usize;
-    let mut last_event: Option<(String, String, String)> = None; // (rel, snap, diff)
     for (rel, new_content) in &per_file {
         let src = match project.read_file(rel) {
             Ok(s) => s,
@@ -323,10 +325,7 @@ async fn execute_tool_calls(
             continue;
         }
         applied += 1;
-        last_event = Some((rel.clone(), snap.to_string_lossy().to_string(), diff));
-    }
-    if let Some((rel, snap, diff)) = last_event {
-        on_edit(&rel, &snap, &diff);
+        on_edit(rel, &snap.to_string_lossy().to_string(), &diff);
     }
     ToolOutcome::Applied(applied, failures, reply.trim().to_string())
 }
