@@ -7,7 +7,14 @@ pub const SYSTEM_PROMPT: &str = "你是 TeXButler 内置的 LaTeX 编译错误�
 2) 必须给出具体的修改方向（改哪个文件哪一行附近、加什么宏包、替换成什么）；\
 3) 不确定时明确说“不确定”，不要编造；\
 4) 回复优先输出一个 JSON 对象：{\"explanation\": \"人话解释\", \"suggestion\": \"具体修复建议\", \"confidence\": \"high|medium|low\"}，\
-不要输出 JSON 以外的解释（除非确实无法用 JSON 表达）。";
+不要输出 JSON 以外的解释（除非确实无法用 JSON 表达）。\
+{guide}";
+
+/// Build the system prompt for a diagnosis request, optionally injecting the
+/// project style guide (AI_GUIDE.md).
+pub fn diagnose_system_prompt(guide: &str) -> String {
+    SYSTEM_PROMPT.replace("{guide}", guide)
+}
 
 /// Build the user prompt for a diagnosis request.
 pub fn diagnose_prompt(issue: &crate::core::Issue, ctx: &crate::core::SourceContext) -> String {

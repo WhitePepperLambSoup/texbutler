@@ -45,6 +45,122 @@ pub async fn ask_about_source_stream(
     Ok(reply.trim().to_string())
 }
 
+/// Streaming variant with collaborative editing: the AI answers in plain
+/// text, but if its reply contains a unified diff (`--- a/` + `@@`), the
+/// diff is applied to the project automatically (snapshot first) and the
+/// caller is told about it via `on_edit`. The user compiles, checks, and
+/// can roll back with the returned snapshot.
+pub async fn ask_about_source_edit_stream(
+    s: &AiSettings,
+    project: &Project,
+    file: Option<&str>,
+    selection: Option<&str>,
+    question: &str,
+    on_delta: impl FnMut(&str),
+    mut on_edit: impl FnMut(&str, &str),
+) -> Result<String, String> {
+    let mut messages = build_messages(project, file, selection, question);
+    // project style guide (AI_GUIDE.md) injected into the system prompt
+    let guide = super::guide::guide_system_fragment(project);
+    // tell the AI it may edit files by emitting a unified diff
+    messages.push(ChatMsg {
+        role: "system".into(),
+        content: format!(
+            "\n【协作编辑约定】你可以直接修改代码来帮助作者：\
+如果作者的要求涉及改动代码，请在你的回答末尾输出一个 unified diff（格式：`--- a/<file>`、`+++ b/<file>`、`@@` 头、`-`/`+`/空格 前缀行），\
+diff 会被自动应用到项目文件（应用前会快照，作者不满意可一键回滚）。\
+只输出一个 diff，路径必须是项目内的相对路径；不要输出多个 diff；不需要修改时不要输出 diff。\
+**必须只做最小修改**：只 diff 被要求改动的行，其余内容（文档类、宏定义、其他段落）一字不改地保留在上下文中；绝不要重写整个文件。\
+diff 输出完后可另起一行以 `解释：` 开头附一段修改说明。{guide}"
+        ),
+    });
+    let reply = super::provider::chat_stream(s, &messages, on_delta)
+        .await
+        .map_err(|e| e.to_string())?;
+    // detect a unified diff in the reply and apply it
+    if let Some((diff, summary)) = extract_diff(&reply) {
+        let rel = diff_file(&diff).unwrap_or_else(|| file.unwrap_or("main.tex").to_string());
+        let rel = project.relative_path(&rel);
+        if let Ok(src) = project.read_file(&rel) {
+            if let Ok(new_content) = super::fix_loop::apply_unified_diff(&src, &diff) {
+                if new_content != src {
+                    if let Ok(snap) = super::fix_loop::snapshot(project, &rel, &src) {
+                        let snap_s = snap.to_string_lossy().to_string();
+                        // write FIRST, then notify: the frontend shows
+                        // "applied / roll back" only when the file really changed
+                        match project.write_file(&rel, &new_content) {
+                            Ok(()) => {
+                                on_edit(&rel, &snap_s);
+                                return Ok(format!(
+                                    "{reply}\n\n✅ 已自动应用修改（{rel}）。编译检查后不满意可在 AI 面板点击“回滚此修改”。\n{summary}"
+                                ));
+                            }
+                            Err(e) => return Err(format!("应用修改失败：{e}")),
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(reply.trim().to_string())
+}
+
+/// Extract the first unified diff (`--- a/...` ... `@@ ...`) from a reply.
+/// Returns (diff_text, explanation_summary). The diff ends at the `解释：`
+/// marker or at the first line that is neither a diff line (` `, `+`, `-`,
+/// `@@`, `---`, `+++`) nor empty — so trailing markdown prose never bleeds
+/// into the diff and gets misapplied.
+fn extract_diff(reply: &str) -> Option<(String, String)> {
+    let lines: Vec<&str> = reply.lines().collect();
+    let start = lines.iter().position(|l| l.starts_with("--- a/"))?;
+    let mut end = lines.len();
+    let mut summary = String::new();
+    for (i, l) in lines.iter().enumerate().skip(start + 1) {
+        let t = l.trim();
+        if t == "解释：" || t == "Explanation:" || t == "解释:" {
+            end = i;
+            // collect the explanation lines that follow
+            let mut want = false;
+            for l2 in lines.iter().skip(i + 1) {
+                let t2 = l2.trim();
+                if t2.is_empty() {
+                    continue;
+                }
+                if t2.starts_with("- ") {
+                    want = true;
+                    summary.push_str(t2);
+                    summary.push('\n');
+                } else if want {
+                    break;
+                }
+            }
+            break;
+        }
+        // a line that is not part of a unified diff ends the diff
+        if !l.starts_with(' ') && !l.starts_with('+') && !l.starts_with('-')
+            && !l.starts_with("@@") && !l.starts_with("+++") && !t.is_empty()
+        {
+            end = i;
+            break;
+        }
+    }
+    let diff = lines[start..end].join("\n");
+    Some((diff, summary))
+}
+
+/// The file path from the `+++ b/<file>` header of a diff.
+fn diff_file(diff: &str) -> Option<String> {
+    for line in diff.lines() {
+        if let Some(rest) = line.strip_prefix("+++ b/") {
+            return Some(rest.trim().to_string());
+        }
+        if let Some(rest) = line.strip_prefix("+++ ") {
+            return Some(rest.trim().to_string());
+        }
+    }
+    None
+}
+
 fn build_messages(
     project: &Project,
     file: Option<&str>,
@@ -70,8 +186,12 @@ fn build_messages(
         }
     }
     user.push_str(&format!("【问题】\n{question}"));
+    let guide = super::guide::guide_system_fragment(project);
     vec![
-        ChatMsg { role: "system".into(), content: SYSTEM_PROMPT.to_string() },
+        ChatMsg {
+            role: "system".into(),
+            content: format!("{SYSTEM_PROMPT}{guide}"),
+        },
         ChatMsg { role: "user".into(), content: user },
     ]
 }

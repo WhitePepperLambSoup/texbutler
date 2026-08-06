@@ -5,6 +5,80 @@ use crate::core::{FixReport, Issue, SourceContext};
 use crate::state::AppState;
 use tauri::{AppHandle, Emitter, State};
 
+/// Session token usage (accumulated across all AI calls).
+#[tauri::command]
+pub fn tb_token_usage(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let usage = crate::core::ai::provider::token_usage();
+    let provider = state
+        .settings
+        .read()
+        .map_err(|e| e.to_string())?
+        .ai
+        .provider
+        .label()
+        .to_string();
+    Ok(serde_json::json!({
+        "prompt_tokens": usage.prompt_tokens,
+        "completion_tokens": usage.completion_tokens,
+        "requests": usage.requests,
+        "cost_usd": (usage.cost_usd * 100.0).round() / 100.0,
+        "provider": provider,
+    }))
+}
+
+/// Reset the session token usage counter.
+#[tauri::command]
+pub fn tb_token_usage_reset() -> Result<(), String> {
+    crate::core::ai::provider::reset_token_usage();
+    Ok(())
+}
+
+/// Create (or overwrite) the project style guide AI_GUIDE.md from a plain
+/// description of the author's requirements. Returns the generated guide.
+#[tauri::command]
+pub async fn tb_ai_create_guide(
+    state: State<'_, AppState>,
+    requirements: String,
+) -> Result<String, String> {
+    let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
+    let proj = {
+        let guard = state.project.read().map_err(|e| e.to_string())?;
+        guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?.clone()
+    };
+    if settings.api_key.is_none()
+        && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. })
+    {
+        return Err("尚未配置 AI API Key。请在“设置”中填写 provider 配置。".into());
+    }
+    let requirements = requirements.trim().to_string();
+    if requirements.is_empty() {
+        return Err("需求描述不能为空".into());
+    }
+    let messages = vec![
+        crate::core::ai::ChatMsg {
+            role: "system".into(),
+            content: "你是项目规范制定助手。根据作者描述，产出一份简体中文的 Markdown 项目指南（AI_GUIDE.md），\
+内容应包含：1) 文档风格（如学校/期刊格式要求、字体、页边距、章节编号）；2) 常用宏与环境（作者偏好，含示例用法）；\
+3) 禁忌（作者明确不要的东西，如禁止某些宏包/写法）；4) 通用写作约定。\
+只输出指南正文（Markdown），不要额外解释。控制在 150 行以内，使用简洁的要点式描述。"
+                .to_string(),
+        },
+        crate::core::ai::ChatMsg {
+            role: "user".into(),
+            content: format!("请根据以下要求生成项目指南：\n{requirements}"),
+        },
+    ];
+    let guide = crate::core::ai::provider::chat(&settings, &messages)
+        .await
+        .map_err(|e| redact_key(&settings, e.to_string()))?;
+    let guide = guide.trim().to_string();
+    if guide.is_empty() {
+        return Err("AI 未生成有效指南".into());
+    }
+    proj.write_file(crate::core::ai::guide::GUIDE_FILE, &guide)?;
+    Ok(guide)
+}
+
 /// AI-translate a LaTeX snippet while preserving its structure.
 #[tauri::command]
 pub async fn tb_ai_translate(
@@ -48,7 +122,14 @@ pub async fn tb_ai_diagnose(
         build_context(&state, &issue)
             .unwrap_or_else(|| SourceContext::around(&default_file, issue.line, "", 20))
     };
-    let result = diagnose(&issue, &ctx, &settings).await;
+    let guide = state
+        .project
+        .read()
+        .map_err(|e| e.to_string())?
+        .as_ref()
+        .map(|p| crate::core::ai::guide::guide_system_fragment(p))
+        .unwrap_or_default();
+    let result = diagnose(&issue, &ctx, &settings, &guide).await;
     let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "diagnose", "status": "done" }));
     Ok(result)
 }
@@ -157,7 +238,8 @@ pub async fn tb_ai_chat_stream(
     }
     let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "chat", "status": "start" }));
     let app2 = app.clone();
-    let result = crate::core::ai::chat::ask_about_source_stream(
+    let app3 = app.clone();
+    let result = crate::core::ai::chat::ask_about_source_edit_stream(
         &settings,
         &proj,
         file.as_deref(),
@@ -165,6 +247,9 @@ pub async fn tb_ai_chat_stream(
         &question,
         move |delta| {
             let _ = app2.emit("tb://ai-stream", serde_json::json!({ "delta": delta }));
+        },
+        move |file, backup| {
+            let _ = app3.emit("tb://ai-edit", serde_json::json!({ "file": file, "backup": backup }));
         },
     )
     .await

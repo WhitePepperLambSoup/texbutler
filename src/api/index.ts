@@ -179,6 +179,9 @@ export const api = {
   aiChatStream: (question: string, file?: string | null, selection?: string | null) =>
     invoke<string>("tb_ai_chat_stream", { question, file: file ?? null, selection: selection ?? null }),
   aiSnapshots: () => invoke<{ path: string; ts: string; file: string }[]>("tb_ai_snapshots"),
+  tokenUsage: () => invoke<{ prompt_tokens: number; completion_tokens: number; requests: number; cost_usd: number; provider: string }>("tb_token_usage"),
+  tokenUsageReset: () => invoke<void>("tb_token_usage_reset"),
+  aiCreateGuide: (requirements: string) => invoke<string>("tb_ai_create_guide", { requirements }),
   checkUpdates: () => invoke<{ version: string; name: string; body: string; url: string } | null>("tb_check_updates"),
   getUpdateCheck: () => invoke<boolean>("tb_get_update_check"),
   setUpdateCheck: (enabled: boolean) => invoke<void>("tb_set_update_check", { enabled }),

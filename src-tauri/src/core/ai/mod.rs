@@ -4,6 +4,7 @@
 pub mod chat;
 pub mod diagnose;
 pub mod fix_loop;
+pub mod guide;
 pub mod prompt_templates;
 pub mod provider;
 pub mod translate;

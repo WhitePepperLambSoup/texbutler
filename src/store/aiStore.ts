@@ -24,6 +24,8 @@ interface AiState {
   suggestMode: boolean;
   /** Editor selection handed to the AI panel for "ask about this selection". */
   pendingSelection: string | null;
+  /** Last collaborative edit applied by the AI (snapshot path for rollback). */
+  lastEdit: { file: string; backup: string } | null;
 
   loadSettings: () => Promise<void>;
   diagnoseIssue: (issue: Issue, index: number) => Promise<void>;
@@ -34,6 +36,7 @@ interface AiState {
   toggleSuggestMode: () => void;
   setSelection: (sel: string | null) => void;
   askAi: (question: string) => Promise<void>;
+  rollbackEdit: () => Promise<void>;
   testConnection: () => Promise<string>;
   saveSettings: (s: AiSettings) => Promise<void>;
   pushMessage: (m: Omit<AiMessage, "id">) => number;
@@ -50,6 +53,7 @@ export const useAiStore = create<AiState>((set, get) => ({
   diffPending: null,
   suggestMode: false,
   pendingSelection: null,
+  lastEdit: null,
 
   setSelection(sel) {
     set({ pendingSelection: sel });
@@ -75,6 +79,13 @@ export const useAiStore = create<AiState>((set, get) => ({
         }));
       }
     });
+    // collaborative edit: AI applied a diff to the project; remember the
+    // snapshot so the user can roll it back after compiling
+    const listenEditP = onEvent<{ file?: string; backup?: string }>("tb://ai-edit", (payload) => {
+      if (payload.file && payload.backup) {
+        useAiStore.setState({ lastEdit: { file: payload.file!, backup: payload.backup! } });
+      }
+    });
     try {
       const answer = await api.aiChatStream(q, st.activeTab, get().pendingSelection);
       // finalize the live message with the complete answer
@@ -85,8 +96,25 @@ export const useAiStore = create<AiState>((set, get) => ({
       get().pushMessage({ role: "assistant", kind: "error", text: useI18n.getState().t("ai.chatFailed", { e: String(e) }) });
     } finally {
       void listenP.then((fn) => fn());
+      void listenEditP.then((fn) => fn());
     }
     set({ busy: false, busyKind: null });
+  },
+
+  async rollbackEdit() {
+    const edit = get().lastEdit;
+    if (!edit) return;
+    set({ busy: true, busyKind: "fix" });
+    try {
+      await api.aiRollback(edit.backup);
+      useProjectStore.getState().reloadTab(edit.file);
+      set({ lastEdit: null });
+      get().pushMessage({ role: "assistant", kind: "plain", text: useI18n.getState().t("ai.editRolledBack", { file: edit.file }) });
+    } catch (e) {
+      get().pushMessage({ role: "assistant", kind: "error", text: useI18n.getState().t("ai.chatFailed", { e: String(e) }) });
+    } finally {
+      set({ busy: false, busyKind: null });
+    }
   },
 
   toggleSuggestMode() {

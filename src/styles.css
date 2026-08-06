@@ -639,10 +639,13 @@ body {
 
 .bottom {
   display: flex;
-  flex: 0 0 220px;
+  flex: 0 0 280px;
   border-top: 1px solid var(--border);
-  min-height: 120px;
-  max-height: 45%;
+  min-height: 160px;
+  max-height: 55%;
+  /* user-resizable panel height (drag the bottom-right corner grip) */
+  resize: vertical;
+  overflow: hidden;
 }
 
 .bottom > .problems-panel {
@@ -1173,9 +1176,11 @@ body {
   border: 1px solid var(--border);
   color: var(--fg);
   border-radius: 4px;
-  padding: 5px 8px;
+  padding: 6px 9px;
   font-size: 12.5px;
   resize: vertical;
+  min-height: 64px;
+  max-height: 260px;
   font-family: inherit;
 }
 

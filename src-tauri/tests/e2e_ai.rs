@@ -58,7 +58,7 @@ async fn e2e_diagnose_real_error() {
     let s = ai_settings();
     let (proj, _result, issue) = make_project("broken-undefined.tex", "diag");
     let ctx = ctx_for(&proj, &issue);
-    let d: AiDiagnosis = diagnose(&issue, &ctx, &s).await;
+    let d: AiDiagnosis = diagnose(&issue, &ctx, &s, "").await;
     println!("diagnosis: {:?}", d.explanation);
     assert!(d.ok, "诊断失败: {:?}", d.error);
     assert!(!d.explanation.trim().is_empty(), "解释为空");

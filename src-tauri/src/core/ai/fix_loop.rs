@@ -530,11 +530,13 @@ pub fn snapshot(project: &Project, rel: &str, content: &str) -> Result<PathBuf, 
 }
 
 fn chrono_like_timestamp() -> String {
-    // no chrono dependency: use system time formatted manually
+    // no chrono dependency: use system time formatted manually.
+    // Milliseconds avoid collisions when AI chat edits snapshot twice
+    // within the same second (rollback would restore the wrong content).
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
-    format!("{:010}", now.as_secs())
+    format!("{:010}-{:03}", now.as_secs(), now.subsec_millis())
 }
 
 /// Redact the API key from an error string before it reaches the UI.
@@ -716,8 +718,12 @@ pub async fn fix_loop(
             full_source,
             &deps,
         );
+        let guide = crate::core::ai::guide::guide_system_fragment(project);
         let messages = vec![
-            ChatMsg { role: "system".into(), content: prompt_templates::SYSTEM_PROMPT.to_string() },
+            ChatMsg {
+                role: "system".into(),
+                content: prompt_templates::diagnose_system_prompt(&guide),
+            },
             ChatMsg { role: "user".into(), content: prompt },
         ];
         // Diff generation needs headroom: DeepSeek's thinking mode can eat

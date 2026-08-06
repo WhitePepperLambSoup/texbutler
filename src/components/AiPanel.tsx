@@ -16,16 +16,26 @@ function renderText(text: string): string {
 }
 
 export default function AiPanel() {
-  const { messages, busy, busyKind, diffPending, acceptDiff, rejectDiff, applyHunk, clearMessages, suggestMode, toggleSuggestMode, pendingSelection, setSelection, askAi } =
+  const { messages, busy, busyKind, diffPending, acceptDiff, rejectDiff, applyHunk, clearMessages, suggestMode, toggleSuggestMode, pendingSelection, setSelection, askAi, lastEdit, rollbackEdit } =
     useAiStore();
   const [expandedRaw, setExpandedRaw] = useState<number | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const t = useT();
   const [genInput, setGenInput] = useState("");
-  const [genBusy, setGenBusy] = useState(false);
-  const [genResult, setGenResult] = useState<string | null>(null);
   const [snapshots, setSnapshots] = useState<{ path: string; ts: string; file: string }[] | null>(null);
-  const activeTab = useProjectStore((s) => s.activeTab);
+  const [usage, setUsage] = useState<{ prompt_tokens: number; completion_tokens: number; requests: number; cost_usd: number } | null>(null);
+
+  const refreshUsage = async () => {
+    try {
+      setUsage(await api.tokenUsage());
+    } catch {
+      setUsage(null);
+    }
+  };
+
+  useEffect(() => {
+    void refreshUsage();
+  }, [messages.length]);
 
   const loadSnapshots = async () => {
     try {
@@ -44,6 +54,26 @@ export default function AiPanel() {
     <div className="ai-panel">
       <div className="panel-header">
         <span className="panel-title">{t("ai.title")}</span>
+        {usage && (
+          <span className="ai-usage" title={t("ai.usageTitle")}>
+            {t("ai.usage", {
+              p: usage.prompt_tokens,
+              c: usage.completion_tokens,
+              cost: (usage.cost_usd * 7.2).toFixed(2),
+            })}
+            <button
+              className="btn-mini"
+              title={t("ai.usageReset")}
+              onClick={async () => {
+                await api.tokenUsageReset();
+                setUsage(null);
+                void refreshUsage();
+              }}
+            >
+              {t("ai.usageReset")}
+            </button>
+          </span>
+        )}
         <span className="panel-actions">
           {busy && <span className="ai-busy">{busyKind === "fix" ? t("ai.busyFix") : t("ai.busyDiagnose")}</span>}
           <button
@@ -55,6 +85,27 @@ export default function AiPanel() {
           </button>
           <button className="btn-mini" title={t("ai.timeline")} onClick={() => void loadSnapshots()}>
             {t("ai.timeline")}
+          </button>
+          <button
+            className="btn-mini"
+            title={t("ai.guideTitle")}
+            onClick={() => {
+              const req = window.prompt(t("ai.guidePrompt"));
+              if (!req) return;
+              void (async () => {
+                try {
+                  const guide = await api.aiCreateGuide(req);
+                  const ok = window.confirm(`${t("ai.guideGenerated")}\n\n${guide.slice(0, 800)}`);
+                  if (ok) {
+                    window.alert(t("ai.guideSaved"));
+                  }
+                } catch (e) {
+                  window.alert(String(e));
+                }
+              })();
+            }}
+          >
+            {t("ai.guide")}
           </button>
           <button className="btn-mini" onClick={clearMessages}>
             {t("ai.clear")}
@@ -172,7 +223,7 @@ export default function AiPanel() {
             placeholder={pendingSelection ? t("ai.askPlaceholderSel") : t("ai.askPlaceholder")}
             value={genInput}
             onChange={(e) => setGenInput(e.target.value)}
-            rows={2}
+            rows={3}
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
@@ -194,6 +245,15 @@ export default function AiPanel() {
           </button>
         </div>
         <div className="ai-generate-actions">
+          {lastEdit && (
+            <button
+              className="btn-mini btn-danger"
+              title={t("ai.rollbackTitle")}
+              onClick={() => void rollbackEdit()}
+            >
+              {t("ai.rollback", { file: lastEdit.file })}
+            </button>
+          )}
           {pendingSelection && (
             <button
               className="btn-mini"
@@ -203,62 +263,7 @@ export default function AiPanel() {
               {t("ai.askSelection", { n: pendingSelection.length })}
             </button>
           )}
-          <button
-            className="btn-mini"
-            disabled={genBusy || !genInput.trim()}
-            onClick={async () => {
-              setGenBusy(true);
-              setGenResult(null);
-              try {
-                const code = await api.aiGenerate(genInput.trim());
-                setGenResult(code);
-                useAiStore
-                  .getState()
-                  .pushMessage({
-                    role: "user",
-                    kind: "plain",
-                    text: genInput.trim(),
-                  });
-              } catch (e) {
-                window.alert(String(e));
-              }
-              setGenBusy(false);
-            }}
-          >
-            {genBusy ? t("ai.busyFix") : t("ai.generate")}
-          </button>
-          {genResult != null && (
-            <>
-              <button
-                className="btn-mini"
-                onClick={() => {
-                  window.dispatchEvent(
-                    new CustomEvent("tb:insert-text", { detail: { text: genResult } })
-                  );
-                }}
-              >
-                {t("ai.insertEditor")}
-              </button>
-              <button
-                className="btn-mini"
-                onClick={async () => {
-                  const base = (activeTab ?? "main.tex").replace(/\.tex$/, "");
-                  const fname = window.prompt("保存为文件（相对路径）", `${base}-ai.tex`);
-                  if (!fname) return;
-                  try {
-                    await api.writeFile(fname, genResult);
-                    window.alert(t("ai.savedFile", { f: fname }));
-                  } catch (e) {
-                    window.alert(String(e));
-                  }
-                }}
-              >
-                {t("ai.saveFile")}
-              </button>
-            </>
-          )}
         </div>
-        {genResult != null && <pre className="ai-diff ai-gen-result">{genResult}</pre>}
       </div>
     </div>
   );

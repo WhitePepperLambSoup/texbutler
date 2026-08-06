@@ -121,6 +121,12 @@ pub async fn chat_stream(
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
     let mut body = build_openai_body(s, messages, true);
     body["stream"] = serde_json::json!(true);
+    // ask the endpoint to include usage in the final stream chunk so the
+    // token usage panel can count streaming calls too. Ollama's OpenAI
+    // compatibility layer may reject unknown fields, so skip it there.
+    if !matches!(s.provider, ProviderKind::Ollama { .. }) {
+        body["stream_options"] = serde_json::json!({ "include_usage": true });
+    }
     let mut req = reqwest::Client::new()
         .post(&url)
         // The streaming path must not inherit reqwest's 30s default total
@@ -143,6 +149,7 @@ pub async fn chat_stream(
     use futures::StreamExt;
     let mut buffer: Vec<u8> = Vec::new();
     let mut done = false;
+    let mut recorded_usage = false;
     const MAX_BUFFER: usize = 8 * 1024 * 1024; // guard against a broken endpoint
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| AiError::Transport(e.to_string()))?;
@@ -172,6 +179,10 @@ pub async fn chat_stream(
                 break;
             }
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
+                if v["usage"].is_object() && !recorded_usage {
+                    record_usage_openai(data, &s.provider.label());
+                    recorded_usage = true;
+                }
                 if let Some(delta) = v["choices"][0]["delta"]["content"].as_str() {
                     full.push_str(delta);
                     if full.len() > MAX_BUFFER {
@@ -231,6 +242,7 @@ async fn chat_openai_compatible(
     }
     let parsed: OpenAiResponse =
         serde_json::from_str(&text).map_err(|e| AiError::Parse(format!("{e}: {}", truncate(&text, 300))))?;
+    record_usage_openai(&text, &s.provider.label());
     let choice = parsed
         .choices
         .into_iter()
@@ -289,6 +301,7 @@ async fn chat_anthropic(
     }
     let parsed: AnthropicResponse =
         serde_json::from_str(&text).map_err(|e| AiError::Parse(e.to_string()))?;
+    record_usage_anthropic(&text, &s.provider.label());
     let content = parsed
         .content
         .into_iter()
@@ -336,6 +349,78 @@ struct AnthropicBlock {
     text: String,
 }
 
+/// Process-wide token usage accumulator (per session).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct TokenUsage {
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    pub requests: u64,
+    /// Estimated USD cost accumulated at call time with the provider that
+    /// made each call (so switching providers later does not misprice it).
+    pub cost_usd: f64,
+}
+
+static TOKEN_USAGE: std::sync::Mutex<TokenUsage> = std::sync::Mutex::new(TokenUsage {
+    prompt_tokens: 0,
+    completion_tokens: 0,
+    requests: 0,
+    cost_usd: 0.0,
+});
+
+/// Record usage from an OpenAI-style response body (streaming chunk or
+/// non-streaming body). Uses loose JSON access because stream chunks put
+/// `delta` (not `message`) inside `choices`.
+pub fn record_usage_openai(body: &str, provider: &str) {
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body) {
+        let prompt = v["usage"]["prompt_tokens"].as_u64().unwrap_or(0);
+        let completion = v["usage"]["completion_tokens"].as_u64().unwrap_or(0);
+        if prompt > 0 || completion > 0 {
+            record_usage(prompt, completion, provider);
+        }
+    }
+}
+
+/// Record usage from an Anthropic-style response body.
+pub fn record_usage_anthropic(body: &str, provider: &str) {
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body) {
+        let prompt = v["usage"]["input_tokens"].as_u64().unwrap_or(0);
+        let completion = v["usage"]["output_tokens"].as_u64().unwrap_or(0);
+        if prompt > 0 || completion > 0 {
+            record_usage(prompt, completion, provider);
+        }
+    }
+}
+
+fn record_usage(prompt: u64, completion: u64, provider: &str) {
+    let mut g = TOKEN_USAGE.lock().unwrap();
+    g.prompt_tokens += prompt;
+    g.completion_tokens += completion;
+    g.requests += 1;
+    // price this call with the provider that actually served it
+    let this = TokenUsage { prompt_tokens: prompt, completion_tokens: completion, requests: 1, cost_usd: 0.0 };
+    g.cost_usd += estimate_cost_usd(&this, provider);
+}
+
+/// Snapshot of the accumulated token usage.
+pub fn token_usage() -> TokenUsage {
+    *TOKEN_USAGE.lock().unwrap()
+}
+
+/// Reset the accumulated token usage (new session).
+pub fn reset_token_usage() {
+    *TOKEN_USAGE.lock().unwrap() = TokenUsage::default();
+}
+
+/// Rough USD cost estimate for the accumulated usage. Ollama is free;
+/// cloud providers use an approximate blended rate.
+pub fn estimate_cost_usd(u: &TokenUsage, provider: &str) -> f64 {
+    if provider.to_lowercase().contains("ollama") {
+        return 0.0;
+    }
+    // blended approximation: $0.4/M input, $1.2/M output
+    u.prompt_tokens as f64 / 1_000_000.0 * 0.4 + u.completion_tokens as f64 / 1_000_000.0 * 1.2
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -355,6 +440,27 @@ mod tests {
         let parsed: OpenAiResponse = serde_json::from_str(json).unwrap();
         assert_eq!(parsed.choices[0].message.content.as_deref(), Some(""));
         assert_eq!(parsed.choices[0].finish_reason.as_deref(), Some("length"));
+    }
+
+    #[test]
+    fn usage_is_recorded_from_openai_body() {
+        // tests run in parallel against the shared process-wide accumulator,
+        // so assert on the delta rather than absolute values
+        let base = token_usage();
+        let json = r#"{"choices":[{"message":{"content":"hi"}}],"usage":{"prompt_tokens":12,"completion_tokens":34}}"#;
+        record_usage_openai(json, "deepseek");
+        record_usage_openai(json, "deepseek");
+        // anthropic body records through its own parser; both run in the
+        // same test to avoid cross-test races on the shared accumulator
+        let json_a = r#"{"content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":7,"output_tokens":9}}"#;
+        record_usage_anthropic(json_a, "anthropic");
+        let u = token_usage();
+        assert_eq!(u.prompt_tokens - base.prompt_tokens, 24 + 7);
+        assert_eq!(u.completion_tokens - base.completion_tokens, 68 + 9);
+        assert_eq!(u.requests - base.requests, 3);
+        // ollama is free
+        assert_eq!(estimate_cost_usd(&u, "ollama"), 0.0);
+        assert!(estimate_cost_usd(&u, "deepseek") > 0.0);
     }
 
     fn test_settings(disable_thinking: bool) -> AiSettings {

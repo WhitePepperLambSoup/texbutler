@@ -27,8 +27,9 @@ pub async fn diagnose(
     issue: &Issue,
     ctx: &SourceContext,
     s: &AiSettings,
+    guide: &str,
 ) -> AiDiagnosis {
-    let system = prompt_templates::SYSTEM_PROMPT;
+    let system = prompt_templates::diagnose_system_prompt(guide);
     let user = prompt_templates::diagnose_prompt(issue, ctx);
     let messages = vec![
         ChatMsg { role: "system".into(), content: system.to_string() },
