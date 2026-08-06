@@ -341,12 +341,13 @@ async fn apply_tool_call(
             let mut out: Vec<String> = Vec::new();
             for (i, line) in src.lines().enumerate() {
                 if i == idx {
-                    // replace the matching fragment inside the line
-                    let trimmed = line.trim();
-                    if let Some(start) = trimmed.find(old) {
-                        let mut replaced = String::from(&trimmed[..start]);
+                    // replace the matching fragment inside the ORIGINAL line
+                    // (keeps leading indentation; `old` is matched on the
+                    // trimmed form but replaced in place)
+                    if let Some(start) = line.find(old) {
+                        let mut replaced = String::from(&line[..start]);
                         replaced.push_str(call.new.trim_end());
-                        replaced.push_str(&trimmed[start + old.len()..]);
+                        replaced.push_str(&line[start + old.len()..]);
                         out.push(replaced);
                         continue;
                     }
@@ -370,6 +371,11 @@ async fn apply_tool_call(
     };
     if new_content == src {
         return Err("修改没有产生任何变化".into());
+    }
+    // preserve the original trailing newline (lines()/join() drops it)
+    let mut new_content = new_content;
+    if src.ends_with('\n') && !new_content.ends_with('\n') {
+        new_content.push('\n');
     }
     let snap = super::fix_loop::snapshot(project, &rel, &src).map_err(|e| e.to_string())?;
     project.write_file(&rel, &new_content).map_err(|e| e.to_string())?;
@@ -757,6 +763,32 @@ mod tests {
         assert!(diff.contains("@@"));
         assert!(diff.contains("-b"));
         assert!(diff.contains("+B"));
+    }
+
+    #[test]
+    fn replace_keeps_indentation_and_trailing_newline() {
+        let src = "  \\section*{Question 1}\n内容\n";
+        // replace tool semantics: old found on trimmed line, replaced in place
+        let old = "\\section*{Question 1}";
+        let new = "\\section*{Question 1 (改)}";
+        let mut out: Vec<String> = Vec::new();
+        for (i, line) in src.lines().enumerate() {
+            if i == 0 {
+                if let Some(start) = line.find(old) {
+                    let mut replaced = String::from(&line[..start]);
+                    replaced.push_str(new);
+                    replaced.push_str(&line[start + old.len()..]);
+                    out.push(replaced);
+                    continue;
+                }
+            }
+            out.push(line.to_string());
+        }
+        let mut result = out.join("\n");
+        if src.ends_with('\n') && !result.ends_with('\n') {
+            result.push('\n');
+        }
+        assert_eq!(result, "  \\section*{Question 1 (改)}\n内容\n");
     }
 
     #[test]
