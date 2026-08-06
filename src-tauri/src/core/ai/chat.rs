@@ -83,11 +83,23 @@ diff 输出完后可另起一行以 `解释：` 开头附一段修改说明。\
     if let Some((diff, summary)) = extract_diff(&reply) {
         let rel = diff_file(&diff).unwrap_or_else(|| file.unwrap_or("main.tex").to_string());
         let rel = project.relative_path(&rel);
-        // normalize backslashes FIRST, then strip every leading `./` so
-        // `.\ .texbutler\...` (Windows) cannot dodge the protected-path
-        // check below; `..` components are rejected by Project::resolve
+        // Fold path components so `//`, `./`, `.\`, `\` variants all resolve
+        // to the same canonical relative path (`/.texbutler/x` -> `.texbutler/x`);
+        // the folded path is used for BOTH the allowlist check and the actual
+        // read/write so no representation can dodge the protected-path check.
         let rel_norm = rel.replace('\\', "/");
-        let rel_clean = rel_norm.trim_start_matches("./");
+        let rel_clean = rel_norm
+            .split('/')
+            .filter(|c| !c.is_empty() && *c != ".")
+            .collect::<Vec<_>>()
+            .join("/");
+        // `..` components are rejected by Project::resolve, but refuse them
+        // here too (defense in depth)
+        if rel_clean.split('/').any(|c| c == "..") {
+            return Ok(format!(
+                "{reply}\n\n⚠️ AI 尝试修改含 `..` 的路径 `{rel}`，已拒绝应用。"
+            ));
+        }
         // allowlist: only document files in the project may be edited by
         // the AI; AI_GUIDE.md / .texbutler / other assets are off-limits
         let allowed_ext = [".tex", ".bib", ".sty", ".cls"];
@@ -98,18 +110,18 @@ diff 输出完后可另起一行以 `解释：` 开头附一段修改说明。\
                 "{reply}\n\n⚠️ AI 试图修改受保护文件 `{rel}`，已拒绝应用（只允许编辑 .tex/.bib/.sty/.cls 文档）。"
             ));
         }
-        if let Ok(src) = project.read_file(&rel) {
+        if let Ok(src) = project.read_file(&rel_clean) {
             if let Ok(new_content) = super::fix_loop::apply_unified_diff(&src, &diff) {
                 if new_content != src {
-                    if let Ok(snap) = super::fix_loop::snapshot(project, &rel, &src) {
+                    if let Ok(snap) = super::fix_loop::snapshot(project, &rel_clean, &src) {
                         let snap_s = snap.to_string_lossy().to_string();
                         // write FIRST, then notify: the frontend shows
                         // "applied / roll back" only when the file really changed
-                        match project.write_file(&rel, &new_content) {
+                        match project.write_file(&rel_clean, &new_content) {
                             Ok(()) => {
-                                on_edit(&rel, &snap_s);
+                                on_edit(&rel_clean, &snap_s);
                                 return Ok(format!(
-                                    "{reply}\n\n✅ 已自动应用修改（{rel}）。编译检查后不满意可在 AI 面板点击“回滚此修改”。\n{summary}"
+                                    "{reply}\n\n✅ 已自动应用修改（{rel_clean}）。编译检查后不满意可在 AI 面板点击“回滚此修改”。\n{summary}"
                                 ));
                             }
                             Err(e) => return Err(format!("应用修改失败：{e}")),
