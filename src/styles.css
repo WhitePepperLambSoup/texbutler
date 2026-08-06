@@ -630,8 +630,8 @@ body {
 }
 
 .col-pdf {
-  flex: 0 0 38%;
-  min-width: 260px;
+  flex: 0 1 38%;
+  min-width: 240px;
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -663,39 +663,43 @@ body {
   flex-shrink: 0;
 }
 .ai-rail.open {
-  width: 340px;
+  /* adapt to narrow windows so the rail never overflows off-screen:
+     min 240px, up to 340px, ~22% of the viewport */
+  width: clamp(240px, 22vw, 340px);
 }
 .ai-rail.collapsed {
   width: 34px;
 }
 .ai-rail-toggle {
   flex-shrink: 0;
-  height: 100%;
-  width: 34px;
+  /* fixed header height — a height:100% here would consume the whole rail
+     and collapse the AI panel to zero height (overlap bug) */
+  height: 44px;
   border: none;
   background: transparent;
   color: var(--fg-dim);
   cursor: pointer;
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
   font-size: 12px;
   letter-spacing: 2px;
-  padding: 8px 0;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .ai-rail-toggle:hover {
   color: var(--accent2);
   background: var(--bg2);
 }
 .ai-rail.collapsed .ai-rail-toggle {
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   writing-mode: vertical-rl;
+  text-orientation: mixed;
+  width: 34px;
+  height: 100%;
 }
 .ai-rail > .ai-panel {
   flex: 1;
   min-height: 0;
+  width: 100%;
 }
 
 /* ---------- status bar ---------- */
