@@ -83,11 +83,14 @@ diff 输出完后可另起一行以 `解释：` 开头附一段修改说明。\
     if let Some((diff, summary)) = extract_diff(&reply) {
         let rel = diff_file(&diff).unwrap_or_else(|| file.unwrap_or("main.tex").to_string());
         let rel = project.relative_path(&rel);
+        // normalize a leading `./` so `./.texbutler/x.tex` cannot dodge the
+        // protected-path check below
+        let rel_clean = rel.strip_prefix("./").unwrap_or(&rel);
         // allowlist: only document files in the project may be edited by
         // the AI; AI_GUIDE.md / .texbutler / other assets are off-limits
         let allowed_ext = [".tex", ".bib", ".sty", ".cls"];
-        let is_doc = allowed_ext.iter().any(|e| rel.ends_with(e));
-        let is_protected = rel == super::guide::GUIDE_FILE || rel.starts_with(".texbutler/");
+        let is_doc = allowed_ext.iter().any(|e| rel_clean.ends_with(e));
+        let is_protected = rel_clean == super::guide::GUIDE_FILE || rel_clean.starts_with(".texbutler/");
         if !is_doc || is_protected {
             return Ok(format!(
                 "{reply}\n\n⚠️ AI 试图修改受保护文件 `{rel}`，已拒绝应用（只允许编辑 .tex/.bib/.sty/.cls 文档）。"
@@ -138,6 +141,11 @@ fn extract_diff(reply: &str) -> Option<(String, String)> {
     }
     let mut end = lines.len();
     let mut summary = String::new();
+    // track hunk boundaries by counting old-side lines from the @@ header:
+    // `@@ -a[,b] +c[,d] @@` declares b old lines (1 when omitted). A `-` or
+    // context line consumes one; when exhausted the hunk is over and
+    // markdown list items (`- ` / `+ `) after it truncate the diff.
+    let mut hunk_old_remaining: Option<u32> = None;
     for (i, l) in lines.iter().enumerate().skip(start + 1) {
         let t = l.trim();
         if t == "解释：" || t == "Explanation:" || t == "解释:" {
@@ -159,10 +167,24 @@ fn extract_diff(reply: &str) -> Option<(String, String)> {
             }
             break;
         }
+        if l.starts_with("@@") {
+            hunk_old_remaining = hunk_old_lines(l);
+            continue;
+        }
+        if let Some(rem) = &mut hunk_old_remaining {
+            if l.starts_with(' ') || l.starts_with('-') {
+                *rem = rem.saturating_sub(1);
+            }
+            if *rem == 0 {
+                hunk_old_remaining = None; // hunk over
+            }
+        }
         // a line that is not part of a unified diff ends the diff.
-        // `- ` / `+ ` (symbol + space) are markdown list items, not diff
-        // lines — truncate so trailing prose never bleeds into the hunk
-        if l.starts_with("- ") || l.starts_with("+ ") {
+        // `- ` / `+ ` (symbol + space) are markdown list items OUTSIDE a
+        // hunk; inside a hunk they are legitimately diffed lines (e.g.
+        // removing an indented LaTeX line), so only truncate when not in a
+        // hunk — trailing prose never bleeds into the hunk this way
+        if hunk_old_remaining.is_none() && (l.starts_with("- ") || l.starts_with("+ ")) {
             end = i;
             break;
         }
@@ -175,6 +197,21 @@ fn extract_diff(reply: &str) -> Option<(String, String)> {
     }
     let diff = lines[start..end].join("\n");
     Some((diff, summary))
+}
+
+/// Parse the old-side line count from a `@@ -a[,b] +c[,d] @@` header
+/// (defaults to 1 when `,b` is omitted).
+fn hunk_old_lines(header: &str) -> Option<u32> {
+    let h = header.trim_start_matches("@@").trim_end_matches("@@").trim();
+    let minus = h.split('+').next()?.trim().trim_start_matches('-');
+    let (a, b) = match minus.split_once(',') {
+        Some((x, y)) => (x, y),
+        None => (minus, "1"),
+    };
+    if a.parse::<u32>().ok()?.checked_add(b.parse::<u32>().ok()?)? > u32::MAX {
+        return None;
+    }
+    Some(b.parse().ok()?)
 }
 
 /// The file path from the `+++ b/<file>` header of a diff.

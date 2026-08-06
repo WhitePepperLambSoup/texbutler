@@ -95,7 +95,8 @@ export default function AiPanel() {
               void (async () => {
                 try {
                   const guide = await api.aiCreateGuide(req);
-                  const ok = window.confirm(`${t("ai.guideGenerated")}\n\n${guide.slice(0, 800)}`);
+                  const preview = guide.length > 12000 ? `${guide.slice(0, 12000)}\n…（指南过长，仅预览前 12000 字符）` : guide;
+                  const ok = window.confirm(`${t("ai.guideGenerated")}\n\n${preview}`);
                   if (ok) {
                     await api.writeFile("AI_GUIDE.md", guide);
                     window.alert(t("ai.guideSaved"));
