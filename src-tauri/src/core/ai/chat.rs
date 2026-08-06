@@ -83,14 +83,15 @@ diff 输出完后可另起一行以 `解释：` 开头附一段修改说明。\
     if let Some((diff, summary)) = extract_diff(&reply) {
         let rel = diff_file(&diff).unwrap_or_else(|| file.unwrap_or("main.tex").to_string());
         let rel = project.relative_path(&rel);
-        // normalize a leading `./` so `./.texbutler/x.tex` cannot dodge the
-        // protected-path check below
+        // normalize a leading `./` and backslashes so `./.texbutler/x.tex`
+        // and `.texbutler\x.tex` cannot dodge the protected-path check
         let rel_clean = rel.strip_prefix("./").unwrap_or(&rel);
+        let rel_norm = rel_clean.replace('\\', "/");
         // allowlist: only document files in the project may be edited by
         // the AI; AI_GUIDE.md / .texbutler / other assets are off-limits
         let allowed_ext = [".tex", ".bib", ".sty", ".cls"];
-        let is_doc = allowed_ext.iter().any(|e| rel_clean.ends_with(e));
-        let is_protected = rel_clean == super::guide::GUIDE_FILE || rel_clean.starts_with(".texbutler/");
+        let is_doc = allowed_ext.iter().any(|e| rel_norm.ends_with(e));
+        let is_protected = rel_norm == super::guide::GUIDE_FILE || rel_norm.starts_with(".texbutler/");
         if !is_doc || is_protected {
             return Ok(format!(
                 "{reply}\n\n⚠️ AI 试图修改受保护文件 `{rel}`，已拒绝应用（只允许编辑 .tex/.bib/.sty/.cls 文档）。"
