@@ -344,6 +344,8 @@ pub async fn tb_ai_chat_stream(
         let scheduler = crate::core::compiler::CompilerScheduler::new_with_passes(engine, passes);
         let p2b = p2.clone();
         let cancel = state.cancel_flag.clone();
+        // reset any leftover cancellation from a previous manual compile
+        cancel.store(false, std::sync::atomic::Ordering::SeqCst);
         let cr = tauri::async_runtime::spawn_blocking(move || {
             scheduler.compile(&p2b, std::path::Path::new(&main), &|| cancel.load(std::sync::atomic::Ordering::SeqCst))
         })
@@ -415,6 +417,7 @@ pub async fn tb_ai_chat_stream(
                             let scheduler2 = crate::core::compiler::CompilerScheduler::new_with_passes(engine2, passes2);
                             let p3b = p3.clone();
                             let cancel3 = state.cancel_flag.clone();
+                            cancel3.store(false, std::sync::atomic::Ordering::SeqCst);
                             let cr2 = tauri::async_runtime::spawn_blocking(move || {
                                 scheduler2.compile(&p3b, std::path::Path::new(&main2), &|| cancel3.load(std::sync::atomic::Ordering::SeqCst))
                             })
