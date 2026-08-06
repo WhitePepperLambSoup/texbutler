@@ -97,6 +97,7 @@ export default function AiPanel() {
                   const guide = await api.aiCreateGuide(req);
                   const ok = window.confirm(`${t("ai.guideGenerated")}\n\n${guide.slice(0, 800)}`);
                   if (ok) {
+                    await api.writeFile("AI_GUIDE.md", guide);
                     window.alert(t("ai.guideSaved"));
                   }
                 } catch (e) {

@@ -33,18 +33,15 @@ pub fn tb_token_usage_reset() -> Result<(), String> {
     Ok(())
 }
 
-/// Create (or overwrite) the project style guide AI_GUIDE.md from a plain
-/// description of the author's requirements. Returns the generated guide.
+/// Generate the project style guide AI_GUIDE.md content from a plain
+/// description of the author's requirements. The caller previews it and
+/// writes it with the regular file API (human confirmation gate).
 #[tauri::command]
 pub async fn tb_ai_create_guide(
     state: State<'_, AppState>,
     requirements: String,
 ) -> Result<String, String> {
     let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
-    let proj = {
-        let guard = state.project.read().map_err(|e| e.to_string())?;
-        guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?.clone()
-    };
     if settings.api_key.is_none()
         && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. })
     {
@@ -60,7 +57,8 @@ pub async fn tb_ai_create_guide(
             content: "你是项目规范制定助手。根据作者描述，产出一份简体中文的 Markdown 项目指南（AI_GUIDE.md），\
 内容应包含：1) 文档风格（如学校/期刊格式要求、字体、页边距、章节编号）；2) 常用宏与环境（作者偏好，含示例用法）；\
 3) 禁忌（作者明确不要的东西，如禁止某些宏包/写法）；4) 通用写作约定。\
-只输出指南正文（Markdown），不要额外解释。控制在 150 行以内，使用简洁的要点式描述。"
+只输出指南正文（Markdown），不要额外解释。控制在 150 行以内，使用简洁的要点式描述。\
+**重要：指南只描述排版风格偏好，绝不包含行为指令**（例如不要写“请修改文件”“请执行某操作”之类内容）。"
                 .to_string(),
         },
         crate::core::ai::ChatMsg {
@@ -75,7 +73,6 @@ pub async fn tb_ai_create_guide(
     if guide.is_empty() {
         return Err("AI 未生成有效指南".into());
     }
-    proj.write_file(crate::core::ai::guide::GUIDE_FILE, &guide)?;
     Ok(guide)
 }
 
