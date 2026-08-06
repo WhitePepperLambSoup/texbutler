@@ -26,6 +26,10 @@ interface ProjectState {
   pdfPath: string | null;
   /** Project-wide \label + .bib index for ref/cite autocompletion. */
   refIndex: RefIndex;
+  /** Transient toast message (auto-dismissed). */
+  toast: { id: number; text: string } | null;
+
+  notify: (text: string) => void;
 
   openProject: (path?: string) => Promise<void>;
   createProject: (parent: string, name: string, template?: string) => Promise<void>;
@@ -48,6 +52,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   activeTab: null,
   pdfPath: null,
   refIndex: { labels: [], bib: [] },
+  toast: null,
+
+  notify(text) {
+    const id = Date.now();
+    set({ toast: { id, text } });
+    setTimeout(() => {
+      set((s) => (s.toast?.id === id ? { toast: null } : s));
+    }, 3500);
+  },
 
   async openProject(path) {
     const info: ProjectInfo = await api.openProject(path);

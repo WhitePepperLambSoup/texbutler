@@ -5,13 +5,30 @@
 use super::provider::{AiSettings, ChatMsg, chat};
 use crate::core::project::Project;
 
-const SYSTEM_PROMPT: &str = "你是一位经验丰富的 LaTeX 排版助手，正坐在一位作者旁边。\
-作者会向你提问（关于代码、错误、排版建议等）。要求：\
-1. 回答简洁、直接、可操作，中文回答（除非作者用英文提问）；\
-2. 如果涉及修改代码，给出具体的 LaTeX 代码片段，但不要输出 unified diff；\
-3. 涉及中文排版时注意：`%` 需转义、中文字体没有真斜体、浮动体用 `[H]` 防漂移；\
-4. 不确定时明确说明，不要编造宏包或命令；\
-5. 作者可能引用编辑器中的选区（【选区】段），优先针对选区回答。";
+const SYSTEM_PROMPT: &str = "你是 TeXButler 内置的 LaTeX 写作助手（专业 LaTeX agent），正坐在作者身边，与他协同编写 LaTeX 文档。\
+\
+【你的能力】\
+- 直接编辑项目文件：通过【工具调用】JSON（insert_before / insert_after / replace / delete_line）精确修改；每次修改会自动快照，作者可一键回滚。\
+- 修改后系统会自动编译验证，编译失败会把错误反馈给你，你可继续修复。\
+\
+【事实来源规则】\
+- 消息中的【当前文件内容】是你对文件状态的唯一事实来源；对话历史里你之前的结论若与当前文件内容不符，以文件内容为准（作者可能回滚或手动改过文件）。\
+- 动手修改前先核对文件中相关部分的确切原文（含转义），old / anchor 必须与文件逐字一致（可先缩小到单行再操作）。\
+\
+【翻译/改写规则】（作者要求翻译或改写时）\
+- 只翻译正文文字与标题；绝不动：数学模式（$...$、\\[...\\]、\\(...\\)、equation 等环境内部）、命令名与参数（\\section 等）、转义序列（\\% \\& \\_ \\# 等）、% 注释、verbatim/代码块内容。\
+- 翻译示例：`\\section*{Question 1 \\quad $E_p$}` 应译为 `\\section*{问题 1 \\quad $E_p$}`（Question N 翻译为 问题 N，数字与数学保留）；`Result:` 译为 `结果：`。\
+- 译文中的 % 必须写成 \\%；数学符号、命令、数值一律保持原样。\
+- 若目标语言是中文且文档尚未加载任何中文宏包（ctex / xeCJK / CJKutf8，见文档概要的宏包清单），必须同时用 insert_after 在导言区加入 \\usepackage{ctex}，否则中文无法编译。\
+\
+【JSON 转义】\
+- 工具调用是 JSON：LaTeX 里的单个反斜杠在 JSON 字符串中必须写成两个反斜杠（例如 \\section 写成 \"\\\\section\"）；换行写成 \\n。\
+\
+【中文 LaTeX 要点】\
+- % 必须转义为 \\%；中文没有真斜体（用 \\textbf 加粗代替 \\textit）；浮动体定位用 [H]（需 \\usepackage{float}）；数值输出前 round。\
+\
+【回答风格】\
+简洁、直接、可操作，中文回答（除非作者用英文提问）；不确定时明确说明，不编造宏包或命令；作者可能引用编辑器选区（【编辑器选区】段），优先针对选区回答。";
 
 /// Ask the AI a free-form question with optional file context and the
 /// editor's current selection. The file content (capped) is included when
@@ -109,17 +126,21 @@ pub async fn ask_about_source_edit_stream(
                 // (declarative edits: far more reliable than free-form
                 // diffs for insert/replace/delete operations)
                 match execute_tool_calls(project, &reply, &mut on_edit).await {
-                    ToolOutcome::Applied(n, failures, final_text) => {
+                    ToolOutcome::Applied(n, failures, skipped, final_text) => {
                         let mut out = final_text;
                         if n > 0 {
                             out.push_str(&format!("\n\n✅ 已自动应用 {n} 处修改。编译检查后不满意可在 AI 面板点击“回滚此修改”。"));
                         }
+                        if skipped > 0 {
+                            out.push_str(&format!("\nℹ️ {skipped} 处无需修改（内容相同，已跳过）。"));
+                        }
                         if !failures.is_empty() {
                             out.push_str(&format!("\n⚠️ {} 处修改未能应用：{}", failures.len(), failures.join("；")));
                         }
-                        // zero calls applied — treat like a failed edit and
-                        // retry ONCE with the freshest file + the reasons
-                        if n == 0 && attempt == 0 {
+                        // zero calls applied AND nothing was skipped — treat
+                        // like a failed edit and retry ONCE with the freshest
+                        // file + the reasons (all-no-op batches are fine)
+                        if n == 0 && skipped == 0 && attempt == 0 {
                             last_reason = if failures.is_empty() {
                                 "没有可应用的修改".into()
                             } else {
@@ -154,7 +175,7 @@ enum ApplyOutcome {
 }
 
 enum ToolOutcome {
-    Applied(usize, Vec<String>, String),
+    Applied(usize, Vec<String>, usize, String),
     None,
 }
 
@@ -228,7 +249,12 @@ fn parse_tool_calls(reply: &str) -> Vec<ToolCall> {
             let Some(end) = end else { break };
             match serde_json::from_str::<ToolCall>(&json[..end]) {
                 Ok(tc) => out.push(tc),
-                Err(_) => break, // not a tool-call object — stop
+                Err(_) => {
+                    // malformed object (e.g. the AI wrote a single
+                    // backslash so `\m` became an invalid JSON escape):
+                    // skip it and keep scanning — never silently abort
+                    // the whole batch
+                }
             }
             // `start` is relative to the current `scan`; `consumed` already
             // holds this scan's offset inside `block`, so accumulate both to
@@ -271,6 +297,7 @@ async fn execute_tool_calls(
     // phase 1: compute the final content for each unique file
     let mut per_file: Vec<(String, String)> = Vec::new(); // (rel, content)
     let mut failures: Vec<String> = Vec::new();
+    let mut skipped = 0usize; // old == new (no-op) calls, not errors
     for call in &calls {
         let rel = project.relative_path(&call.file);
         if !is_editable_doc(&rel) {
@@ -288,6 +315,7 @@ async fn execute_tool_calls(
                 let src = per_file[idx].1.clone();
                 match compute_tool_call(&src, call) {
                     Ok(new) => per_file[idx].1 = new,
+                    Err(e) if e == "修改没有产生任何变化" => skipped += 1,
                     Err(e) => failures.push(format!("{}({}): {e}", call.tool, call.anchor)),
                 }
             }
@@ -301,13 +329,14 @@ async fn execute_tool_calls(
                 };
                 match compute_tool_call(&src, call) {
                     Ok(new) => per_file.push((rel, new)),
+                    Err(e) if e == "修改没有产生任何变化" => skipped += 1,
                     Err(e) => failures.push(format!("{}({}): {e}", call.tool, call.anchor)),
                 }
             }
         }
     }
     if per_file.is_empty() {
-        return ToolOutcome::Applied(0, failures, reply.trim().to_string());
+        return ToolOutcome::Applied(0, failures, skipped, reply.trim().to_string());
     }
     // phase 2: snapshot + write per file. A batch of calls to ONE file was
     // already chained into a single (rel, content) in phase 1, so the
@@ -342,7 +371,7 @@ async fn execute_tool_calls(
         applied += 1;
         on_edit(rel, &snap.to_string_lossy().to_string(), &diff);
     }
-    ToolOutcome::Applied(applied, failures, reply.trim().to_string())
+    ToolOutcome::Applied(applied, failures, skipped, reply.trim().to_string())
 }
 
 /// Locate all lines whose trimmed content contains the anchor (unique
@@ -395,15 +424,21 @@ fn compute_tool_call(src: &str, call: &ToolCall) -> Result<String, String> {
             out.join(if src.contains("\r\n") { "\r\n" } else { "\n" })
         }
         "replace" => {
-            if call.old.trim().is_empty() {
+            // tolerate the model filling only `anchor` (it sometimes treats
+            // anchor as the text to find): fall back to anchor as old
+            let old_src: &str = if call.old.trim().is_empty() && !call.anchor.trim().is_empty() {
+                &call.anchor
+            } else {
+                &call.old
+            };
+            if old_src.trim().is_empty() {
                 return Err("old 不能为空".into());
             }
             // line-sequence matching: split both sides into lines, compare
             // right-trimmed (so CRLF files and trailing whitespace the AI
             // adds/omits do not break the match). Multi-line `old` is the
             // common case for translation-style edits.
-            let old_lines: Vec<&str> = call
-                .old
+            let old_lines: Vec<&str> = old_src
                 .lines()
                 .map(|l| l.trim_end_matches('\r').trim_end())
                 .collect();
@@ -477,7 +512,7 @@ fn compute_tool_call(src: &str, call: &ToolCall) -> Result<String, String> {
                 };
                 return Err(format!(
                     "未找到要替换的文本 `{}`{hint}",
-                    call.old.trim().lines().next().unwrap_or("")
+                    old_src.trim().lines().next().unwrap_or("")
                 ));
             }
             if starts.len() > 1 {
@@ -817,6 +852,10 @@ fn build_messages(
     if let Some(f) = file {
         if f.ends_with(".tex") {
             if let Ok(content) = project.read_file(&f) {
+                // document summary: class / packages / section tree — a
+                // lightweight "repo map" so the AI knows the project shape
+                // (is Chinese supported? which packages? what sections?)
+                user.push_str(&format!("【文档概要 `{f}`】\n{}\n\n", document_summary(&content)));
                 user.push_str(&format!(
                     "【当前文件 `{f}` 的内容（前 {max_file_chars} 字符）】\n```latex\n{}\n```\n\n",
                     truncate(&content, max_file_chars)
@@ -829,7 +868,9 @@ fn build_messages(
     let mut messages = Vec::with_capacity(history.len() + 2);
     messages.push(ChatMsg {
         role: "system".into(),
-        content: format!("{SYSTEM_PROMPT}{guide}"),
+        content: format!(
+            "{SYSTEM_PROMPT}{guide}\n【编译环境】TeXButler 自动编译：优先内置 tectonic 引擎（xelatex 兼容，ctex 可用），回退系统 TeX Live / MiKTeX。"
+        ),
     });
     // conversation history (user/assistant turns) so the AI remembers what
     // it did earlier in this session
@@ -841,6 +882,55 @@ fn build_messages(
     }
     messages.push(ChatMsg { role: "user".into(), content: user });
     messages
+}
+
+/// Build a short document summary for the AI: document class, loaded
+/// packages (esp. whether Chinese is supported), and the section tree.
+/// A lightweight "repo map" for LaTeX — the AI uses it to know the
+/// project shape without reading the whole file.
+fn document_summary(content: &str) -> String {
+    let mut doc_class = String::new();
+    let mut packages: Vec<String> = Vec::new();
+    let mut sections: Vec<String> = Vec::new();
+    for line in content.lines() {
+        let t = line.trim();
+        if t.starts_with("\\documentclass") {
+            doc_class = t.trim_start_matches("\\documentclass").trim().to_string();
+        } else if let Some(rest) = t.strip_prefix("\\usepackage") {
+            // skip optional [options], take the name inside {braces}
+            let inner = rest.trim();
+            let brace = inner.find('{').map(|i| i + 1).unwrap_or(0);
+            let name: String = inner[brace..]
+                .chars()
+                .take_while(|c| !matches!(c, '}' | ',' | ' '))
+                .collect();
+            if !name.is_empty() {
+                packages.push(name);
+            }
+        } else if t.starts_with("\\section") || t.starts_with("\\subsection") {
+            // section tree, keep only section/subsection headings
+            let head: String = t.chars().take(80).collect();
+            sections.push(head);
+        }
+        if sections.len() >= 30 {
+            break;
+        }
+    }
+    let chinese_ok = packages
+        .iter()
+        .any(|p| p == "ctex" || p == "xeCJK" || p == "CJKutf8" || p == "zhnumber");
+    let mut out = format!("文档类：{}", if doc_class.is_empty() { "未知" } else { &doc_class });
+    if !packages.is_empty() {
+        out.push_str(&format!("\n已加载宏包：{}", packages.join(", ")));
+    }
+    out.push_str(&format!(
+        "\n中文支持：{}",
+        if chinese_ok { "已有（ctex/xeCJK/CJKutf8）" } else { "无（如需中文请加 \\usepackage{ctex}）" }
+    ));
+    if !sections.is_empty() {
+        out.push_str(&format!("\n章节结构：\n{}", sections.join("\n")));
+    }
+    out
 }
 
 fn truncate(text: &str, max: usize) -> String {
@@ -855,6 +945,23 @@ fn truncate(text: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn document_summary_reports_class_packages_and_chinese() {
+        let src = "\\documentclass[11pt]{article}\n\\usepackage[margin=2.5cm]{geometry}\n\\usepackage{amsmath,amssymb}\n\\usepackage{graphicx}\n\\begin{document}\n\\section*{Physics model}\n\\subsection*{(a) method}\n\\end{document}\n";
+        let s = document_summary(src);
+        assert!(s.contains("文档类：[11pt]{article}"));
+        assert!(s.contains("geometry"));
+        assert!(s.contains("amsmath"));
+        assert!(s.contains("中文支持：无"));
+        assert!(s.contains("Physics model"));
+        assert!(s.contains("(a) method"));
+        // with ctex loaded → Chinese supported
+        let src2 = "\\documentclass{ctexart}\n\\usepackage{ctex}\n\\begin{document}\n\\end{document}\n";
+        let s2 = document_summary(src2);
+        assert!(s2.contains("ctexart"));
+        assert!(s2.contains("中文支持：已有"));
+    }
 
     #[test]
     fn truncate_caps_long_input() {

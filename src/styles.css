@@ -648,6 +648,50 @@ body {
   overflow: hidden;
 }
 
+.toast {
+  position: fixed;
+  bottom: 34px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  max-width: 60vw;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  font-size: 12.5px;
+  color: var(--fg);
+  animation: toast-in 0.18s ease-out;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ---------- AI panel polish ---------- */
+.ai-rail .ai-messages .ai-msg {
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.ai-rail .ai-messages .ai-msg.user {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #fff;
+}
+.ai-rail .ai-messages .ai-msg.user pre,
+.ai-rail .ai-messages .ai-msg.user code {
+  color: #eef2ff;
+}
+.ai-rail .ai-input-box {
+  border-radius: 10px;
+}
+.ai-rail .ai-input-box textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
 .bottom > .problems-panel {
   flex: 1 1 55%;
   min-width: 300px;

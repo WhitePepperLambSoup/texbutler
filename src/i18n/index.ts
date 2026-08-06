@@ -291,6 +291,7 @@ const en: Dict = {
   "editor.save": "Save (Ctrl+S)",
   "editor.locateInPdf": "Locate in PDF",
   "editor.locateInPdfTitle": "SyncTeX: jump the PDF viewer to the page containing the cursor line",
+  "editor.locatePdfNoSync": "No SyncTeX data yet — compile once first",
   "editor.translate": "Translate",
   "editor.translateTitle": "AI-translate the selection (LaTeX structure preserved, CN↔EN)",
   "editor.translateEmpty": "Select some text to translate first",

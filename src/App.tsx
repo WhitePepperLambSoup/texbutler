@@ -50,7 +50,7 @@ function loadTheme(): ThemeId {
 }
 
 export default function App() {
-  const { root, mainFile, activeTab, pdfPath } = useProjectStore();
+  const { root, mainFile, activeTab, pdfPath, toast } = useProjectStore();
   const { running, progress, compile, lastResult, elapsedSec, compileIssues, ruleIssues } =
     useCompileStore();
   const busy = useAiStore((s) => s.busy);
@@ -436,6 +436,7 @@ export default function App() {
       <div className="bottom">
         <ProblemsPanel />
       </div>
+      {toast && <div className="toast" key={toast.id}>{toast.text}</div>}
       <div className="statusbar">
         <span className="status-item" title={t("status.engine")}>
           {t("status.engine", {

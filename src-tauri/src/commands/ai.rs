@@ -302,6 +302,9 @@ pub async fn tb_ai_chat_stream(
     let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "chat", "status": "start" }));
     let app2 = app.clone();
     let app3 = app.clone();
+    use std::sync::atomic::Ordering;
+    let applied_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let ac2 = applied_count.clone();
     let result = crate::core::ai::chat::ask_about_source_edit_stream(
         &settings,
         &proj,
@@ -313,23 +316,132 @@ pub async fn tb_ai_chat_stream(
             let _ = app2.emit("tb://ai-stream", serde_json::json!({ "delta": delta }));
         },
         move |file, backup, diff| {
+            ac2.fetch_add(1, Ordering::SeqCst);
             let _ = app3.emit("tb://ai-edit", serde_json::json!({ "file": file, "backup": backup, "diff": diff }));
         },
     )
     .await
     .map_err(|e| redact_key(&settings, e));
-    match &result {
-        Ok(full) => {
-            let _ = app.emit("tb://ai-stream", serde_json::json!({ "done": true }));
-            let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "chat", "status": "done", "ok": true }));
-            Ok(full.clone())
-        }
+    let mut full = match result {
+        Ok(f) => f,
         Err(e) => {
             let _ = app.emit("tb://ai-stream", serde_json::json!({ "error": e }));
             let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "chat", "status": "done", "ok": false }));
-            Err(e.clone())
+            return Err(e);
+        }
+    };
+    let applied_count = applied_count.load(Ordering::SeqCst);
+
+    // edit→verify loop (aider --test-cmd style): when the AI applied edits,
+    // auto-compile and feed failures back for ONE more fixing round
+    if applied_count > 0 {
+        let engine = state.settings.read().map_err(|e| e.to_string())?.engine;
+        let passes = state.settings.read().map_err(|e| e.to_string())?.texlive_passes;
+        let root = proj.root.clone();
+        let main = proj.main_file.clone();
+        let p2 = crate::core::project::Project::open(&root).map_err(|e| e.to_string())?;
+        let log_path = p2.log_path();
+        let scheduler = crate::core::compiler::CompilerScheduler::new_with_passes(engine, passes);
+        let p2b = p2.clone();
+        let cr = tauri::async_runtime::spawn_blocking(move || {
+            scheduler.compile(&p2b, std::path::Path::new(&main), &|| false)
+        })
+        .await
+        .unwrap_or_else(|e| crate::core::compiler::CompileResult::failed(
+            log_path,
+            crate::core::compiler::EngineUsed::Tectonic,
+            &format!("编译任务异常终止: {e}"),
+        ));
+        // sync the diagnostics panel with the fresh result
+        if let Ok(mut guard) = state.last_result.write() {
+            *guard = Some(cr.clone());
+        }
+        if cr.ok {
+            full.push_str("\n\n✅ 自动编译验证通过。");
+        } else {
+            let errs: Vec<String> = cr
+                .issues
+                .iter()
+                .filter(|i| i.severity == crate::core::Severity::Error)
+                .take(3)
+                .map(|i| i.message.clone())
+                .collect();
+            if errs.is_empty() {
+                full.push_str("\n\n⚠️ 自动编译验证未通过（可在 AI 面板点击“回滚此修改”）。");
+            } else {
+                full.push_str(&format!(
+                    "\n\n⚠️ 自动编译验证未通过（可点击“回滚此修改”）：{}",
+                    errs.join("；")
+                ));
+                // one automatic fixing round: feed the errors back to the AI
+                let fix_q = format!(
+                    "刚才的修改导致编译失败：{}。请用【工具调用】修复这些问题，保持其他内容不变。",
+                    errs.join("；")
+                );
+                let app4 = app.clone();
+                let app5 = app.clone();
+                let applied2 = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+                let ac3 = applied2.clone();
+                let fix_result = crate::core::ai::chat::ask_about_source_edit_stream(
+                    &settings,
+                    &proj,
+                    file.as_deref(),
+                    None,
+                    &fix_q,
+                    &[],
+                    move |delta| {
+                        let _ = app4.emit("tb://ai-stream", serde_json::json!({ "delta": delta }));
+                    },
+                    move |file, backup, diff| {
+                        ac3.fetch_add(1, Ordering::SeqCst);
+                        let _ = app5.emit("tb://ai-edit", serde_json::json!({ "file": file, "backup": backup, "diff": diff }));
+                    },
+                )
+                .await
+                .map_err(|e| redact_key(&settings, e));
+                let applied2 = applied2.load(Ordering::SeqCst);
+                match fix_result {
+                    Ok(fix_full) => {
+                        full.push_str(&format!("\n\n--- 自动修复尝试 ---\n{fix_full}"));
+                        if applied2 > 0 {
+                            // verify the fix compiles too
+                            let engine2 = state.settings.read().map_err(|e| e.to_string())?.engine;
+                            let passes2 = state.settings.read().map_err(|e| e.to_string())?.texlive_passes;
+                            let root2 = proj.root.clone();
+                            let main2 = proj.main_file.clone();
+                            let p3 = crate::core::project::Project::open(&root2).map_err(|e| e.to_string())?;
+                            let log_path3 = p3.log_path();
+                            let scheduler2 = crate::core::compiler::CompilerScheduler::new_with_passes(engine2, passes2);
+                            let p3b = p3.clone();
+                            let cr2 = tauri::async_runtime::spawn_blocking(move || {
+                                scheduler2.compile(&p3b, std::path::Path::new(&main2), &|| false)
+                            })
+                            .await
+                            .unwrap_or_else(|e| crate::core::compiler::CompileResult::failed(
+                                log_path3,
+                                crate::core::compiler::EngineUsed::Tectonic,
+                                &format!("编译任务异常终止: {e}"),
+                            ));
+                            if let Ok(mut guard) = state.last_result.write() {
+                                *guard = Some(cr2.clone());
+                            }
+                            if cr2.ok {
+                                full.push_str("\n✅ 修复后自动编译验证通过。");
+                            } else {
+                                full.push_str("\n⚠️ 修复后编译仍未通过（可在 AI 面板点击“回滚此修改”）。");
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        full.push_str(&format!("\n\n自动修复失败：{e}"));
+                    }
+                }
+            }
         }
     }
+    let _ = app.emit("tb://ai-stream", serde_json::json!({ "done": true }));
+    let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "chat", "status": "done", "ok": true }));
+    Ok(full)
 }
 
 /// List every AI fix snapshot in the project's `.texbutler/backup/`

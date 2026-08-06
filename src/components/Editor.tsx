@@ -588,9 +588,11 @@ export default function EditorPane() {
                 const page = await api.synctexForward(active.path, line);
                 if (page != null) {
                   window.dispatchEvent(new CustomEvent("tb:synctex-page", { detail: page }));
+                } else {
+                  useProjectStore.getState().notify(t("editor.locatePdfNoSync", { file: active.path }));
                 }
               } catch {
-                /* no synctex file yet */
+                useProjectStore.getState().notify(t("editor.locatePdfNoSync", { file: active.path }));
               }
             }}
           >
