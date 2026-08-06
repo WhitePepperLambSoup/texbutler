@@ -123,6 +123,8 @@ export const useAiStore = create<AiState>((set, get) => ({
       await api.aiRollback(edit.backup);
       useProjectStore.getState().reloadTab(edit.file);
       useAiStore.setState((s) => ({ lastEdits: s.lastEdits.filter((e) => e.file !== edit.file) }));
+      // refresh the rule-issue list so it no longer shows stale entries
+      await useCompileStoreRefresh();
       get().pushMessage({ role: "assistant", kind: "plain", text: useI18n.getState().t("ai.editRolledBack", { file: edit.file }) });
     } catch (e) {
       get().pushMessage({ role: "assistant", kind: "error", text: useI18n.getState().t("ai.chatFailed", { e: String(e) }) });

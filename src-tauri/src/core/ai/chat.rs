@@ -116,6 +116,16 @@ pub async fn ask_about_source_edit_stream(
                         if !failures.is_empty() {
                             out.push_str(&format!("\n⚠️ {} 处修改未能应用：{}", failures.len(), failures.join("；")));
                         }
+                        // zero calls applied — treat like a failed edit and
+                        // retry ONCE with the freshest file + the reasons
+                        if n == 0 && attempt == 0 {
+                            last_reason = if failures.is_empty() {
+                                "没有可应用的修改".into()
+                            } else {
+                                failures.join("；")
+                            };
+                            continue;
+                        }
                         return Ok(out.trim().to_string());
                     }
                     ToolOutcome::None => return Ok(text),
@@ -231,7 +241,11 @@ fn parse_tool_calls(reply: &str) -> Vec<ToolCall> {
         if consumed > 0 {
             rest = &block[consumed..];
         } else {
-            rest = &rest[pos + marker.len() + 1..];
+            // marker with nothing after it (common when the model hit the
+            // token limit mid-`【工具调用】`): slicing at marker.len() is
+            // always in-bounds (== len() yields ""), +1 could panic both
+            // on length and on a UTF-8 boundary, so never add it
+            rest = &rest[pos + marker.len()..];
         }
     }
     out
@@ -407,13 +421,20 @@ fn compute_tool_call(src: &str, call: &ToolCall) -> Result<String, String> {
             let mut out: Vec<String> = Vec::new();
             for (i, line) in src.lines().enumerate() {
                 if i == idx {
-                    // replace the matching fragment inside the ORIGINAL line
-                    // (keeps leading indentation; `old` is matched on the
-                    // trimmed form but replaced in place)
-                    if let Some(start) = line.find(old) {
-                        let mut replaced = String::from(&line[..start]);
+                    // replace EVERY matching fragment inside the original
+                    // line (keeps leading indentation; `old` is matched on
+                    // the trimmed form but replaced in place)
+                    let mut replaced = String::new();
+                    let mut rest_line = line;
+                    let mut matched_any = false;
+                    while let Some(start) = rest_line.find(old) {
+                        replaced.push_str(&rest_line[..start]);
                         replaced.push_str(call.new.trim_end());
-                        replaced.push_str(&line[start + old.len()..]);
+                        rest_line = &rest_line[start + old.len()..];
+                        matched_any = true;
+                    }
+                    if matched_any {
+                        replaced.push_str(rest_line);
                         out.push(replaced);
                         continue;
                     }
@@ -849,6 +870,16 @@ mod tests {
             result.push('\n');
         }
         assert_eq!(result, "  \\section*{Question 1 (改)}\n内容\n");
+    }
+
+    #[test]
+    fn parse_tool_calls_marker_at_end_does_not_panic() {
+        // model hit the token limit right after the marker — the old +1
+        // offset panicked on length / UTF-8 boundary
+        let reply = "【工具调用】";
+        assert!(parse_tool_calls(reply).is_empty());
+        let reply2 = "好的。【工具调用】";
+        assert!(parse_tool_calls(reply2).is_empty());
     }
 
     #[test]
