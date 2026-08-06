@@ -23,6 +23,7 @@ export default function AiPanel() {
   const t = useT();
   const [genInput, setGenInput] = useState("");
   const [snapshots, setSnapshots] = useState<{ path: string; ts: string; file: string }[] | null>(null);
+  const newestAppliedId = messages.filter((m) => m.applied).slice(-1)[0]?.id ?? null;
   const [usage, setUsage] = useState<{ prompt_tokens: number; completion_tokens: number; requests: number; cost_usd: number } | null>(null);
 
   const refreshUsage = async () => {
@@ -128,8 +129,9 @@ export default function AiPanel() {
               <pre className="ai-diff">{m.diff}</pre>
             )}
             {/* collaborative edit: the AI changed a file — roll back right
-                inside the message bubble (compile-check then decide) */}
-            {m.role === "assistant" && lastEdit && m.text.includes("已自动应用修改") && (
+                inside the message bubble (compile-check then decide).
+                Only the newest applied message shows the button. */}
+            {m.role === "assistant" && m.applied && lastEdit && m.id === newestAppliedId && (
               <div className="ai-msg-actions">
                 <button className="btn-mini btn-danger" onClick={() => void rollbackEdit()}>
                   {t("ai.rollback", { file: lastEdit.file })}
@@ -256,7 +258,7 @@ export default function AiPanel() {
           </button>
         </div>
         <div className="ai-generate-actions">
-          {lastEdit && !messages.some((m) => m.role === "assistant" && m.text.includes("已自动应用修改")) && (
+          {lastEdit && newestAppliedId === null && (
             <button
               className="btn-mini btn-danger"
               title={t("ai.rollbackTitle")}

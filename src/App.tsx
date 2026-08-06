@@ -30,7 +30,7 @@ function AiRail() {
   return (
     <aside className={`ai-rail ${open ? "open" : "collapsed"}`}>
       <button className="ai-rail-toggle" onClick={toggle} title={open ? t("ai.collapse") : t("ai.expand")}>
-        {open ? "▸" : "AI"}
+        {open ? "◂" : "AI"}
       </button>
       {open && <AiPanel />}
     </aside>

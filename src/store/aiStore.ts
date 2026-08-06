@@ -12,6 +12,8 @@ export interface AiMessage {
   diff?: string | null;
   issue?: Issue | null;
   report?: FixReport | null;
+  /** True when the AI applied a collaborative edit (snapshot available). */
+  applied?: boolean;
 }
 
 interface AiState {
@@ -88,9 +90,12 @@ export const useAiStore = create<AiState>((set, get) => ({
     });
     try {
       const answer = await api.aiChatStream(q, st.activeTab, get().pendingSelection);
-      // finalize the live message with the complete answer
+      // finalize the live message with the complete answer; mark it as
+      // applied when the AI performed a collaborative edit this round
       useAiStore.setState((s) => ({
-        messages: s.messages.map((m) => (m.id === msgId ? { ...m, text: answer } : m)),
+        messages: s.messages.map((m) =>
+          m.id === msgId ? { ...m, text: answer, applied: Boolean(s.lastEdit) } : m,
+        ),
       }));
     } catch (e) {
       get().pushMessage({ role: "assistant", kind: "error", text: useI18n.getState().t("ai.chatFailed", { e: String(e) }) });
