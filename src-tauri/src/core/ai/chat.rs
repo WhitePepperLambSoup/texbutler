@@ -154,9 +154,13 @@ pub fn is_editable_doc(rel: &str) -> bool {
     if rel_clean.split('/').any(|c| c == "..") {
         return false;
     }
+    // case-insensitive comparison for extension + protected paths: Windows
+    // and macOS filesystems are case-insensitive, so `.TEXBUTLER/x.tex`
+    // must be treated the same as `.texbutler/x.tex`
+    let low = rel_clean.to_lowercase();
     let allowed_ext = [".tex", ".bib", ".sty", ".cls"];
-    let is_doc = allowed_ext.iter().any(|e| rel_clean.ends_with(e));
-    let is_protected = rel_clean == super::guide::GUIDE_FILE || rel_clean.starts_with(".texbutler/");
+    let is_doc = allowed_ext.iter().any(|e| low.ends_with(e));
+    let is_protected = low == super::guide::GUIDE_FILE || low.starts_with(".texbutler/");
     is_doc && !is_protected
 }
 
