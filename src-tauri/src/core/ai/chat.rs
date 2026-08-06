@@ -219,7 +219,11 @@ fn parse_tool_calls(reply: &str) -> Vec<ToolCall> {
                 Ok(tc) => out.push(tc),
                 Err(_) => break, // not a tool-call object — stop
             }
-            consumed = start + end;
+            // `start` is relative to the current `scan`; `consumed` already
+            // holds this scan's offset inside `block`, so accumulate both to
+            // keep a block-relative total (a plain `consumed = start + end`
+            // would re-parse earlier objects on the next marker block)
+            consumed += start + end;
             scan = &json[end..];
         }
         // advance past everything consumed in this marker block so the
@@ -233,10 +237,11 @@ fn parse_tool_calls(reply: &str) -> Vec<ToolCall> {
     out
 }
 
-/// Execute all tool calls in the reply. Each call snapshots + writes via
-/// the same allowlisted path as diff edits. Failures are collected, not
-/// fatal, so a batch of calls (e.g. one `\newpage` per section) applies
-/// as many as possible and reports the rest.
+/// Execute all tool calls in the reply. Two-phase: every call is computed
+/// and validated against the CURRENT file content first; only when all
+/// succeed is ONE snapshot taken and the edits written one by one, with a
+/// single on_edit event — so the user's single "roll back" undoes the whole
+/// batch, and a mid-batch failure leaves the file untouched.
 async fn execute_tool_calls(
     project: &Project,
     reply: &str,
@@ -246,13 +251,82 @@ async fn execute_tool_calls(
     if calls.is_empty() {
         return ToolOutcome::None;
     }
-    let mut applied = 0usize;
+    // phase 1: compute the final content for each unique file
+    let mut per_file: Vec<(String, String)> = Vec::new(); // (rel, content)
     let mut failures: Vec<String> = Vec::new();
     for call in &calls {
-        match apply_tool_call(project, call, on_edit).await {
-            Ok(()) => applied += 1,
-            Err(e) => failures.push(format!("{}({}): {e}", call.tool, call.anchor)),
+        let rel = project.relative_path(&call.file);
+        if !is_editable_doc(&rel) {
+            failures.push(format!("{}({}): 受保护文件", call.tool, call.anchor));
+            continue;
         }
+        // absolute paths outside the project are refused explicitly
+        if rel.contains(':') || rel.starts_with('/') || rel.starts_with('\\') {
+            failures.push(format!("{}({}): 拒绝项目外绝对路径", call.tool, call.anchor));
+            continue;
+        }
+        match per_file.iter().position(|(r, _)| *r == rel) {
+            Some(idx) => {
+                // chain onto the previous call's result for this file
+                let src = per_file[idx].1.clone();
+                match compute_tool_call(&src, call) {
+                    Ok(new) => per_file[idx].1 = new,
+                    Err(e) => failures.push(format!("{}({}): {e}", call.tool, call.anchor)),
+                }
+            }
+            None => {
+                let src = match project.read_file(&rel) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        failures.push(format!("{}({}): 读取失败 {e}", call.tool, call.anchor));
+                        continue;
+                    }
+                };
+                match compute_tool_call(&src, call) {
+                    Ok(new) => per_file.push((rel, new)),
+                    Err(e) => failures.push(format!("{}({}): {e}", call.tool, call.anchor)),
+                }
+            }
+        }
+    }
+    if per_file.is_empty() {
+        return ToolOutcome::Applied(0, failures, reply.trim().to_string());
+    }
+    // phase 2: snapshot + write each file, then ONE on_edit event (the
+    // frontend shows a single "roll back" that restores the last written
+    // file — the common case is a batch of edits to one file, which this
+    // handles as a single snapshot + single write)
+    let mut applied = 0usize;
+    let mut last_event: Option<(String, String, String)> = None; // (rel, snap, diff)
+    for (rel, new_content) in &per_file {
+        let src = match project.read_file(rel) {
+            Ok(s) => s,
+            Err(e) => {
+                failures.push(format!("{rel}: 写入前读取失败 {e}"));
+                continue;
+            }
+        };
+        if *new_content == src {
+            failures.push(format!("{rel}: 修改没有产生任何变化"));
+            continue;
+        }
+        let snap = match super::fix_loop::snapshot(project, rel, &src) {
+            Ok(s) => s,
+            Err(e) => {
+                failures.push(format!("{rel}: 快照失败 {e}"));
+                continue;
+            }
+        };
+        let diff = synthetic_diff(&src, new_content, rel);
+        if let Err(e) = project.write_file(rel, new_content) {
+            failures.push(format!("{rel}: 写入失败 {e}"));
+            continue;
+        }
+        applied += 1;
+        last_event = Some((rel.clone(), snap.to_string_lossy().to_string(), diff));
+    }
+    if let Some((rel, snap, diff)) = last_event {
+        on_edit(&rel, &snap, &diff);
     }
     ToolOutcome::Applied(applied, failures, reply.trim().to_string())
 }
@@ -279,17 +353,10 @@ fn anchor_lines(content: &str, anchor: &str, allow_many: bool) -> Result<Vec<usi
     Ok(hits)
 }
 
-/// Apply a single declarative tool call to the project.
-async fn apply_tool_call(
-    project: &Project,
-    call: &ToolCall,
-    on_edit: &mut (impl FnMut(&str, &str, &str) + ?Sized),
-) -> Result<(), String> {
-    let rel = project.relative_path(&call.file);
-    if !is_editable_doc(&rel) {
-        return Err("受保护文件（只允许 .tex/.bib/.sty/.cls）".into());
-    }
-    let src = project.read_file(&rel).map_err(|e| format!("读取失败：{e}"))?;
+/// Compute the file content after applying one declarative tool call.
+/// Pure function (no I/O): phase 1 chains calls per file and validates
+/// everything before any snapshot or write happens.
+fn compute_tool_call(src: &str, call: &ToolCall) -> Result<String, String> {
     let new_content: String = match call.tool.as_str() {
         "insert_before" | "insert_after" => {
             let lines: Vec<String> = call.lines.iter().map(|l| l.trim_end().to_string()).collect();
@@ -377,13 +444,7 @@ async fn apply_tool_call(
     if src.ends_with('\n') && !new_content.ends_with('\n') {
         new_content.push('\n');
     }
-    let snap = super::fix_loop::snapshot(project, &rel, &src).map_err(|e| e.to_string())?;
-    project.write_file(&rel, &new_content).map_err(|e| e.to_string())?;
-    let snap_s = snap.to_string_lossy().to_string();
-    // a synthetic unified diff so the UI can highlight what changed
-    let diff = synthetic_diff(&src, &new_content, &rel);
-    on_edit(&rel, &snap_s, &diff);
-    Ok(())
+    Ok(new_content)
 }
 
 /// Build a minimal unified diff between old and new content for display.
