@@ -27,7 +27,7 @@ interface AiState {
   /** Editor selection handed to the AI panel for "ask about this selection". */
   pendingSelection: string | null;
   /** Last collaborative edit applied by the AI (snapshot path for rollback). */
-  lastEdit: { file: string; backup: string; diff?: string } | null;
+  lastEdits: { file: string; backup: string; diff?: string }[];
 
   loadSettings: () => Promise<void>;
   diagnoseIssue: (issue: Issue, index: number) => Promise<void>;
@@ -38,7 +38,7 @@ interface AiState {
   toggleSuggestMode: () => void;
   setSelection: (sel: string | null) => void;
   askAi: (question: string) => Promise<void>;
-  rollbackEdit: () => Promise<void>;
+  rollbackEdit: (file?: string) => Promise<void>;
   testConnection: () => Promise<string>;
   saveSettings: (s: AiSettings) => Promise<void>;
   pushMessage: (m: Omit<AiMessage, "id">) => number;
@@ -55,7 +55,7 @@ export const useAiStore = create<AiState>((set, get) => ({
   diffPending: null,
   suggestMode: false,
   pendingSelection: null,
-  lastEdit: null,
+  lastEdits: [],
 
   setSelection(sel) {
     set({ pendingSelection: sel });
@@ -82,12 +82,17 @@ export const useAiStore = create<AiState>((set, get) => ({
       }
     });
     // collaborative edit: AI applied a diff to the project; remember the
-    // snapshot so the user can roll it back after compiling
+    // snapshot so the user can roll it back after compiling (one entry per
+    // file — a batch edit keeps every file independently rollback-able)
     let editedThisRound = false;
     const listenEditP = onEvent<{ file?: string; backup?: string; diff?: string }>("tb://ai-edit", (payload) => {
       if (payload.file && payload.backup) {
         editedThisRound = true;
-        useAiStore.setState({ lastEdit: { file: payload.file!, backup: payload.backup!, diff: payload.diff } });
+        const { file, backup, diff } = payload as { file: string; backup: string; diff?: string };
+        useAiStore.setState((s) => {
+          const rest = s.lastEdits.filter((e) => e.file !== file);
+          return { lastEdits: [...rest, { file, backup, diff }] };
+        });
       }
     });
     try {
@@ -109,14 +114,15 @@ export const useAiStore = create<AiState>((set, get) => ({
     set({ busy: false, busyKind: null });
   },
 
-  async rollbackEdit() {
-    const edit = get().lastEdit;
+  async rollbackEdit(file?: string) {
+    const edits = get().lastEdits;
+    const edit = file ? edits.find((e) => e.file === file) : edits[edits.length - 1];
     if (!edit) return;
     set({ busy: true, busyKind: "fix" });
     try {
       await api.aiRollback(edit.backup);
       useProjectStore.getState().reloadTab(edit.file);
-      set({ lastEdit: null });
+      useAiStore.setState((s) => ({ lastEdits: s.lastEdits.filter((e) => e.file !== edit.file) }));
       get().pushMessage({ role: "assistant", kind: "plain", text: useI18n.getState().t("ai.editRolledBack", { file: edit.file }) });
     } catch (e) {
       get().pushMessage({ role: "assistant", kind: "error", text: useI18n.getState().t("ai.chatFailed", { e: String(e) }) });

@@ -46,7 +46,7 @@ function DiffHighlight({ diff }: { diff: string }) {
 }
 
 export default function AiPanel() {
-  const { messages, busy, busyKind, diffPending, acceptDiff, rejectDiff, applyHunk, clearMessages, suggestMode, toggleSuggestMode, pendingSelection, setSelection, askAi, lastEdit, rollbackEdit } =
+  const { messages, busy, busyKind, diffPending, acceptDiff, rejectDiff, applyHunk, clearMessages, suggestMode, toggleSuggestMode, pendingSelection, setSelection, askAi, lastEdits, rollbackEdit } =
     useAiStore();
   const [expandedRaw, setExpandedRaw] = useState<number | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -160,13 +160,17 @@ export default function AiPanel() {
             )}
             {/* collaborative edit: the AI changed a file — roll back right
                 inside the message bubble (compile-check then decide).
-                Only the newest applied message shows the button. */}
-            {m.role === "assistant" && m.applied && lastEdit && m.id === newestAppliedId && (
+                Only the newest applied message shows the buttons. */}
+            {m.role === "assistant" && m.applied && lastEdits.length > 0 && m.id === newestAppliedId && (
               <div className="ai-msg-actions">
-                {lastEdit.diff && <DiffHighlight diff={lastEdit.diff} />}
-                <button className="btn-mini btn-danger" onClick={() => void rollbackEdit()}>
-                  {t("ai.rollback", { file: lastEdit.file })}
-                </button>
+                {lastEdits.map((e) => (
+                  <div key={e.file} className="ai-rollback-row">
+                    {e.diff && <DiffHighlight diff={e.diff} />}
+                    <button className="btn-mini btn-danger" onClick={() => void rollbackEdit(e.file)}>
+                      {t("ai.rollback", { file: e.file })}
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
             {m.raw && (
@@ -289,15 +293,16 @@ export default function AiPanel() {
           </button>
         </div>
         <div className="ai-generate-actions">
-          {lastEdit && newestAppliedId === null && (
+          {lastEdits.map((e) => (
             <button
+              key={e.file}
               className="btn-mini btn-danger"
               title={t("ai.rollbackTitle")}
-              onClick={() => void rollbackEdit()}
+              onClick={() => void rollbackEdit(e.file)}
             >
-              {t("ai.rollback", { file: lastEdit.file })}
+              {t("ai.rollback", { file: e.file })}
             </button>
-          )}
+          ))}
           {pendingSelection && (
             <button
               className="btn-mini"
