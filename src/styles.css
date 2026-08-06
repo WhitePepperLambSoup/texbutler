@@ -1196,7 +1196,8 @@ body {
   display: flex;
   gap: 8px;
   align-items: center;
-  background: var(--bg2);  font-size: 12.5px;
+  background: var(--bg2);
+  font-size: 12.5px;
 }
 
 .ai-diff-bar span {
