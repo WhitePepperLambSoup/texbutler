@@ -79,7 +79,7 @@ pub enum AiError {
 }
 
 /// One chat message.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ChatMsg {
     pub role: String, // "system" | "user" | "assistant"
     pub content: String,

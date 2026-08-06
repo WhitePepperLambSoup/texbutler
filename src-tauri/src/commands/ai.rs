@@ -96,6 +96,17 @@ pub async fn tb_ai_translate(
 }
 
 /// AI-diagnose one compile issue (by index into the last result's issues).
+/// Refuse to diagnose/fix files outside the project (e.g. MiKTeX system
+/// files like `umsb.fd` that the log parser picks up): we cannot read or
+/// repair them, so fail fast with a clear message instead of a confusing
+/// mid-loop "cannot read file" abort.
+fn ensure_project_file(proj: Option<&crate::core::project::Project>, file: &str) -> Result<(), String> {
+    match proj {
+        Some(p) if p.resolve(file).is_some() => Ok(()),
+        _ => Err(format!("无法读取文件 {file}（不在项目内），放弃修复。")),
+    }
+}
+
 #[tauri::command]
 pub async fn tb_ai_diagnose(
     app: AppHandle,
@@ -109,6 +120,11 @@ pub async fn tb_ai_diagnose(
         let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
         (issue, settings)
     };
+    // external files cannot be diagnosed or fixed
+    if let Some(f) = issue.file.as_deref() {
+        let proj = state.project.read().map_err(|e| e.to_string())?;
+        ensure_project_file(proj.as_ref(), f)?;
+    }
     if settings.api_key.is_none() && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. }) {
         return Err("尚未配置 AI API Key。请在“设置”中填写 provider 配置。".into());
     }
@@ -153,6 +169,10 @@ pub async fn tb_ai_fix(
     };
     if settings.api_key.is_none() && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. }) {
         return Err("尚未配置 AI API Key。请在“设置”中填写 provider 配置。".into());
+    }
+    // external files (e.g. MiKTeX system files) cannot be fixed
+    if let Some(f) = issue.file.as_deref() {
+        ensure_project_file(Some(&proj), f)?;
     }
     let apply = apply.unwrap_or(true);
     let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "fix", "status": "start", "apply": apply }));
@@ -256,6 +276,7 @@ pub async fn tb_ai_chat_stream(
     question: String,
     file: Option<String>,
     selection: Option<String>,
+    history: Option<Vec<crate::core::ai::ChatMsg>>,
 ) -> Result<String, String> {
     let (settings, proj) = {
         let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
@@ -279,6 +300,7 @@ pub async fn tb_ai_chat_stream(
         file.as_deref(),
         selection.as_deref(),
         &question,
+        history.as_deref().unwrap_or(&[]),
         move |delta| {
             let _ = app2.emit("tb://ai-stream", serde_json::json!({ "delta": delta }));
         },

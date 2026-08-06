@@ -176,8 +176,8 @@ export const api = {
     invoke<string>("tb_ai_translate", { text, target }),
   aiChat: (question: string, file?: string | null, selection?: string | null) =>
     invoke<string>("tb_ai_chat", { question, file: file ?? null, selection: selection ?? null }),
-  aiChatStream: (question: string, file?: string | null, selection?: string | null) =>
-    invoke<string>("tb_ai_chat_stream", { question, file: file ?? null, selection: selection ?? null }),
+  aiChatStream: (question: string, file?: string | null, selection?: string | null, history?: { role: string; content: string }[]) =>
+    invoke<string>("tb_ai_chat_stream", { question, file: file ?? null, selection: selection ?? null, history: history ?? [] }),
   aiSnapshots: () => invoke<{ path: string; ts: string; file: string }[]>("tb_ai_snapshots"),
   // note: tb_ai_generate stays in the backend (harmless), the UI is
   // chat-driven only — see askAboutSource in the AI panel

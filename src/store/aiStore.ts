@@ -96,7 +96,13 @@ export const useAiStore = create<AiState>((set, get) => ({
       }
     });
     try {
-      const answer = await api.aiChatStream(q, st.activeTab, get().pendingSelection);
+      // conversation history: send the recent user/assistant turns so the
+      // AI remembers what it did earlier (capped for context budget)
+      const history = get().messages
+        .slice(-12)
+        .filter((m) => (m.role === "user" || m.role === "assistant") && m.kind === "plain")
+        .map((m) => ({ role: m.role, content: (m.text || "").slice(0, 3000) }));
+      const answer = await api.aiChatStream(q, st.activeTab, get().pendingSelection, history);
       // finalize the live message with the complete answer; mark it as
       // applied only when the AI edited files THIS round (a leftover
       // lastEdit from a previous round must not flag a plain chat reply)

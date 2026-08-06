@@ -23,7 +23,7 @@ pub async fn ask_about_source(
     selection: Option<&str>,
     question: &str,
 ) -> Result<String, String> {
-    let messages = build_messages(project, file, selection, question, 8000);
+    let messages = build_messages(project, file, selection, question, 8000, &[]);
     let reply = chat(s, &messages).await.map_err(|e| e.to_string())?;
     Ok(reply.trim().to_string())
 }
@@ -38,7 +38,7 @@ pub async fn ask_about_source_stream(
     question: &str,
     on_delta: impl FnMut(&str),
 ) -> Result<String, String> {
-    let messages = build_messages(project, file, selection, question, 8000);
+    let messages = build_messages(project, file, selection, question, 8000, &[]);
     let reply = super::provider::chat_stream(s, &messages, on_delta)
         .await
         .map_err(|e| e.to_string())?;
@@ -56,6 +56,7 @@ pub async fn ask_about_source_edit_stream(
     file: Option<&str>,
     selection: Option<&str>,
     question: &str,
+    history: &[ChatMsg],
     mut on_delta: impl FnMut(&str),
     mut on_edit: impl FnMut(&str, &str, &str),
 ) -> Result<String, String> {
@@ -72,7 +73,7 @@ pub async fn ask_about_source_edit_stream(
 生成一个与当前文件内容完全一致的新方案。原请求：{question}"
             );
         }
-        let mut messages = build_messages(project, file, selection, &question_text, 30000);
+        let mut messages = build_messages(project, file, selection, &question_text, 30000, history);
         // project style guide (AI_GUIDE.md) injected into the system prompt
         let guide = super::guide::guide_system_fragment(project);
         // tell the AI it may edit files by emitting a unified diff
@@ -84,8 +85,8 @@ pub async fn ask_about_source_edit_stream(
 请选择以下一种方式输出修改方案：\
 方式一（推荐，更可靠）：【工具调用】标记后跟一个 JSON 对象，程序会精确执行——\
 `{{\"tool\": \"insert_before\", \"file\": \"solutions.tex\", \"anchor\": \"\\\\section*{{Question 2\", \"lines\": [\"\\\\newpage\"]}}`（在每处 anchor 所在行前插入 lines）；\
-`insert_after` 同理插在行后；`replace` 用 old/new 唯一替换；`delete_line` 按 anchor 删整行。\
-一个回复里可以有多个【工具调用】（例如给 7 个 Question 前各插一行 \\\\newpage，就发 7 个 insert_before）。\
+`insert_after` 同理插在行后；`replace` 用 old/new 替换（支持多行 old，但 **old 越短越好**：能单行就不多行，长段落请拆成多个 replace（每个 ≤4 行），且 old 必须与文件逐字一致——多行 old 中任何一行不一致都会导致整体无法应用）；`delete_line` 按 anchor 删整行。\
+一个回复里可以有多个【工具调用】（例如给 7 个 Question 前各插一行 \\\\newpage，就发 7 个 insert_before；翻译长段落就发多个短 replace）。\
 方式二：输出一个 unified diff（格式：`--- a/<file>`、`+++ b/<file>`、`@@` 头、`-`/`+`/空格 前缀行）。\
 两种方式都会被自动应用到项目文件（应用前会快照，作者不满意可一键回滚）。\
 **必须只做最小修改**：只改被要求改动的行，其余内容一字不改。\
@@ -391,57 +392,127 @@ fn compute_tool_call(src: &str, call: &ToolCall) -> Result<String, String> {
                     out.extend(lines.clone());
                 }
             }
-            out.join("\n")
+            out.join(if src.contains("\r\n") { "\r\n" } else { "\n" })
         }
         "replace" => {
             if call.old.trim().is_empty() {
                 return Err("old 不能为空".into());
             }
-            let old = call.old.trim();
-            // unique text match (trim-tolerant) over the whole content
-            let mut first_pos = None;
-            let mut second_pos = None;
-            for (i, line) in src.lines().enumerate() {
-                if line.trim().contains(old) {
-                    if first_pos.is_none() {
-                        first_pos = Some(i);
+            // line-sequence matching: split both sides into lines, compare
+            // right-trimmed (so CRLF files and trailing whitespace the AI
+            // adds/omits do not break the match). Multi-line `old` is the
+            // common case for translation-style edits.
+            let old_lines: Vec<&str> = call
+                .old
+                .lines()
+                .map(|l| l.trim_end_matches('\r').trim_end())
+                .collect();
+            let old_n = old_lines.len();
+            let src_lines: Vec<&str> = src.lines().collect();
+            let src_norm: Vec<&str> = src_lines
+                .iter()
+                .map(|l| l.trim_end_matches('\r').trim_end())
+                .collect();
+            // find every contiguous match (right-trimmed equality)
+            let mut starts: Vec<usize> = Vec::new();
+            let mut inline: Option<String> = None; // in-line fragment replacement
+            if old_n == 1 {
+                // single line: whole-line equality first, then fall back to
+                // a unique line that CONTAINS the fragment (in-line replace)
+                let want = old_lines[0];
+                for (i, l) in src_norm.iter().enumerate() {
+                    if *l == want {
+                        starts.push(i);
+                    }
+                }
+                if starts.is_empty() {
+                    let mut contains: Vec<usize> = Vec::new();
+                    for (i, l) in src_norm.iter().enumerate() {
+                        if l.contains(want) {
+                            contains.push(i);
+                        }
+                    }
+                    if contains.len() == 1 {
+                        let orig = src_lines[contains[0]];
+                        let mut replaced = String::new();
+                        let mut rest_l = orig;
+                        let mut any = false;
+                        while let Some(p) = rest_l.find(want) {
+                            replaced.push_str(&rest_l[..p]);
+                            replaced.push_str(call.new.trim_end());
+                            rest_l = &rest_l[p + want.len()..];
+                            any = true;
+                        }
+                        if any {
+                            replaced.push_str(rest_l);
+                            starts.push(contains[0]);
+                            inline = Some(replaced);
+                        }
+                    }
+                }
+            } else {
+                let mut i = 0;
+                while i + old_n <= src_lines.len() {
+                    if src_norm[i..i + old_n] == old_lines[..] {
+                        starts.push(i);
+                        i += old_n; // non-overlapping matches
                     } else {
-                        second_pos = Some(i);
+                        i += 1;
+                    }
+                }
+            }
+            if starts.is_empty() && inline.is_none() {
+                // locate the first mismatching line so the retry (and the
+                // user) can see exactly where old diverges from the file
+                let mut mismatch_line = None;
+                for (k, want) in old_lines.iter().enumerate() {
+                    if src_norm.get(k).map(|s| s != want).unwrap_or(true) {
+                        mismatch_line = Some(k + 1);
                         break;
                     }
                 }
+                let hint = match mismatch_line {
+                    Some(n) => format!("（第 {n} 行与文件不一致，请缩短 old 或直接复制文件中的原文）"),
+                    None => String::new(),
+                };
+                return Err(format!(
+                    "未找到要替换的文本 `{}`{hint}",
+                    call.old.trim().lines().next().unwrap_or("")
+                ));
             }
-            if second_pos.is_some() {
-                return Err(format!("old 文本 `{old}` 出现多处，无法确定替换位置"));
+            if starts.len() > 1 {
+                return Err(format!(
+                    "old 文本出现 {} 处，无法确定替换位置（请用更长的 old 精确定位）",
+                    starts.len()
+                ));
             }
-            if first_pos.is_none() {
-                return Err(format!("未找到要替换的文本 `{old}`"));
-            }
-            let idx = first_pos.unwrap();
+            let new_lines: Vec<&str> = call
+                .new
+                .lines()
+                .map(|l| l.trim_end_matches('\r').trim_end())
+                .collect();
             let mut out: Vec<String> = Vec::new();
-            for (i, line) in src.lines().enumerate() {
-                if i == idx {
-                    // replace EVERY matching fragment inside the original
-                    // line (keeps leading indentation; `old` is matched on
-                    // the trimmed form but replaced in place)
-                    let mut replaced = String::new();
-                    let mut rest_line = line;
-                    let mut matched_any = false;
-                    while let Some(start) = rest_line.find(old) {
-                        replaced.push_str(&rest_line[..start]);
-                        replaced.push_str(call.new.trim_end());
-                        rest_line = &rest_line[start + old.len()..];
-                        matched_any = true;
-                    }
-                    if matched_any {
-                        replaced.push_str(rest_line);
-                        out.push(replaced);
-                        continue;
+            if let Some(replaced) = inline {
+                // in-line fragment replacement: swap the single line
+                for (i, line) in src_lines.iter().enumerate() {
+                    if i == starts[0] {
+                        out.push(replaced.clone());
+                    } else {
+                        out.push(line.to_string());
                     }
                 }
-                out.push(line.to_string());
+            } else {
+                let idx = starts[0];
+                for (i, line) in src_lines.iter().enumerate() {
+                    if i == idx {
+                        out.extend(new_lines.iter().map(|l| l.to_string()));
+                    }
+                    if i < idx || i >= idx + old_n {
+                        out.push(line.to_string());
+                    }
+                }
             }
-            out.join("\n")
+            out.join(if src.contains("\r\n") { "\r\n" } else { "\n" })
         }
         "delete_line" => {
             let hits = anchor_lines(&src, &call.anchor, false)?;
@@ -452,7 +523,7 @@ fn compute_tool_call(src: &str, call: &ToolCall) -> Result<String, String> {
                     out.push(line.to_string());
                 }
             }
-            out.join("\n")
+            out.join(if src.contains("\r\n") { "\r\n" } else { "\n" })
         }
         other => return Err(format!("未知工具 `{other}`")),
     };
@@ -734,6 +805,7 @@ fn build_messages(
     selection: Option<&str>,
     question: &str,
     max_file_chars: usize,
+    history: &[ChatMsg],
 ) -> Vec<ChatMsg> {
     let mut user = String::new();
     if let Some(sel) = selection {
@@ -754,13 +826,21 @@ fn build_messages(
     }
     user.push_str(&format!("【问题】\n{question}"));
     let guide = super::guide::guide_system_fragment(project);
-    vec![
-        ChatMsg {
-            role: "system".into(),
-            content: format!("{SYSTEM_PROMPT}{guide}"),
-        },
-        ChatMsg { role: "user".into(), content: user },
-    ]
+    let mut messages = Vec::with_capacity(history.len() + 2);
+    messages.push(ChatMsg {
+        role: "system".into(),
+        content: format!("{SYSTEM_PROMPT}{guide}"),
+    });
+    // conversation history (user/assistant turns) so the AI remembers what
+    // it did earlier in this session
+    for h in history {
+        messages.push(ChatMsg {
+            role: h.role.clone(),
+            content: h.content.clone(),
+        });
+    }
+    messages.push(ChatMsg { role: "user".into(), content: user });
+    messages
 }
 
 fn truncate(text: &str, max: usize) -> String {
@@ -847,6 +927,56 @@ mod tests {
     }
 
     #[test]
+    fn replace_supports_multiline_and_crlf() {
+        // translation-style edit: multi-line old with CRLF file
+        let src = "\\section*{Question 1 \\quad $E_p$}\r\n\r\n\\subsection*{(a) Partial derivative method}\r\n\r\nWrite $E_s = E_p/(1+kE_p)$ with\r\n";
+        let call = ToolCall {
+            tool: "replace".into(),
+            file: "x.tex".into(),
+            anchor: String::new(),
+            old: "\\subsection*{(a) Partial derivative method}\n\nWrite $E_s = E_p/(1+kE_p)$ with".into(),
+            new: "\\subsection*{(a) 偏导数法}\n\n令 $E_s = E_p/(1+kE_p)$，其中".into(),
+            lines: vec![],
+        };
+        let result = compute_tool_call(src, &call).unwrap();
+        assert!(result.contains("\\subsection*{(a) 偏导数法}"));
+        assert!(result.contains("令 $E_s = E_p/(1+kE_p)$，其中"));
+        assert!(!result.contains("Partial derivative method"));
+        // CRLF preserved for untouched lines
+        assert!(result.contains("\\section*{Question 1 \\quad $E_p$}\r\n"));
+    }
+
+    #[test]
+    fn replace_inline_fragment_fallback() {
+        let src = "  Combine (treating the two lines as independent):\n  more text\n";
+        let call = ToolCall {
+            tool: "replace".into(),
+            file: "x.tex".into(),
+            anchor: String::new(),
+            old: "Combine (treating the two lines as independent):".into(),
+            new: "合并（将分子分母视为相互独立）：".into(),
+            lines: vec![],
+        };
+        let result = compute_tool_call(src, &call).unwrap();
+        assert!(result.contains("  合并（将分子分母视为相互独立）："));
+        assert!(result.contains("  more text"));
+    }
+
+    #[test]
+    fn replace_rejects_ambiguous_matches() {
+        let src = "a\nX\nb\nX\nc\n";
+        let call = ToolCall {
+            tool: "replace".into(),
+            file: "x.tex".into(),
+            anchor: String::new(),
+            old: "X".into(),
+            new: "Y".into(),
+            lines: vec![],
+        };
+        assert!(compute_tool_call(src, &call).is_err());
+    }
+
+    #[test]
     fn replace_keeps_indentation_and_trailing_newline() {
         // exercise the REAL compute_tool_call replace path (not an inline
         // copy) so refactors cannot silently break the behaviour
@@ -877,6 +1007,44 @@ mod tests {
         assert!(parse_tool_calls(reply).is_empty());
         let reply2 = "好的。【工具调用】";
         assert!(parse_tool_calls(reply2).is_empty());
+    }
+
+    #[test]
+    fn tool_execution_accepts_absolute_project_paths() {
+        // the AI sometimes emits `file` as an absolute path (Windows
+        // `D:/.../solutions.tex`); relative_path must normalize it so the
+        // absolute-path guard does not wrongly refuse project-internal files
+        let dir = std::env::temp_dir().join(format!("tb-e2e-abs-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("solutions.tex"), "\\section*{Question 1}\n\\section*{Question 2}\n").unwrap();
+        let proj = crate::core::project::Project::open(&dir).unwrap();
+        let abs = dir.join("solutions.tex").to_string_lossy().replace('\\', "/");
+        let rel = proj.relative_path(&abs);
+        assert_eq!(rel, "solutions.tex", "absolute internal path must normalize");
+        assert!(!rel.contains(':') && !rel.starts_with('/') && !rel.starts_with('\\'));
+        // and the full pipeline: parse a tool call with the absolute path
+        let reply = format!("【工具调用】{{\"tool\": \"insert_before\", \"file\": \"{abs}\", \"anchor\": \"Question 2\", \"lines\": [\"\\\\newpage\"]}}");
+        let calls = parse_tool_calls(&reply);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].file, abs);
+        // compute path: read via relative_path + is_editable_doc
+        let rel2 = proj.relative_path(&calls[0].file);
+        assert!(is_editable_doc(&rel2));
+        let src = proj.read_file(&rel2).unwrap();
+        let out = compute_tool_call(&src, &calls[0]).unwrap();
+        assert!(out.contains("\\newpage"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn parse_ai_real_reply_format() {
+        // exact shape the model emits: prose, marker, newline, JSON object
+        let reply = "好的，我来翻译。\n【工具调用】\n{\"tool\": \"replace\", \"file\": \"solutions.tex\", \"old\": \"Top line: $\\\\mathrm{top} = E_p = 1000 \\\\pm 5$ keV, so\\n$\\\\sigma_{\\\\mathrm{top}}/\\\\mathrm{top} = 5/1000 = 0.005$.\", \"new\": \"顶行：$\\\\mathrm{top} = E_p = 1000 \\\\pm 5$ keV，因此\\n$\\\\sigma_{\\\\mathrm{top}}/\\\\mathrm{top} = 5/1000 = 0.005$。\"}\n【工具调用】\n{\"tool\": \"replace\", \"file\": \"solutions.tex\", \"old\": \"\\\\subsection*{(b) Stepwise method}\", \"new\": \"\\\\subsection*{(b) 分步法}\"}";
+        let calls = parse_tool_calls(reply);
+        assert_eq!(calls.len(), 2, "should parse both marker blocks");
+        assert_eq!(calls[0].tool, "replace");
+        assert!(calls[0].old.contains("$\\sigma_{\\mathrm{top}}/\\mathrm{top}"));
+        assert_eq!(calls[1].new, "\\subsection*{(b) 分步法}");
     }
 
     #[test]
