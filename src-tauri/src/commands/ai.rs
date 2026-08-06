@@ -343,8 +343,9 @@ pub async fn tb_ai_chat_stream(
         let log_path = p2.log_path();
         let scheduler = crate::core::compiler::CompilerScheduler::new_with_passes(engine, passes);
         let p2b = p2.clone();
+        let cancel = state.cancel_flag.clone();
         let cr = tauri::async_runtime::spawn_blocking(move || {
-            scheduler.compile(&p2b, std::path::Path::new(&main), &|| false)
+            scheduler.compile(&p2b, std::path::Path::new(&main), &|| cancel.load(std::sync::atomic::Ordering::SeqCst))
         })
         .await
         .unwrap_or_else(|e| crate::core::compiler::CompileResult::failed(
@@ -413,8 +414,9 @@ pub async fn tb_ai_chat_stream(
                             let log_path3 = p3.log_path();
                             let scheduler2 = crate::core::compiler::CompilerScheduler::new_with_passes(engine2, passes2);
                             let p3b = p3.clone();
+                            let cancel3 = state.cancel_flag.clone();
                             let cr2 = tauri::async_runtime::spawn_blocking(move || {
-                                scheduler2.compile(&p3b, std::path::Path::new(&main2), &|| false)
+                                scheduler2.compile(&p3b, std::path::Path::new(&main2), &|| cancel3.load(std::sync::atomic::Ordering::SeqCst))
                             })
                             .await
                             .unwrap_or_else(|e| crate::core::compiler::CompileResult::failed(

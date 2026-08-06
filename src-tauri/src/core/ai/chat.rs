@@ -928,9 +928,10 @@ fn document_summary(content: &str) -> String {
         if chinese_ok { "已有（ctex/xeCJK/CJKutf8）" } else { "无（如需中文请加 \\usepackage{ctex}）" }
     ));
     if !sections.is_empty() {
+        // cap the tree (sections may contain user text; keep it short)
         out.push_str(&format!("\n章节结构：\n{}", sections.join("\n")));
     }
-    out
+    truncate(&out, 2000)
 }
 
 fn truncate(text: &str, max: usize) -> String {
