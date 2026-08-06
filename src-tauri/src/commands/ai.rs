@@ -350,6 +350,14 @@ pub fn tb_ai_apply_patch(state: State<'_, AppState>, file: String, patch: String
         guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?.clone()
     };
     let rel = proj.relative_path(&file);
+    // same allowlist as the chat-driven edit path: only document files may
+    // be patched, AI_GUIDE.md and .texbutler are protected (a patched
+    // AI_GUIDE.md would be injected into every future prompt)
+    if !crate::core::ai::chat::is_editable_doc(&rel) {
+        return Err(format!(
+            "拒绝应用补丁：`{rel}` 不是可编辑的文档（只允许 .tex/.bib/.sty/.cls，AI_GUIDE.md 与 .texbutler 受保护）"
+        ));
+    }
     let src = proj.read_file(&rel)?;
     let new_content = crate::core::ai::fix_loop::apply_unified_diff(&src, &patch)
         .map_err(|e| format!("补丁无法应用: {e}"))?;

@@ -103,10 +103,7 @@ diff 输出完后可另起一行以 `解释：` 开头附一段修改说明。\
         }
         // allowlist: only document files in the project may be edited by
         // the AI; AI_GUIDE.md / .texbutler / other assets are off-limits
-        let allowed_ext = [".tex", ".bib", ".sty", ".cls"];
-        let is_doc = allowed_ext.iter().any(|e| rel_clean.ends_with(e));
-        let is_protected = rel_clean == super::guide::GUIDE_FILE || rel_clean.starts_with(".texbutler/");
-        if !is_doc || is_protected {
+        if !is_editable_doc(&rel_clean) {
             return Ok(format!(
                 "{reply}\n\n⚠️ AI 试图修改受保护文件 `{rel}`，已拒绝应用（只允许编辑 .tex/.bib/.sty/.cls 文档）。"
             ));
@@ -137,6 +134,30 @@ diff 输出完后可另起一行以 `解释：` 开头附一段修改说明。\
         ));
     }
     Ok(reply.trim().to_string())
+}
+
+/// Whether a project-relative path is an editable document for AI edits:
+/// `.tex/.bib/.sty/.cls` only; `AI_GUIDE.md` and `.texbutler/` are protected.
+/// Shared by the chat-driven edit flow and the manual apply-patch command so
+/// both enforce the same allowlist (a patched AI_GUIDE.md would be injected
+/// into every future prompt).
+pub fn is_editable_doc(rel: &str) -> bool {
+    // normalize backslashes FIRST, then strip every leading `./` so
+    // `.\ .texbutler\...` (Windows) cannot dodge the protected-path check;
+    // `..` components are rejected by Project::resolve
+    let rel_norm = rel.replace('\\', "/");
+    let rel_clean = rel_norm
+        .split('/')
+        .filter(|c| !c.is_empty() && *c != ".")
+        .collect::<Vec<_>>()
+        .join("/");
+    if rel_clean.split('/').any(|c| c == "..") {
+        return false;
+    }
+    let allowed_ext = [".tex", ".bib", ".sty", ".cls"];
+    let is_doc = allowed_ext.iter().any(|e| rel_clean.ends_with(e));
+    let is_protected = rel_clean == super::guide::GUIDE_FILE || rel_clean.starts_with(".texbutler/");
+    is_doc && !is_protected
 }
 
 /// Extract the first unified diff (`--- a/...` ... `@@ ...`) from a reply.
@@ -296,6 +317,20 @@ mod tests {
         let t = truncate(&long, 100);
         assert!(t.contains("截断"));
         assert!(t.chars().count() < 200);
+    }
+
+    #[test]
+    fn is_editable_doc_allowlist() {
+        assert!(is_editable_doc("main.tex"));
+        assert!(is_editable_doc("chapters/intro.tex"));
+        assert!(is_editable_doc("refs.bib"));
+        assert!(is_editable_doc("preamble.sty"));
+        assert!(!is_editable_doc("AI_GUIDE.md"));
+        assert!(!is_editable_doc(".texbutler/backup/1/main.tex"));
+        assert!(!is_editable_doc("./.texbutler\\x.tex"));
+        assert!(!is_editable_doc("image.png"));
+        assert!(!is_editable_doc("../outside.tex"));
+        assert!(!is_editable_doc(".//.texbutler/x.tex"));
     }
 
     #[test]
