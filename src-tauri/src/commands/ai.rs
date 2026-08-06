@@ -291,6 +291,14 @@ pub async fn tb_ai_chat_stream(
     if question.is_empty() {
         return Err("问题不能为空".into());
     }
+    // role allowlist: only user/assistant turns from the frontend may be
+    // injected as history — a `system` role (or anything else) could
+    // smuggle instructions past SYSTEM_PROMPT's guardrails
+    let history = history.map(|h| {
+        h.into_iter()
+            .filter(|m| m.role == "user" || m.role == "assistant")
+            .collect::<Vec<_>>()
+    });
     let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "chat", "status": "start" }));
     let app2 = app.clone();
     let app3 = app.clone();
