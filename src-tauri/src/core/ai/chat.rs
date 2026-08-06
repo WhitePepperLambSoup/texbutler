@@ -848,28 +848,25 @@ mod tests {
 
     #[test]
     fn replace_keeps_indentation_and_trailing_newline() {
-        let src = "  \\section*{Question 1}\n内容\n";
-        // replace tool semantics: old found on trimmed line, replaced in place
-        let old = "\\section*{Question 1}";
-        let new = "\\section*{Question 1 (改)}";
-        let mut out: Vec<String> = Vec::new();
-        for (i, line) in src.lines().enumerate() {
-            if i == 0 {
-                if let Some(start) = line.find(old) {
-                    let mut replaced = String::from(&line[..start]);
-                    replaced.push_str(new);
-                    replaced.push_str(&line[start + old.len()..]);
-                    out.push(replaced);
-                    continue;
-                }
-            }
-            out.push(line.to_string());
-        }
-        let mut result = out.join("\n");
-        if src.ends_with('\n') && !result.ends_with('\n') {
-            result.push('\n');
-        }
-        assert_eq!(result, "  \\section*{Question 1 (改)}\n内容\n");
+        // exercise the REAL compute_tool_call replace path (not an inline
+        // copy) so refactors cannot silently break the behaviour
+        let src = "  \\section*{Question 1}  \\section*{Question 1}\n内容\n";
+        let call = ToolCall {
+            tool: "replace".into(),
+            file: "x.tex".into(),
+            anchor: String::new(),
+            old: "\\section*{Question 1}".into(),
+            new: "\\section*{Q1}".into(),
+            lines: vec![],
+        };
+        let result = compute_tool_call(src, &call).unwrap();
+        assert_eq!(result, "  \\section*{Q1}  \\section*{Q1}\n内容\n");
+        // unknown tool
+        let bad = ToolCall { tool: "nope".into(), file: "x.tex".into(), anchor: String::new(), old: String::new(), new: String::new(), lines: vec![] };
+        assert!(compute_tool_call(src, &bad).is_err());
+        // empty old
+        let bad2 = ToolCall { tool: "replace".into(), file: "x.tex".into(), anchor: String::new(), old: "  ".into(), new: "y".into(), lines: vec![] };
+        assert!(compute_tool_call(src, &bad2).is_err());
     }
 
     #[test]
