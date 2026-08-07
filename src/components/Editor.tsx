@@ -41,7 +41,7 @@ const beforeMount: BeforeMount = (monaco) => {
         ],
       },
     });
-    // auto-closing pairs + surrounding (bracket/brace pairing like Overleaf)
+    // auto-closing pairs + surrounding (bracket/brace pairing)
     monaco.languages.setLanguageConfiguration("latex", {
       brackets: [["{", "}"], ["[", "]"], ["(", ")"]],
       autoClosingPairs: [

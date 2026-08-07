@@ -16,7 +16,7 @@ import { useT } from "./i18n";
 import { loadFlow } from "./flow";
 import QuickOpenModal from "./components/QuickOpenModal";
 
-/** Overleaf-style collapsible right rail hosting the AI panel: a thin
+/** Collapsible right rail hosting the AI panel: a thin
  * vertical strip when collapsed (does not take space), a full panel when
  * open. The state persists across launches. */
 function AiRail() {

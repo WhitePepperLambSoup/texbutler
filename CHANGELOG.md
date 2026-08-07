@@ -8,7 +8,7 @@
 
 - **对话式编辑**：直接说出修改要求（"把标题改成…""每个 Question 前加分页"），AI 以声明式工具调用精确改写文件，程序确定性执行——多调用批量一次应用，失败自动重试。 / **Conversational editing**: state a change in plain words; the AI rewrites the file through declarative tool calls executed deterministically, applied in batch with automatic retry on failure.
 - **编译验证闭环**：AI 每次修改后自动重新编译，失败自动修复一轮；编辑结果即时同步进编辑器与 PDF 预览。 / **Compile-verify loop**: every AI edit triggers an automatic recompile with one self-healing round; results sync instantly into the editor and PDF preview.
-- **AI 面板右侧伸缩式竖条**：Overleaf 风格，收起时 34px 窄条，展开完整面板，折叠状态持久化。 / **Collapsible right AI rail**: Overleaf-style, 34px when collapsed, full panel when expanded, state persisted.
+- **AI 面板右侧伸缩式竖条**：收起时 34px 窄条，展开完整面板，折叠状态持久化。 / **Collapsible right AI rail**: 34px strip when collapsed, full panel when expanded, state persisted.
 - **AI 消息流式输出**：逐字显示，无需等待完整生成。 / **Streaming AI replies**: token-by-token output.
 - **编辑器选区提问与多轮对话**：选中代码问 AI，或带项目上下文连续追问。 / **Selection Q&A and multi-turn chat** with project context.
 - **快照时间线**：修复历史一键回退任意一次，逐文件独立回滚。 / **Snapshot timeline**: one-click rollback of any edit, per-file independent.
@@ -94,7 +94,7 @@
 - **插入选项**：预览图 + 宽度（0.3/0.5/0.8/1.0 倍行宽）+ 浮动位置（H/htbp/行内）+ 图注 + 标签，确认后生成完整代码。
 - **插入即编译**：插入确认后自动重新编译，PDF 立即刷新。
 
-### 对标 Overleaf 补全的功能
+### 编辑辅助功能
 
 - **大纲面板**：左侧"大纲"页签，解析当前文件章节结构（chapter/section/subsection/…），点击跳转到对应行。
 - **参考文献面板**：左侧"参考文献"页签，解析项目 .bib 文件（标题/作者/年份），点击即可在光标处插入 `\cite{key}`。
