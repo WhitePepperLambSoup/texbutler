@@ -4,32 +4,32 @@
 
 ## [0.6.0] - 2026-08-06
 
-### AI 协同编辑
+### AI 协同编辑 / AI Co-editing
 
-- **对话式编辑**：在 AI 面板直接提出修改要求（"把标题改成…""加上一个三线表"），AI 理解语义后自动改写对应文件——快照先行，编译检查后不满意可一键回滚（回滚按钮出现在消息气泡内）。
-- **AI 面板右侧伸缩式竖条**：Overleaf 风格，收起时仅 34px 窄条不占空间，展开为完整面板，折叠状态跨启动保持。
-- **AI 消息流式输出**：回答逐字显示，无需等待完整生成。
-- **AI 生成 LaTeX**：直接对话式生成代码并自动写入当前文件（纯聊天入口，语义驱动）。
-- **编辑器选区提问**：选中代码后点击"问 AI"，AI 针对选区回答。
-- **多轮对话**：带项目文件上下文连续追问（"为什么这么改""换个方案"）。
+- **对话式编辑**：直接说出修改要求（"把标题改成…""每个 Question 前加分页"），AI 以声明式工具调用精确改写文件，程序确定性执行——多调用批量一次应用，失败自动重试。 / **Conversational editing**: state a change in plain words; the AI rewrites the file through declarative tool calls executed deterministically, applied in batch with automatic retry on failure.
+- **编译验证闭环**：AI 每次修改后自动重新编译，失败自动修复一轮；编辑结果即时同步进编辑器与 PDF 预览。 / **Compile-verify loop**: every AI edit triggers an automatic recompile with one self-healing round; results sync instantly into the editor and PDF preview.
+- **AI 面板右侧伸缩式竖条**：Overleaf 风格，收起时 34px 窄条，展开完整面板，折叠状态持久化。 / **Collapsible right AI rail**: Overleaf-style, 34px when collapsed, full panel when expanded, state persisted.
+- **AI 消息流式输出**：逐字显示，无需等待完整生成。 / **Streaming AI replies**: token-by-token output.
+- **编辑器选区提问与多轮对话**：选中代码问 AI，或带项目上下文连续追问。 / **Selection Q&A and multi-turn chat** with project context.
+- **快照时间线**：修复历史一键回退任意一次，逐文件独立回滚。 / **Snapshot timeline**: one-click rollback of any edit, per-file independent.
+- **建议模式**：AI 输出逐块审阅，手动应用，不自动写盘。 / **Suggestion mode**: review hunks one by one and apply manually.
+- **AI 修改不覆盖输入**：你正在编辑的文件（未保存）不会被 AI 同步冲掉。 / **Never clobber your typing**: dirty tabs keep your unsaved edits during AI sync.
 
-### 项目智能
+### 项目智能 / Project Intelligence
 
-- **AI_GUIDE.md 项目指南**：把学校格式要求/常用宏/禁忌写进聊天框，AI 自动生成指南写入项目根，此后所有 AI 对话与修复自动遵循（格式规范、字体字号、宏偏好一键注入）。
-- **跨文件一致性检查**：重复 `\label`（提示首个定义位置）、自定义宏定义了却从未使用。
-- **依赖图上下文**：`\input`/`\include` 链自动注入 AI 修复，跨文件错误修得更准。
-- **快照时间线**：AI 修复历史列表，一键回退任意一次修改前状态。
+- **文档概要注入**：AI 自动获知文档类、宏包、中文支持状态与编译引擎。 / **Document summary injection**: class, packages, CJK support and compiler engine are visible to the AI.
+- **翻译保持结构**：中英互译不碰数学公式、命令与转义，自动补中文支持宏包。 / **Structure-preserving translation** with automatic CJK package insertion.
+- **跨文件一致性检查**：重复 `\label`（提示首个定义位置）、自定义宏定义了却从未使用。 / **Cross-file consistency checks**: duplicate labels and unused macros.
+- **依赖图上下文**：`\input`/`\include` 链自动注入 AI 修复。 / **Dependency-graph context**: input/include chains feed AI fixes.
+- **引用索引注入**：生成 `\ref`/`\cite` 时注入项目现有标签与文献键，杜绝编造引用。 / **Reference index injection**: real labels and bib keys only.
+- **AI_GUIDE.md 项目指南**：格式要求/常用宏/禁忌一键写入并注入所有 AI 对话。 / **Project guide**: format rules and macros injected into every AI session.
+- **规则确定性批量修复**：段落粘连等规则问题一键批量修复，无需 AI。 / **Deterministic rule fixes**: glued paragraphs and friends fixed in one batch, no AI needed.
 
-### 用量与体验
+### 工程与安全 / Engineering & Security
 
-- **Token 用量统计**：AI 面板实时显示本次会话输入/输出 token 与估算成本（约 ¥），随时重置。
-- **引用索引注入**：AI 生成 `\ref`/`\cite` 时注入项目现有标签与文献键，杜绝编造引用。
-- **聊天输入框可拖拽**：输入区 3 行起、可垂直拉伸；底部面板高度可调。
-
-### 安全
-
-- AI 编辑仅允许 `.tex/.bib/.sty/.cls` 文档，`AI_GUIDE.md` 与 `.texbutler` 受保护；diff 成对校验，失败显式提示。
-- 指南注入带行为指令护栏，恶意指南无法驱动 AI 执行越权操作。
+- **Token 用量统计**：实时输入/输出 token 与成本估算。 / **Token usage meter** with cost estimate.
+- **AI 编辑白名单**：仅 `.tex/.bib/.sty/.cls`；指南注入护栏、路径归一化、快照防穿越。 / **Edit allowlist, guide guardrails, path normalization, traversal-safe snapshots**.
+- **SyncTeX 正向搜索**：编辑器"定位到 PDF"按钮，光标行跳到对应页，无同步数据时明确提示。 / **SyncTeX forward search**: jump from cursor line to PDF page, with clear guidance when data is missing.
 
 ## [0.5.0] - 2026-08-06
 
