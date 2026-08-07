@@ -89,7 +89,7 @@ async function main() {
     const events = [];
     const un = await onEvent('tb://ai-edit', (e) => events.push(e));
     try {
-      await useAiStore.getState().askAi('把文档标题改为 "量子力学笔记"（\\\\title{量子力学笔记}），其余内容不要动', 'main.tex', null);
+      await useAiStore.getState().askAi('把文档标题改为 "量子力学笔记"（\\\\title{量子力学笔记}），其余内容不要动');
     } catch (e) { events.push("ERR:" + e); }
     un();
     // give reloadTab (inside listenEditP) a beat to land
@@ -100,7 +100,7 @@ async function main() {
     return JSON.stringify({ full: last ? last.text : "", events: events.length, tabContent: tab ? tab.content : null, dirty: tab ? tab.dirty : null });
   })()`));
   const disk = await readFile(FILE, "utf8");
-  const synced = res.tabContent !== null && res.tabContent === disk && disk.includes("量子力学笔记");
+  const synced = res.events > 0 && res.tabContent !== null && res.tabContent === disk && disk.includes("量子力学笔记");
   console.log("ANSWER head:", res.full.slice(0, 200).replace(/\n/g, " "));
   console.log("EDIT EVENTS:", res.events);
   console.log("TAB LEN:", (res.tabContent || "").length, "DISK LEN:", disk.length);

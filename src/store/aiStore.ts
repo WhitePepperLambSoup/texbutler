@@ -94,10 +94,13 @@ export const useAiStore = create<AiState>((set, get) => ({
           return { lastEdits: [...rest, { file, backup, diff }] };
         });
         // the file changed on disk — sync the open editor tab(s) so the
-        // user immediately sees the AI's edits (reload keeps unsaved
-        // user edits by diffing? no — reload replaces with disk content,
-        // which is what the AI just wrote; same semantics as rollback)
-        void useProjectStore.getState().reloadTab(file);
+        // user immediately sees the AI's edits. If the user is mid-typing
+        // in that same file (dirty), keep their unsaved edits — an AI edit
+        // must never silently discard what the user is writing.
+        const tab = useProjectStore.getState().tabs.find((t) => t.path === file);
+        if (tab && !tab.dirty) {
+          void useProjectStore.getState().reloadTab(file);
+        }
         void useCompileStoreRefresh();
       }
     });
