@@ -93,6 +93,12 @@ export const useAiStore = create<AiState>((set, get) => ({
           const rest = s.lastEdits.filter((e) => e.file !== file);
           return { lastEdits: [...rest, { file, backup, diff }] };
         });
+        // the file changed on disk — sync the open editor tab(s) so the
+        // user immediately sees the AI's edits (reload keeps unsaved
+        // user edits by diffing? no — reload replaces with disk content,
+        // which is what the AI just wrote; same semantics as rollback)
+        void useProjectStore.getState().reloadTab(file);
+        void useCompileStoreRefresh();
       }
     });
     try {

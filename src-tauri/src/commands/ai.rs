@@ -359,6 +359,7 @@ pub async fn tb_ai_chat_stream(
         if let Ok(mut guard) = state.last_result.write() {
             *guard = Some(cr.clone());
         }
+        let _ = app.emit("tb://compile-done", &cr);
         if cr.ok {
             full.push_str("\n\n✅ 自动编译验证通过。");
         } else {
@@ -430,6 +431,7 @@ pub async fn tb_ai_chat_stream(
                             if let Ok(mut guard) = state.last_result.write() {
                                 *guard = Some(cr2.clone());
                             }
+                            let _ = app.emit("tb://compile-done", &cr2);
                             if cr2.ok {
                                 full.push_str("\n✅ 修复后自动编译验证通过。");
                             } else {
