@@ -129,6 +129,8 @@ pub async fn tb_download_template(id: String) -> Result<String, String> {
     let reader = std::io::Cursor::new(content.to_vec());
     let mut archive = zip::ZipArchive::new(reader).map_err(|e| format!("压缩包解析失败: {e}"))?;
     // zip entries come as `<repo>-<branch>/...` — strip the single root dir
+    let mut total_written: u64 = 0;
+    const MAX_EXTRACTED_BYTES: u64 = 2 * 1024 * 1024 * 1024; // 2 GB zip-bomb cap
     for i in 0..archive.len() {
         let mut entry = archive
             .by_index(i)
@@ -138,8 +140,13 @@ pub async fn tb_download_template(id: String) -> Result<String, String> {
             Some((_, rest)) if !rest.is_empty() => rest,
             _ => continue, // the root dir itself
         };
-        // traversal defense: reject any ../ or absolute component
-        if rel.split(['/', '\\']).any(|c| c == "..") || Path::new(&rel).is_absolute() {
+        // traversal defense: reject any ../, absolute, or drive-relative
+        // (C:evil) component — a `:` prefix on Windows would otherwise
+        // redirect the write to another drive
+        if rel.contains(':')
+            || rel.split(['/', '\\']).any(|c| c == "..")
+            || Path::new(&rel).is_absolute()
+        {
             return Err(format!("压缩包含非法路径: {rel}"));
         }
         let out = target.join(rel);
@@ -152,6 +159,10 @@ pub async fn tb_download_template(id: String) -> Result<String, String> {
             let mut buf = Vec::new();
             std::io::Read::read_to_end(&mut entry, &mut buf)
                 .map_err(|e| format!("解压读取失败: {e}"))?;
+            total_written += buf.len() as u64;
+            if total_written > MAX_EXTRACTED_BYTES {
+                return Err("压缩包解压后体积超限（2 GB），已中止".into());
+            }
             std::fs::write(&out, buf).map_err(|e| format!("解压写入失败: {e}"))?;
         }
     }
