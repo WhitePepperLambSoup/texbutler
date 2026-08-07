@@ -291,11 +291,18 @@ export default function EditorPane() {
         } catch {
           return null;
         }
+        // KaTeX output is already escaped, but the raw source shown below
+        // it is NOT — escape it or a malicious line like `$<img src=x
+        // onerror=...>$` would execute in the hover DOM (supportsHtml).
+        const esc = (s: string) =>
+          s.replace(/[&<>"']/g, (c) =>
+            ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!
+          );
         return {
           range: new monacoLocal.Range(position.lineNumber, hit.start + 1, position.lineNumber, hit.end + 1),
           contents: [
             {
-              value: `<div style="padding:4px 2px;font-size:15px;min-width:120px;max-width:520px;overflow-x:auto;">${html}</div><div style="opacity:.6;font-size:11px;margin-top:4px;">${hit.src}</div>`,
+              value: `<div style="padding:4px 2px;font-size:15px;min-width:120px;max-width:520px;overflow-x:auto;">${html}</div><div style="opacity:.6;font-size:11px;margin-top:4px;">${esc(hit.src)}</div>`,
               supportsHtml: true,
             },
           ],
