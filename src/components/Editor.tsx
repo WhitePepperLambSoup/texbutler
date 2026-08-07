@@ -349,31 +349,51 @@ export default function EditorPane() {
     });
     // onDidOpenedLink exists on IStandaloneCodeEditor in monaco >= 0.47 but
     // the bundled typings lag behind — assert through a narrow interface.
-    // onDidType exists on IStandaloneCodeEditor in monaco >= 0.34 but the
-    // bundled typings lag behind — assert through a narrow interface.
-    const typer = editor as unknown as {
-      onDidType?: (cb: (text: string) => void) => void;
-    };
-    typer.onDidType?.((text) => {
-      // typing `\begin{env}` (complete with braces) auto-inserts the
-      // matching `\end{env}` two lines below, with the cursor left inside
+    // typing `\begin{env}` (complete with braces) auto-inserts the
+    // matching `\end{env}` two lines below, with the cursor left inside.
+    // Listens to model changes (fires per keystroke, unlike onDidType
+    // which only reports single characters in monaco 0.52).
+    let envClosing = false;
+    let lastEnvCloseAt = 0;
+    const envAutoClose = editor.onDidChangeModelContent((e) => {
+      if (envClosing) return;
       const model2 = editor.getModel();
-      if (!model2 || !text.includes("\\begin{")) return;
-      const pos = editor.getPosition();
-      if (!pos) return;
-      const before = model2.getLineContent(pos.lineNumber).slice(0, pos.column - 1);
+      if (!model2) return;
+      // Monaco may deliver the typed text as one change or one per
+      // character — check the last change's end (synchronous and reliable
+      // inside the event, unlike getPosition) and look backwards for a
+      // complete `\begin{env}` right before the cursor.
+      const ch = e.changes[e.changes.length - 1];
+      if (!ch) return;
+      const lineText = model2.getLineContent(ch.range.endLineNumber);
+      const col = ch.range.endColumn + ch.text.length;
+      const before = lineText.slice(0, col - 1);
       const m = before.match(/\\begin\{([^}]+)\}$/);
       if (!m) return;
       const env = m[1];
-      const after = model2.getLineContent(pos.lineNumber).slice(pos.column - 1).trimStart();
-      if (after.startsWith(`\\end{${env}}`)) return;
-      editor.executeEdits("env-close", [
-        {
-          range: new monacoLocal.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column),
-          text: `\n\n\\end{${env}}\n`,
-        },
-      ]);
-      editor.setPosition({ lineNumber: pos.lineNumber, column: pos.column });
+      // debounce: queued change events after the first auto-close would
+      // re-match the same \begin and stack duplicate \end blocks
+      if (Date.now() - lastEnvCloseAt < 800) return;
+      const restOfLine = lineText.slice(col - 1).trimStart();
+      const near = [
+        restOfLine,
+        model2.getLineContent(ch.range.endLineNumber + 1).trimStart(),
+        model2.getLineContent(ch.range.endLineNumber + 2).trimStart(),
+      ].some((s) => s.startsWith(`\\end{${env}}`));
+      if (near) return;
+      envClosing = true;
+      lastEnvCloseAt = Date.now();
+      try {
+        editor.executeEdits("env-close", [
+          {
+            range: new monacoLocal.Range(ch.range.endLineNumber, col, ch.range.endLineNumber, col),
+            text: `\n\n\\end{${env}}\n`,
+          },
+        ]);
+        editor.setPosition({ lineNumber: ch.range.endLineNumber, column: col });
+      } finally {
+        envClosing = false;
+      }
     });
     const opener = editor as unknown as {
       onDidOpenedLink?: (cb: (link: { url?: string }) => void) => void;
@@ -441,6 +461,7 @@ export default function EditorPane() {
       window.removeEventListener("tb:reveal", onReveal);
       hoverProvider.dispose();
       linkProvider.dispose();
+      envAutoClose.dispose();
     });
   };
 

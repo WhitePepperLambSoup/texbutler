@@ -78,7 +78,7 @@ async function main() {
   await sleep(800);
 
   // 1) environment auto-\end: type \begin{itemize} via real input pipeline
-  //    (Input.insertText goes through Monaco's typing → onDidType fires)
+  //    (Input.insertText goes through Monaco's typing → content change)
   await exec(`(async () => {
     // focus the Monaco textarea
     const ta = document.querySelector('.monaco-editor textarea');
@@ -95,6 +95,40 @@ async function main() {
   })()`);
   console.log("ENV auto-\\end inserted:", envOk.includes("\\end{itemize}"));
   console.log("ENV content:", JSON.stringify(envOk.slice(0, 80)));
+
+  // 1b) char-by-char typing (the real user path) must also auto-close —
+  //     this exercises the per-keystroke change events
+  const ENV_BASE = "\\documentclass{article}\n\\begin{document}\n\\end{document}\n";
+  await writeFile(FILE, ENV_BASE, "utf8");
+  await exec(`(async () => {
+    const { useProjectStore } = await import('/src/store/projectStore.ts');
+    const st = useProjectStore.getState();
+    await st.reloadTab('main.tex'); // clean disk state, no leftover \\end
+    return true;
+  })()`);
+  await sleep(300);
+  await exec(`(async () => {
+    // move the cursor after \\begin{document}
+    const ta = document.querySelector('.monaco-editor textarea');
+    ta && ta.focus();
+    return true;
+  })()`);
+  // position the cursor at end of line 2 (after \begin{document})
+  await c.send("Input.dispatchKeyEvent", { type: "keyDown", key: "End", code: "End", windowsVirtualKeyCode: 35 });
+  await c.send("Input.dispatchKeyEvent", { type: "keyUp", key: "End", code: "End", windowsVirtualKeyCode: 35 });
+  await sleep(200);
+  for (const ch of "\\begin{itemize}") {
+    await c.send("Input.insertText", { text: ch });
+    await sleep(30);
+  }
+  await sleep(600);
+  const envTyped = await exec(`(async () => {
+    const { useProjectStore } = await import('/src/store/projectStore.ts');
+    const st = useProjectStore.getState();
+    const tab = st.tabs.find((t) => t.path === 'main.tex');
+    return tab ? tab.content : '';
+  })()`);
+  console.log("ENV char-by-char auto-\\end:", envTyped.includes("\\end{itemize}"));
 
   // 2) image auto-compress: import big.png via the api (same backend the
   //    image dialog uses)
@@ -152,7 +186,7 @@ async function main() {
 
   c.close();
   await rm(PROJ, { recursive: true, force: true }).catch(() => {});
-  const pass = bigSize > 1_048_576 && envOk.includes("\\end{itemize}") && compressOk &&
+  const pass = bigSize > 1_048_576 && envOk.includes("\\end{itemize}") && envTyped.includes("\\end{itemize}") && compressOk &&
     typeof bibRes === "string" && bibRes.includes("@article") && !bibRes.startsWith("ERR") &&
     typeof arxRes === "string" && arxRes.includes("@article") && !arxRes.startsWith("ERR") &&
     /Attention Is All You Need/i.test(arxRes) &&
