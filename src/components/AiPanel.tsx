@@ -46,7 +46,7 @@ function DiffHighlight({ diff }: { diff: string }) {
 }
 
 export default function AiPanel() {
-  const { messages, busy, busyKind, diffPending, acceptDiff, rejectDiff, applyHunk, clearMessages, suggestMode, toggleSuggestMode, pendingSelection, setSelection, askAi, lastEdits, rollbackEdit } =
+  const { messages, busy, busyKind, diffPending, acceptDiff, rejectDiff, applyHunk, clearMessages, suggestMode, toggleSuggestMode, pendingSelection, setSelection, askAi, lastEdits, rollbackEdit, sessions, sessionId, newSession, switchSession, renameSession, deleteSession } =
     useAiStore();
   const [expandedRaw, setExpandedRaw] = useState<number | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -85,6 +85,49 @@ export default function AiPanel() {
     <div className="ai-panel">
       <div className="panel-header">
         <span className="panel-title">{t("ai.title")}</span>
+        <select
+          className="session-select"
+          value={sessionId ?? ""}
+          onChange={(e) => switchSession(e.target.value || null)}
+          title={t("ai.sessionTitle")}
+        >
+          <option value="">{t("ai.sessionScratch")}</option>
+          {sessions.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <button
+          className="btn-mini"
+          title={t("ai.sessionNew")}
+          onClick={newSession}
+        >
+          +
+        </button>
+        {sessionId && (
+          <>
+            <button
+              className="btn-mini"
+              title={t("ai.sessionRename")}
+              onClick={() => {
+                const name = window.prompt(t("ai.sessionRename"), sessions.find((s) => s.id === sessionId)?.name ?? "");
+                if (name) renameSession(sessionId, name);
+              }}
+            >
+              ✎
+            </button>
+            <button
+              className="btn-mini"
+              title={t("ai.sessionDelete")}
+              onClick={() => {
+                if (window.confirm(t("ai.sessionDeleteConfirm"))) deleteSession(sessionId);
+              }}
+            >
+              ✕
+            </button>
+          </>
+        )}
         {usage && (
           <span className="ai-usage" title={t("ai.usageTitle")}>
             {t("ai.usage", {

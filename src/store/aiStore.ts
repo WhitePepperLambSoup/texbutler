@@ -16,6 +16,35 @@ export interface AiMessage {
   applied?: boolean;
 }
 
+/** A persisted AI conversation: messages + name + last-updated. */
+export interface AiSession {
+  id: string;
+  name: string;
+  messages: AiMessage[];
+  updatedAt: number;
+}
+
+const SESSIONS_KEY = "tb-ai-sessions";
+
+function loadSessions(): AiSession[] {
+  try {
+    const raw = localStorage.getItem(SESSIONS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as AiSession[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistSessions(sessions: AiSession[]) {
+  try {
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+  } catch {
+    /* storage full / unavailable — sessions are best-effort */
+  }
+}
+
 interface AiState {
   settings: AiSettings | null;
   messages: AiMessage[];
@@ -28,6 +57,10 @@ interface AiState {
   pendingSelection: string | null;
   /** Last collaborative edit applied by the AI (snapshot path for rollback). */
   lastEdits: { file: string; backup: string; diff?: string }[];
+  /** Persisted conversations (localStorage). */
+  sessions: AiSession[];
+  /** Id of the active conversation; null = unsaved scratch chat. */
+  sessionId: string | null;
 
   loadSettings: () => Promise<void>;
   diagnoseIssue: (issue: Issue, index: number) => Promise<void>;
@@ -43,6 +76,11 @@ interface AiState {
   saveSettings: (s: AiSettings) => Promise<void>;
   pushMessage: (m: Omit<AiMessage, "id">) => number;
   clearMessages: () => void;
+  /** Start a fresh named conversation (the old one stays persisted). */
+  newSession: () => void;
+  switchSession: (id: string | null) => void;
+  renameSession: (id: string, name: string) => void;
+  deleteSession: (id: string) => void;
 }
 
 let msgId = 0;
@@ -56,6 +94,8 @@ export const useAiStore = create<AiState>((set, get) => ({
   suggestMode: false,
   pendingSelection: null,
   lastEdits: [],
+  sessions: loadSessions(),
+  sessionId: null,
 
   setSelection(sel) {
     set({ pendingSelection: sel });
@@ -127,6 +167,17 @@ export const useAiStore = create<AiState>((set, get) => ({
           m.id === msgId ? { ...m, text: answer, applied: editedThisRound } : m,
         ),
       }));
+      // persist the finalized streamed answer into the active session
+      const { sessions, sessionId } = useAiStore.getState();
+      if (sessionId) {
+        const next = sessions.map((s) =>
+          s.id === sessionId
+            ? { ...s, messages: useAiStore.getState().messages, updatedAt: Date.now() }
+            : s,
+        );
+        useAiStore.setState({ sessions: next });
+        persistSessions(next);
+      }
     } catch (e) {
       get().pushMessage({ role: "assistant", kind: "error", text: useI18n.getState().t("ai.chatFailed", { e: String(e) }) });
     } finally {
@@ -196,7 +247,54 @@ export const useAiStore = create<AiState>((set, get) => ({
   pushMessage(m) {
     const id = ++msgId;
     set({ messages: [...get().messages, { ...m, id }] });
+    // persist the active conversation (best-effort; streamed text updates
+    // are persisted on finalize, not per delta)
+    const { sessions, sessionId } = get();
+    if (sessionId) {
+      const next = sessions.map((s) =>
+        s.id === sessionId
+          ? { ...s, messages: [...s.messages, { ...m, id }], updatedAt: Date.now() }
+          : s,
+      );
+      set({ sessions: next });
+      persistSessions(next);
+    }
     return id;
+  },
+
+  newSession() {
+    const id = `s${Date.now().toString(36)}`;
+    const session: AiSession = { id, name: useI18n.getState().t("ai.sessionNew"), messages: [], updatedAt: Date.now() };
+    const next = [session, ...get().sessions];
+    set({ sessions: next, sessionId: id, messages: [], diffPending: null });
+    persistSessions(next);
+  },
+
+  switchSession(id) {
+    const s = get().sessions.find((x) => x.id === id);
+    set({
+      sessionId: id,
+      messages: s ? [...s.messages] : [],
+      diffPending: null,
+    });
+  },
+
+  renameSession(id, name) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const next = get().sessions.map((s) => (s.id === id ? { ...s, name: trimmed } : s));
+    set({ sessions: next });
+    persistSessions(next);
+  },
+
+  deleteSession(id) {
+    const next = get().sessions.filter((s) => s.id !== id);
+    set({
+      sessions: next,
+      sessionId: get().sessionId === id ? null : get().sessionId,
+      messages: get().sessionId === id ? [] : get().messages,
+    });
+    persistSessions(next);
   },
 
   async diagnoseIssue(issue, index) {

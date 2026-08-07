@@ -31,6 +31,9 @@ export default function SettingsModal({ open, onClose }: Props) {
   const [apiKey, setApiKey] = useState("");
   const [disableThinking, setDisableThinking] = useState(false);
   const [engine, setEngine] = useState("auto");
+  const [autosaveSecs, setAutosaveSecs] = useState<number>(() =>
+    Number(localStorage.getItem("tb-autosave-secs") ?? "30"),
+  );
   const [updateCheck, setUpdateCheck] = useState(true);
   const [updateInfo, setUpdateInfo] = useState<{ version: string; name: string; body: string; url: string } | null>(null);
   const [updateChecking, setUpdateChecking] = useState(false);
@@ -271,6 +274,24 @@ export default function SettingsModal({ open, onClose }: Props) {
               <option value="auto">{t("settings.engineAuto")}</option>
               <option value="tectonic">{t("settings.engineTectonic")}</option>
               <option value="system_texlive">{t("settings.engineSystem")}</option>            </select>
+          </label>
+
+          <h4>{t("settings.autosave")}</h4>
+          <label>
+            {t("settings.autosaveInterval")}
+            <select
+              value={String(autosaveSecs)}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setAutosaveSecs(v);
+                localStorage.setItem("tb-autosave-secs", String(v));
+              }}
+            >
+              <option value="0">{t("settings.autosaveOff")}</option>
+              <option value="30">30s</option>
+              <option value="60">60s</option>
+              <option value="120">120s</option>
+            </select>
           </label>
           <label>
             {t("settings.passes")}

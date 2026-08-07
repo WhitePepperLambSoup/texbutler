@@ -1989,3 +1989,18 @@ body {
   resize: vertical;
 }
 
+
+/* AI conversation sessions */
+.session-select {
+  flex: 1;
+  min-width: 60px;
+  max-width: 140px;
+  font-size: 11px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin-left: 6px;
+}
+
