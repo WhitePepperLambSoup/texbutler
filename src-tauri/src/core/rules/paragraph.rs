@@ -22,6 +22,11 @@ impl Rule for ParagraphRule {
     fn check(&self, src: &str, file: &str, issues: &mut Vec<Issue>) {
         let lines: Vec<&str> = src.lines().collect();
         let mut prev_text: Option<(usize, &str)> = None; // (line_no, text)
+        // Contiguous gluing pairs merge into chains (start, end): a
+        // document written one-sentence-per-line with no blank lines
+        // produces HUNDREDS of identical warnings — consolidate each
+        // continuous run into a single issue (user request).
+        let mut chains: Vec<(usize, usize)> = Vec::new();
         for (idx, line) in lines.iter().enumerate() {
             let trimmed = line.trim();
             let line_no = idx + 1;
@@ -45,21 +50,35 @@ impl Rule for ParagraphRule {
                 // heuristic: a blank line was probably intended between two
                 // "sentence-like" lines; only report if neither is short
                 if prev.chars().count() >= 4 && trimmed.chars().count() >= 4 {
-                    issues.push(
-                        Issue::new(
-                            Severity::Info,
-                            IssueKind::RuleCheck,
-                            format!(
-                                "第 {prev_no} 行与第 {line_no} 行之间没有空行：LaTeX 会把它们合并为同一段落（段落粘连）。若这是两段，请在中间补一个空行。"
-                            ),
-                        )
-                        .with_file(file)
-                        .with_line(line_no)
-                        .with_rule("paragraph", "在两行之间插入一个空行。"),
-                    );
+                    if let Some((_, last_end)) = chains.last_mut() {
+                        if *last_end == prev_no {
+                            *last_end = line_no; // extend the chain
+                            prev_text = Some((line_no, trimmed));
+                            continue;
+                        }
+                    }
+                    chains.push((prev_no, line_no));
                 }
             }
             prev_text = Some((line_no, trimmed));
+        }
+        for (start, end) in chains {
+            let msg = if end > start {
+                format!(
+                    "第 {start} 至 {end} 行之间存在段落粘连（{} 处相邻正文行缺少空行），LaTeX 会把它们合并为同一段落。若需分段，请在每对相邻行之间补一个空行。",
+                    end - start
+                )
+            } else {
+                format!(
+                    "第 {start} 行与第 {end} 行之间没有空行：LaTeX 会把它们合并为同一段落（段落粘连）。若这是两段，请在中间补一个空行。"
+                )
+            };
+            issues.push(
+                Issue::new(Severity::Info, IssueKind::RuleCheck, msg)
+                    .with_file(file)
+                    .with_line(start)
+                    .with_rule("paragraph", "在相邻正文行之间插入空行（一键修复可批量处理）。"),
+            );
         }
     }
 }
@@ -124,8 +143,29 @@ mod tests {
     fn flags_glued_prose() {
         let issues = check("第一段文字内容。\n第二段文字内容。\n");
         assert_eq!(issues.len(), 1);
-        assert_eq!(issues[0].line, Some(2));
+        assert_eq!(issues[0].line, Some(1));
         assert!(issues[0].message.contains("空行"));
+    }
+
+    #[test]
+    fn consolidates_long_runs_into_one_chain() {
+        // ten adjacent prose lines with no blank lines must produce ONE
+        // consolidated issue (previously: nine identical warnings)
+        let src = (1..=10).map(|i| format!("第 {i} 句正文文字内容。")).collect::<Vec<_>>().join("\n");
+        let issues = check(&format!("{src}\n"));
+        assert_eq!(issues.len(), 1, "run must consolidate: {issues:?}");
+        assert_eq!(issues[0].line, Some(1));
+        assert!(issues[0].message.contains("至 10 行"), "chain range: {}", issues[0].message);
+        assert!(issues[0].message.contains("9 处"), "count: {}", issues[0].message);
+    }
+
+    #[test]
+    fn separate_chains_stay_separate() {
+        // two independent gluing spots separated by a blank line -> 2 issues
+        let issues = check("第一段文字内容。\n第二段文字内容。\n\n第三段文字内容。\n第四段文字内容。\n");
+        assert_eq!(issues.len(), 2, "{issues:?}");
+        assert_eq!(issues[0].line, Some(1));
+        assert_eq!(issues[1].line, Some(4));
     }
 
     #[test]

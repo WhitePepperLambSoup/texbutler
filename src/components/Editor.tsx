@@ -11,6 +11,7 @@ import { useT } from "../i18n";
 import ImageInsertModal from "./ImageInsertModal";
 import FormulaModal from "./FormulaModal";
 import TableModal from "./TableModal";
+import katex from "katex";
 
 // Load Monaco from the LOCAL npm package instead of the jsdelivr CDN.
 // @monaco-editor/react defaults to the CDN — when the network is slow or
@@ -276,6 +277,31 @@ export default function EditorPane() {
 
   const handleMount: OnMount = (editor) => {
     editorRef.current = editor;
+    // hover preview: KaTeX-rendered formula floating above the source
+    // (inline $...$, display $$...$$, \(...\) / \[...\])
+    const hoverProvider = monacoLocal.languages.registerHoverProvider("latex", {
+      provideHover(model, position) {
+        const line = model.getLineContent(position.lineNumber);
+        const col = position.column;
+        const hit = findMathAt(line, col);
+        if (!hit) return null;
+        let html = "";
+        try {
+          html = katex.renderToString(hit.src, { throwOnError: false, displayMode: hit.display });
+        } catch {
+          return null;
+        }
+        return {
+          range: new monacoLocal.Range(position.lineNumber, hit.start + 1, position.lineNumber, hit.end + 1),
+          contents: [
+            {
+              value: `<div style="padding:4px 2px;font-size:15px;min-width:120px;max-width:520px;overflow-x:auto;">${html}</div><div style="opacity:.6;font-size:11px;margin-top:4px;">${hit.src}</div>`,
+              supportsHtml: true,
+            },
+          ],
+        };
+      },
+    });
     // paste interception: a clipboard image (screenshot) is imported into the
     // project and inserted through the image dialog instead of raw pasting
     const dom = editor.getDomNode();
@@ -290,8 +316,34 @@ export default function EditorPane() {
       void importClipboardImage();
     };
     dom?.addEventListener("paste", onPaste);
-    editor.onDidDispose(() => dom?.removeEventListener("paste", onPaste));
+    editor.onDidDispose(() => {
+      dom?.removeEventListener("paste", onPaste);
+      hoverProvider.dispose();
+    });
   };
+
+  /** Find the math segment ($...$, $$...$$, \(...\), \[...\]) covering
+   *  `col` (1-based) on `line`; returns source + 0-based offsets. */
+  function findMathAt(line: string, col: number): { src: string; start: number; end: number; display: boolean } | null {
+    const patterns: Array<{ re: RegExp; display: boolean }> = [
+      { re: /\$\$([^$]+)\$\$/g, display: true },
+      { re: /\$([^$]+)\$/g, display: false },
+      { re: /\\\[([\s\S]+?)\\\]/g, display: true },
+      { re: /\\\(([\s\S]+?)\\\)/g, display: false },
+    ];
+    for (const { re, display } of patterns) {
+      re.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(line))) {
+        const start = m.index;
+        const end = m.index + m[0].length;
+        if (col >= start && col <= end) {
+          return { src: m[1], start, end, display };
+        }
+      }
+    }
+    return null;
+  }
 
   const doSave = useCallback(() => {
     void saveFile();

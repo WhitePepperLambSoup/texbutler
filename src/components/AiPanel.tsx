@@ -273,10 +273,14 @@ export default function AiPanel() {
             onChange={(e) => setGenInput(e.target.value)}
             rows={3}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+              // Enter sends (also Ctrl/Cmd+Enter for muscle memory);
+              // Shift+Enter inserts a newline
+              if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                void askAi(genInput);
-                setGenInput("");
+                if (!busy && genInput.trim()) {
+                  void askAi(genInput);
+                  setGenInput("");
+                }
               }
             }}
           />

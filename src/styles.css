@@ -94,6 +94,15 @@ html[data-theme="liquid"] .glass-blobs .blob-1 {
   animation: blob-drift-1 26s ease-in-out infinite alternate;
 }
 
+/* The left blob's edge showed up as a bright vertical strip along the
+   window's left side (it sits at left:-140px, so ~140px of the circle
+   is always visible). Removed per user request — the right blob and
+   bottom glow keep the liquid-glass feel. */
+html[data-theme="liquid"] .glass-blobs .blob-1 {
+  opacity: 0;
+  animation: none;
+}
+
 html[data-theme="liquid"] .glass-blobs .blob-2 {
   width: 500px;
   height: 500px;
@@ -614,12 +623,17 @@ body {
 }
 
 .col-tree {
-  flex: 0 0 220px;
+  flex: 0 0 auto;
+  width: 220px;
   min-width: 160px;
+  max-width: 420px;
   background: var(--bg2);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  /* drag the bottom-right grip to resize the tree column */
+  resize: horizontal;
+  overflow: hidden;
 }
 
 .col-editor {
@@ -630,11 +644,16 @@ body {
 }
 
 .col-pdf {
-  flex: 0 1 38%;
+  flex: 0 0 auto;
+  width: 38%;
   min-width: 240px;
+  max-width: 70%;
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  /* drag the bottom-right grip to resize the PDF column */
+  resize: horizontal;
+  overflow: hidden;
 }
 
 .bottom {
@@ -710,6 +729,9 @@ body {
   /* adapt to narrow windows so the rail never overflows off-screen:
      min 240px, up to 340px, ~22% of the viewport */
   width: clamp(240px, 22vw, 340px);
+  /* drag the bottom-left grip to resize the AI panel width */
+  resize: horizontal;
+  overflow: hidden;
 }
 .ai-rail.collapsed {
   width: 34px;
