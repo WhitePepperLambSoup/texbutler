@@ -108,7 +108,7 @@ pub async fn tb_bib_from_id(identifier: String) -> Result<String, String> {
     }
     // --- DOI: Crossref REST API ---
     if lower.starts_with("10.") {
-        let url = format!("https://api.crossref.org/works/{}", id);
+        let url = format!("https://api.crossref.org/works/{}", lower);
         let resp = reqwest::get(&url)
             .await
             .map_err(|e| format!("Crossref 请求失败: {e}"))?;
