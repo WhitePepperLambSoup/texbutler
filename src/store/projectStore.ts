@@ -163,11 +163,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   /** Reload a tab's content from disk (discards unsaved edits). Used after
-   *  AI fixes / rollbacks so the editor reflects the file on disk. */
+   *  AI fixes / rollbacks so the editor reflects the file on disk. If the
+   *  user started typing while the read was in flight (dirty), keep their
+   *  edits — the disk content will win on their next explicit save. */
   async reloadTab(rel: string) {
     const content = await api.readFile(rel);
     set((s) => ({
-      tabs: s.tabs.map((t) => (t.path === rel ? { ...t, content, dirty: false } : t)),
+      tabs: s.tabs.map((t) => (t.path === rel && !t.dirty ? { ...t, content, dirty: false } : t)),
     }));
   },
 
