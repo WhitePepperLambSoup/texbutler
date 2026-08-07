@@ -37,12 +37,18 @@ export default function SplitPane({
     const st = useProjectStore.getState();
     const tab = st.tabs.find((t) => t.path === file);
     if (tab?.dirty) {
+      const written = tab.content;
       try {
-        await api.writeFile(tab.path, tab.content);
-        useProjectStore.setState((s) => ({
-          tabs: s.tabs.map((t) => (t.path === file ? { ...t, dirty: false } : t)),
-        }));
-        window.dispatchEvent(new CustomEvent("tb:file-saved"));
+        await api.writeFile(tab.path, written);
+        // stillSame guard: if the user typed during the write, keep the
+        // tab dirty instead of marking unsaved edits as saved
+        const after = useProjectStore.getState().tabs.find((t) => t.path === file);
+        if (after && after.content === written) {
+          useProjectStore.setState((s) => ({
+            tabs: s.tabs.map((t) => (t.path === file ? { ...t, dirty: false } : t)),
+          }));
+          window.dispatchEvent(new CustomEvent("tb:file-saved"));
+        }
       } catch {
         /* keep the pane open on failure so edits are not lost */
         return;
