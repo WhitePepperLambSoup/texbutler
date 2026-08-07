@@ -41,9 +41,21 @@ pub async fn tb_bib_from_id(identifier: String) -> Result<String, String> {
     if id.is_empty() {
         return Err("请输入 DOI（如 10.1038/nature12373）或 arXiv 编号（如 2401.12345）".into());
     }
-    let lower = id.to_ascii_lowercase();
+    let mut lower = id.to_ascii_lowercase();
+    // strip a https://doi.org/ prefix so DOIs pasted as links work too
+    lower = lower
+        .trim_start_matches("https://doi.org/")
+        .trim_start_matches("http://doi.org/")
+        .trim_start_matches("doi.org/")
+        .trim_start_matches("doi:")
+        .to_string();
     // --- arXiv: export.arxiv.org Atom feed ---
-    if lower.contains("arxiv") || (id.contains('.') && !lower.starts_with("10.")) {
+    // new-style ids (2401.12345) contain a dot; legacy ids (hep-th/9901001)
+    // contain a slash — either without a DOI prefix is treated as arXiv
+    if lower.contains("arxiv")
+        || (lower.contains('/') && !lower.starts_with("10."))
+        || (lower.contains('.') && !lower.starts_with("10."))
+    {
         let arxid = lower
             .trim_start_matches("arxiv:")
             .trim_start_matches("https://arxiv.org/abs/")

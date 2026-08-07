@@ -139,12 +139,25 @@ async function main() {
   })()`);
   console.log("ARXIV -> BIB:", (arxRes || "").slice(0, 120).replace(/\n/g, " "));
 
+  // 3c) DOI link (https://doi.org/...) must route to Crossref, not arXiv
+  const doiLinkRes = await exec(`(async () => {
+    const { api } = await import('/src/api/index.ts');
+    try {
+      return await api.bibFromId('https://doi.org/10.1038/nature12373');
+    } catch (e) {
+      return 'ERR:' + e;
+    }
+  })()`);
+  console.log("DOI-LINK -> BIB:", (doiLinkRes || "").slice(0, 80).replace(/\n/g, " "));
+
   c.close();
   await rm(PROJ, { recursive: true, force: true }).catch(() => {});
   const pass = bigSize > 1_048_576 && envOk.includes("\\end{itemize}") && compressOk &&
     typeof bibRes === "string" && bibRes.includes("@article") && !bibRes.startsWith("ERR") &&
     typeof arxRes === "string" && arxRes.includes("@article") && !arxRes.startsWith("ERR") &&
-    /Attention Is All You Need/i.test(arxRes);
+    /Attention Is All You Need/i.test(arxRes) &&
+    typeof doiLinkRes === "string" && doiLinkRes.includes("@article") && !doiLinkRes.startsWith("ERR") &&
+    /Nanometre/i.test(doiLinkRes);
   console.log("E2E-DONE", pass ? "PASS" : "FAIL");
 }
 
