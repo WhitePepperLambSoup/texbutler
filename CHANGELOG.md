@@ -2,6 +2,21 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 语义化版本约定。
 
+## [0.6.1] - 2026-08-07
+
+### 安全加固 / Security Hardening
+
+- **符号链接越界防护**：所有文件读取与写入（图片导入/剪贴板/导出/AI 快照）统一经过 canonical 路径校验，项目内符号链接无法把读写引到项目外。 / **Symlink escape protection**: every read and write (image import, clipboard, export, AI snapshots) is canonical-path verified — a symlink inside the project can no longer redirect I/O outside it.
+- **AI 编辑事件零丢失**：流式请求发送前先完成事件监听注册，`tb://ai-edit` 永不漏收（编辑器同步与回滚记录始终完整）。 / **Zero-lost AI edit events**: listeners are registered before the streaming request fires, so every edit event lands (editor sync and rollback records are always complete).
+
+### 工程完善 / Engineering
+
+- **SyncTeX 定位当前编译产物**：多主文档项目中"定位到 PDF"使用最近一次编译的实际输出，嵌套文件与独立章节均可正确跳页。 / **SyncTeX targets the real output**: "locate in PDF" uses the last compiled PDF, so nested files and standalone chapters jump to the right page.
+- **依赖扫描 UTF-8 安全**：`\input` 后紧跟中文等场景不再可能因字节切片 panic。 / **UTF-8-safe dependency scan**: CJK right after `\input` can no longer panic the scanner.
+- **AI 引用索引读取 .bib**：生成 `\cite` 时注入的文献键来自真实 .bib 文件（此前为空）。 / **Real .bib feeding**: cite-key injection reads actual .bib files.
+- **扩展名大小写一致**：`.TEX` 文件与 `.tex` 同等识别（文件树/主文件/编译/规则检查全链路）。 / **Case-insensitive extensions**: `.TEX` is treated like `.tex` across the whole pipeline.
+- **流式超时跟随设置**：AI 流式回答使用设置中的超时值（下限 60 秒）。 / **Configured streaming timeout**: streamed AI replies honor the settings timeout (60 s floor).
+
 ## [0.6.0] - 2026-08-06
 
 ### AI 协同编辑 / AI Co-editing

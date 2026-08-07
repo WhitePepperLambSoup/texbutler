@@ -129,11 +129,12 @@ pub async fn chat_stream(
     }
     let mut req = reqwest::Client::new()
         .post(&url)
-        // The streaming path must not inherit reqwest's 30s default total
-        // timeout (a long answer would be cut off mid-stream). A generous
-        // 10-minute cap bounds a silent/hung endpoint; the [DONE] marker
-        // and the 8 MiB caps finish well before that in normal operation.
-        .timeout(Duration::from_secs(600))
+        // Respect the user-configured timeout (previously hard-coded 600s,
+        // which made the setting useless for streaming). Floor at 60s so a
+        // misconfigured tiny value cannot cut off a legitimate answer mid-
+        // stream; the [DONE] marker and the 8 MiB caps still finish well
+        // before a sane timeout in normal operation.
+        .timeout(Duration::from_secs(s.timeout_secs.max(60)))
         .json(&body);
     if let Some(key) = &s.api_key {
         req = req.header("Authorization", format!("Bearer {key}"));

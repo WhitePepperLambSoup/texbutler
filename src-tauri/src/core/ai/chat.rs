@@ -204,65 +204,121 @@ struct ToolCall {
 /// Parse `【工具调用】` blocks from the AI reply. Each block holds one JSON
 /// object: {"tool": "insert_before"|"insert_after"|"replace"|"delete_line",
 /// "file": "...", "anchor": "...", "lines": [...], "old": "...", "new": "..."}.
+/// Parse every `{...}` JSON object in `scan` that deserializes to a
+/// ToolCall, advancing `consumed` by the bytes it processed. Malformed
+/// objects are skipped, never aborting the batch.
+fn parse_json_objects(scan: &str, out: &mut Vec<ToolCall>) -> usize {
+    let mut rest = scan;
+    let mut consumed = 0usize;
+    loop {
+        let Some(start) = rest.find('{') else { break };
+        let json = &rest[start..];
+        let mut depth = 0;
+        let mut end = None;
+        let mut in_str = false;
+        let mut escaped = false;
+        for (i, ch) in json.char_indices() {
+            if in_str {
+                if escaped {
+                    escaped = false;
+                } else if ch == '\\' {
+                    escaped = true;
+                } else if ch == '"' {
+                    in_str = false;
+                }
+                continue;
+            }
+            match ch {
+                '"' => in_str = true,
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(i + 1);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(end) = end else { break };
+        match serde_json::from_str::<ToolCall>(&json[..end]) {
+            Ok(tc) => out.push(tc),
+            Err(_) => {
+                // malformed object (e.g. the AI wrote a single
+                // backslash so `\m` became an invalid JSON escape):
+                // skip it and keep scanning — never silently abort
+                // the whole batch
+            }
+        }
+        consumed += start + end;
+        rest = &json[end..];
+    }
+    consumed
+}
+
+/// Parse the FIRST `{...}` object in `scan` that deserializes to a
+/// ToolCall. Returns the call and its end offset (relative to `scan`).
+/// Used for bare JSON replies: only the first object is ever attempted,
+/// so a reply that merely STARTS with `{` (e.g. the model quoting a
+/// format example) cannot execute anything.
+fn parse_first_json_object(scan: &str) -> Option<(ToolCall, usize)> {
+    let start = scan.find('{')?;
+    let json = &scan[start..];
+    let mut depth = 0;
+    let mut end = None;
+    let mut in_str = false;
+    let mut escaped = false;
+    for (i, ch) in json.char_indices() {
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_str = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_str = true,
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = Some(i + 1);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let end = end?;
+    let tc = serde_json::from_str::<ToolCall>(&json[..end]).ok()?;
+    Some((tc, start + end))
+}
+
 fn parse_tool_calls(reply: &str) -> Vec<ToolCall> {
     let mut out = Vec::new();
     let marker = "【工具调用】";
+    let trimmed = reply.trim_start();
     let mut rest = reply;
+    // Bare JSON without the marker: the AI sometimes emits the tool-call
+    // object directly. FIRST object only (see parse_first_json_object);
+    // once consumed, the marker scan continues AFTER it so the same call
+    // is never parsed twice.
+    if trimmed.starts_with('{') {
+        if let Some((tc, end)) = parse_first_json_object(trimmed) {
+            out.push(tc);
+            rest = &trimmed[end..];
+        }
+    }
     while let Some(pos) = rest.find(marker) {
         let block = &rest[pos + marker.len()..];
         // parse EVERY `{...}` JSON object after the marker (the AI often
         // puts several tool calls on one line without repeating the
-        // marker); stop at the first object that is not valid JSON.
-        let mut scan = block;
-        let mut consumed = 0usize;
-        loop {
-            let Some(start) = scan.find('{') else { break };
-            let json = &scan[start..];
-            let mut depth = 0;
-            let mut end = None;
-            let mut in_str = false;
-            let mut escaped = false;
-            for (i, ch) in json.char_indices() {
-                if in_str {
-                    if escaped {
-                        escaped = false;
-                    } else if ch == '\\' {
-                        escaped = true;
-                    } else if ch == '"' {
-                        in_str = false;
-                    }
-                    continue;
-                }
-                match ch {
-                    '"' => in_str = true,
-                    '{' => depth += 1,
-                    '}' => {
-                        depth -= 1;
-                        if depth == 0 {
-                            end = Some(i + 1);
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            let Some(end) = end else { break };
-            match serde_json::from_str::<ToolCall>(&json[..end]) {
-                Ok(tc) => out.push(tc),
-                Err(_) => {
-                    // malformed object (e.g. the AI wrote a single
-                    // backslash so `\m` became an invalid JSON escape):
-                    // skip it and keep scanning — never silently abort
-                    // the whole batch
-                }
-            }
-            // `start` is relative to the current `scan`; `consumed` already
-            // holds this scan's offset inside `block`, so accumulate both to
-            // keep a block-relative total (a plain `consumed = start + end`
-            // would re-parse earlier objects on the next marker block)
-            consumed += start + end;
-            scan = &json[end..];
-        }
+        // marker); malformed objects are skipped and scanning continues.
+        let consumed = parse_json_objects(block, &mut out);
         // advance past everything consumed in this marker block so the
         // next `find(marker)` never re-parses the same objects
         if consumed > 0 {
@@ -1010,6 +1066,34 @@ mod tests {
         assert_eq!(calls[0].lines, vec!["\\newpage"]);
         // no marker → empty
         assert!(parse_tool_calls("纯文本回答").is_empty());
+    }
+
+    #[test]
+    fn parse_tool_calls_bare_json_without_marker() {
+        // the model sometimes emits the tool-call object directly, with no
+        // 【工具调用】 marker and no prose at all
+        let reply = "{\"tool\": \"replace\", \"file\": \"main.tex\", \"old\": \"\\\\title{Old}\", \"new\": \"\\\\title{New}\"}";
+        let calls = parse_tool_calls(reply);
+        assert_eq!(calls.len(), 1, "bare JSON must be parsed: {calls:?}");
+        assert_eq!(calls[0].tool, "replace");
+        assert_eq!(calls[0].new, "\\title{New}");
+        // bare JSON followed by prose still parses (first object only)
+        let reply2 = "{\"tool\": \"insert_before\", \"file\": \"a.tex\", \"anchor\": \"\\\\section\", \"lines\": [\"\\\\newpage\"]}\n解释：已加。";
+        let calls2 = parse_tool_calls(reply2);
+        assert_eq!(calls2.len(), 1);
+        // only the FIRST object is attempted in bare mode: a second bare
+        // object without a marker must NOT execute (double-apply guard)
+        let reply3 = "{\"tool\": \"replace\", \"file\": \"a.tex\", \"old\": \"x\", \"new\": \"y\"}\n{\"tool\": \"delete_line\", \"file\": \"a.tex\", \"anchor\": \"z\"}";
+        let calls3 = parse_tool_calls(reply3);
+        assert_eq!(calls3.len(), 1, "second bare object must be ignored: {calls3:?}");
+        // bare object + marker object: no double-parse of the same call
+        let reply4 = "{\"tool\": \"replace\", \"file\": \"a.tex\", \"old\": \"x\", \"new\": \"y\"}\n【工具调用】{\"tool\": \"insert_after\", \"file\": \"a.tex\", \"anchor\": \"b\", \"lines\": [\"c\"]}";
+        let calls4 = parse_tool_calls(reply4);
+        assert_eq!(calls4.len(), 2, "bare + marker must yield two distinct calls: {calls4:?}");
+        assert_eq!(calls4[0].tool, "replace");
+        assert_eq!(calls4[1].tool, "insert_after");
+        // prose that merely STARTS with { is not a tool batch
+        assert!(parse_tool_calls("{这不是 JSON 工具调用").is_empty());
     }
 
     #[test]

@@ -254,12 +254,63 @@ impl Project {
     }
 
     /// Read a file as UTF-8 (with BOM/encoding tolerance for Windows files).
+    /// The canonical path must stay inside the canonical project root —
+    /// a symlink inside the project cannot redirect the read outside it.
     pub fn read_file(&self, rel: &str) -> Result<String, String> {
         let p = self.resolve(rel).ok_or_else(|| "路径越界".to_string())?;
-        let bytes = std::fs::read(&p).map_err(|e| e.to_string())?;
+        let cp = self.canonical_inside(&p)?;
+        let bytes = std::fs::read(&cp).map_err(|e| e.to_string())?;
         // Strip UTF-8 BOM if present.
         let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
         String::from_utf8(bytes.to_vec()).map_err(|_| "文件不是 UTF-8 编码（中文 LaTeX 请保存为 UTF-8）".to_string())
+    }
+
+    /// Canonicalize an absolute project-internal path and verify the result
+    /// stays inside the canonical project root. Works for files that do not
+    /// exist yet (canonicalizes the deepest existing ancestor, then
+    /// re-appends the missing tail), so it can guard writes to new files.
+    /// A symlink anywhere in the path — including one that dangles — that
+    /// would land outside the project is rejected.
+    pub fn canonical_inside(&self, abs: &Path) -> Result<PathBuf, String> {
+        let root_canon = std::fs::canonicalize(&self.root).unwrap_or_else(|_| self.root.clone());
+        let abs = if abs.is_absolute() { abs.to_path_buf() } else { self.root.join(abs) };
+        let mut probe = abs.as_path();
+        let mut missing_tail: Vec<std::ffi::OsString> = Vec::new();
+        let canon = loop {
+            match std::fs::canonicalize(probe) {
+                Ok(c) => break c,
+                Err(_) => {
+                    let Some(name) = probe.file_name() else {
+                        return Err("路径无效".to_string());
+                    };
+                    missing_tail.push(name.to_os_string());
+                    match probe.parent() {
+                        Some(p) if !p.as_os_str().is_empty() => probe = p,
+                        _ => return Err("路径无效".to_string()),
+                    }
+                }
+            }
+        };
+        let mut final_path = canon;
+        for name in missing_tail.iter().rev() {
+            // symlink_metadata does NOT follow the link: a dangling
+            // symlink (target does not exist yet) is rejected here,
+            // otherwise the later write would CREATE the target file
+            // outside the project through the link.
+            let probe = final_path.join(name);
+            if std::fs::symlink_metadata(&probe)
+                .map(|m| m.file_type().is_symlink())
+                .unwrap_or(false)
+            {
+                return Err("路径越界（符号链接指向项目外）".to_string());
+            }
+            final_path.push(name);
+        }
+        if final_path.starts_with(&root_canon) {
+            Ok(final_path)
+        } else {
+            Err("路径越界（符号链接指向项目外）".to_string())
+        }
     }
 
     /// BFS over the `\input`/`\include` dependency graph starting at
@@ -312,9 +363,14 @@ impl Project {
                                 }
                             }
                         }
-                        idx += pos + cmd.len() + 1;
-                        if idx >= line.len() {
-                            break;
+                        // advance past this match WITHOUT landing mid-
+                        // codepoint: skip the command, then one full
+                        // character (the `{` or whatever follows), then the
+                        // next loop iteration scans from a char boundary.
+                        idx += pos + cmd.len();
+                        if idx < line.len() {
+                            let ch = line[idx..].chars().next().unwrap();
+                            idx += ch.len_utf8();
                         }
                     }
                 }
@@ -622,7 +678,7 @@ fn collect_tex(dir: &Path, out: &mut Vec<String>) {
         }
         if p.is_dir() {
             collect_tex(&p, out);
-        } else if name.ends_with(".tex") {
+        } else if name.to_ascii_lowercase().ends_with(".tex") {
             out.push(p.to_string_lossy().replace('\\', "/"));
         }
     }
@@ -825,6 +881,126 @@ mod tests {
         }
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_file(&target);
+    }
+
+    #[test]
+    fn read_file_rejects_symlink_outside_project() {
+        let dir = std::env::temp_dir().join(format!("tb-symread-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let proj = Project::open(std::path::Path::new(&dir)).expect("open project");
+        proj.write_file("main.tex", "正文").unwrap();
+        // a secret file outside the project
+        let outside = std::env::temp_dir().join(format!("tb-symread-out-{}", std::process::id()));
+        let _ = std::fs::remove_file(&outside);
+        std::fs::write(&outside, "secret").unwrap();
+        #[cfg(windows)]
+        let link_ok = std::os::windows::fs::symlink_file(&outside, dir.join("leak.tex"));
+        #[cfg(not(windows))]
+        let link_ok = std::os::unix::fs::symlink(&outside, dir.join("leak.tex"));
+        if link_ok.is_ok() {
+            let r = proj.read_file("leak.tex");
+            assert!(r.is_err(), "symlinked file must not be readable: {:?}", r);
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_file(&outside);
+    }
+
+    #[test]
+    fn read_file_rejects_symlink_parent_outside_project() {
+        let dir = std::env::temp_dir().join(format!("tb-symreaddir-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let proj = Project::open(std::path::Path::new(&dir)).expect("open project");
+        proj.write_file("main.tex", "正文").unwrap();
+        let outside = std::env::temp_dir().join(format!("tb-symreaddir-out-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&outside);
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("secret.tex"), "secret").unwrap();
+        #[cfg(windows)]
+        let link_ok = std::os::windows::fs::symlink_dir(&outside, dir.join("chapters"));
+        #[cfg(not(windows))]
+        let link_ok = std::os::unix::fs::symlink(&outside, dir.join("chapters"));
+        if link_ok.is_ok() {
+            let r = proj.read_file("chapters/secret.tex");
+            assert!(r.is_err(), "symlinked parent must be rejected: {:?}", r);
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    #[test]
+    fn canonical_inside_accepts_new_file_in_project() {
+        let dir = std::env::temp_dir().join(format!("tb-canonnew-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let proj = Project::open(std::path::Path::new(&dir)).expect("open project");
+        let cp = proj
+            .canonical_inside(&proj.root.join("chapters").join("new.tex"))
+            .expect("new file inside the project must be accepted");
+        let root_canon = std::fs::canonicalize(&proj.root).unwrap_or_else(|_| proj.root.clone());
+        assert!(cp.starts_with(&root_canon), "canonical path inside root: {cp:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dependency_chain_survives_cjk_after_command() {
+        // `\input中文` (no brace, no space) used to advance idx by 1 byte
+        // into the middle of a CJK codepoint and panic on line[idx..]
+        let dir = std::env::temp_dir().join(format!("tb-depcjk-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let proj = Project::open(std::path::Path::new(&dir)).expect("open project");
+        proj.write_file("main.tex", "\\input中文\n\\input{sub.tex}\n正文内容").unwrap();
+        proj.write_file("sub.tex", "子文件").unwrap();
+        let chain = proj.dependency_chain("main.tex");
+        let rels: Vec<&str> = chain.iter().map(|(r, _)| r.as_str()).collect();
+        assert!(rels.contains(&"sub.tex"), "real dep must still be found: {rels:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn canonical_inside_rejects_dangling_symlink_component() {
+        // a dangling symlink (target does not exist) must not be usable to
+        // redirect a write outside the project via the missing-tail path
+        let dir = std::env::temp_dir().join(format!("tb-canonhang-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let proj = Project::open(std::path::Path::new(&dir)).expect("open project");
+        let outside = std::env::temp_dir().join(format!("tb-canonhang-out-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&outside);
+        #[cfg(windows)]
+        let link_ok = std::os::windows::fs::symlink_dir(&outside, dir.join("chapters"));
+        #[cfg(not(windows))]
+        let link_ok = std::os::unix::fs::symlink(&outside, dir.join("chapters"));
+        if link_ok.is_ok() {
+            // `chapters` is a symlink to a not-yet-existing outside dir
+            let r = proj.canonical_inside(&proj.root.join("chapters").join("new.tex"));
+            assert!(r.is_err(), "dangling symlink component must be rejected: {:?}", r);
+            assert!(!outside.exists(), "outside target must not be created");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    #[test]
+    fn collect_tex_survives_multibyte_filenames() {
+        // the case-insensitive `.tex` check must never byte-slice through a
+        // multi-byte codepoint (a Chinese-named file used to panic)
+        let dir = std::env::temp_dir().join(format!("tb-collectmb-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let proj = Project::open(std::path::Path::new(&dir)).expect("open project");
+        proj.write_file("说明.md", "not tex").unwrap();
+        proj.write_file("图片", "no extension").unwrap();
+        proj.write_file("MAIN.TEX", "\\documentclass{article}").unwrap();
+        let files = proj.tex_files();
+        assert!(
+            files.iter().any(|f| f.to_ascii_lowercase().ends_with("main.tex")),
+            "uppercase .TEX must be found: {files:?}"
+        );
+        assert!(!files.iter().any(|f| f.ends_with(".md")), "md must be excluded: {files:?}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

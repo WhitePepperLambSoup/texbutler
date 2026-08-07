@@ -104,11 +104,18 @@ export const useAiStore = create<AiState>((set, get) => ({
         void useCompileStoreRefresh();
       }
     });
+    // WAIT for the listeners to be registered before firing the request —
+    // `tb://ai-edit` can arrive within milliseconds of the first tool call,
+    // and a lost event would leave the disk edited with no editor refresh
+    // and no rollback entry. If registering fails, degrade to sending the
+    // request anyway (a missed event is better than no answer at all).
+    let unListen: (() => void) | undefined;
+    let unListenEdit: (() => void) | undefined;
     try {
+      ([unListen, unListenEdit] = await Promise.all([listenP, listenEditP]));
       // conversation history: send the recent user/assistant turns so the
       // AI remembers what it did earlier (capped for context budget)
-      const history = get().messages
-        .slice(-12)
+      const history = get().messages.slice(-12)
         .filter((m) => (m.role === "user" || m.role === "assistant") && m.kind === "plain")
         .map((m) => ({ role: m.role, content: (m.text || "").slice(0, 3000) }));
       const answer = await api.aiChatStream(q, st.activeTab, get().pendingSelection, history);
@@ -123,8 +130,13 @@ export const useAiStore = create<AiState>((set, get) => ({
     } catch (e) {
       get().pushMessage({ role: "assistant", kind: "error", text: useI18n.getState().t("ai.chatFailed", { e: String(e) }) });
     } finally {
-      void listenP.then((fn) => fn());
-      void listenEditP.then((fn) => fn());
+      unListen?.();
+      unListenEdit?.();
+      // also unregister through the original promises: if Promise.all
+      // failed after one listener registered, the destructured handle is
+      // undefined and this path is the only cleanup (unlisten is idempotent)
+      void listenP.then((fn) => fn?.()).catch(() => {});
+      void listenEditP.then((fn) => fn?.()).catch(() => {});
     }
     set({ busy: false, busyKind: null });
   },

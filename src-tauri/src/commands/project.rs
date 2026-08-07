@@ -238,7 +238,7 @@ pub fn tb_import_image(state: State<'_, AppState>, source_path: String) -> Resul
         target = proj.root.join(format!("{stem}_{n}.{ext}"));
         n += 1;
     }
-    std::fs::copy(src, &target).map_err(|e| format!("复制图片失败: {e}"))?;
+    std::fs::copy(src, &proj.canonical_inside(&target)?).map_err(|e| format!("复制图片失败: {e}"))?;
     drop(guard);
     // refresh the file tree (scan needs a write lock)
     if let Ok(mut g) = state.project.write() {
@@ -289,7 +289,7 @@ pub fn tb_import_clipboard_image(
         target = proj.root.join(format!("clipboard_{ts}_{n}.png"));
         n += 1;
     }
-    std::fs::write(&target, png).map_err(|e| format!("保存图片失败: {e}"))?;
+    std::fs::write(&proj.canonical_inside(&target)?, png).map_err(|e| format!("保存图片失败: {e}"))?;
     drop(guard);
     if let Ok(mut g) = state.project.write() {
         if let Some(p) = g.as_mut() {
@@ -597,9 +597,24 @@ pub fn tb_synctex_forward(
     let guard = state.project.read().map_err(|e| e.to_string())?;
     let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
     let build_dir = proj.root.join(".texbutler").join("build");
-    let main_rel = proj.relative_path(&proj.main_file);
-    let stem = main_rel.trim_end_matches(".tex");
-    let pdf_path = build_dir.join(format!("{stem}.pdf"));
+    // Use the LAST COMPILED OUTPUT (pdf_path recorded by the compiler) so a
+    // multi-document project locates the PDF that actually corresponds to
+    // the file being edited — `main.tex` is not necessarily the target.
+    // Fall back to main.tex's stem when nothing has been compiled yet.
+    let pdf_path = state
+        .last_result
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().and_then(|r| r.pdf_path.clone()))
+        .map(|p| std::path::PathBuf::from(p))
+        // guard against a stale result from a previously opened project:
+        // only trust PDFs inside THIS project's build dir
+        .filter(|p| p.exists() && p.starts_with(&build_dir))
+        .unwrap_or_else(|| {
+            let main_rel = proj.relative_path(&proj.main_file);
+            let stem = main_rel.trim_end_matches(".tex");
+            build_dir.join(format!("{stem}.pdf"))
+        });
 
     // 1) system synctex CLI (MiKTeX / TeX Live ship it); the synctex.gz
     // records absolute paths, so pass the absolute source path. The path
@@ -611,8 +626,8 @@ pub fn tb_synctex_forward(
             return Ok(Some(page));
         }
     }
-    // 2) classic .synctex.gz parse (tectonic)
-    let gz_path = build_dir.join(format!("{stem}.synctex.gz"));
+    // 2) classic .synctex.gz parse (tectonic) — same stem as the PDF
+    let gz_path = pdf_path.with_extension("synctex.gz");
     if let Ok(gz) = std::fs::read(&gz_path) {
         if let Some(page) = crate::core::synctex::forward_search(&gz, &rel, line) {
             return Ok(Some(page));
@@ -639,16 +654,19 @@ pub fn tb_export(
     let out_rel = proj.resolve(&format!("{stem}.md")).ok_or_else(|| "非法导出路径".to_string())?;
     match format.to_ascii_lowercase().as_str() {
         "md" | "markdown" => {
-            let out = proj.root.join(&out_rel);
-            std::fs::write(&out, md).map_err(|e| e.to_string())?;
-            Ok(out.to_string_lossy().to_string())
+            let out_canon = proj.canonical_inside(&proj.root.join(&out_rel))?;
+            std::fs::write(&out_canon, md).map_err(|e| e.to_string())?;
+            // return the readable (non-canonical) path — canonicalize adds
+            // a `\\\\?\\` prefix on Windows that is ugly and would not
+            // round-trip through resolve()
+            Ok(proj.root.join(&out_rel).to_string_lossy().to_string())
         }
         "docx" | "word" => {
             let bytes = crate::core::export::to_docx(&md)?;
             let out_rel = proj.resolve(&format!("{stem}.docx")).ok_or_else(|| "非法导出路径".to_string())?;
-            let out = proj.root.join(&out_rel);
-            std::fs::write(&out, bytes).map_err(|e| e.to_string())?;
-            Ok(out.to_string_lossy().to_string())
+            let out_canon = proj.canonical_inside(&proj.root.join(&out_rel))?;
+            std::fs::write(&out_canon, bytes).map_err(|e| e.to_string())?;
+            Ok(proj.root.join(&out_rel).to_string_lossy().to_string())
         }
         other => Err(format!("不支持的导出格式: {other}（支持 md / docx）")),
     }

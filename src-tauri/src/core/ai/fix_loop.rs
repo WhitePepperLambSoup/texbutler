@@ -575,7 +575,7 @@ pub fn snapshot(project: &Project, rel: &str, content: &str) -> Result<PathBuf, 
         return Err(format!("非法备份路径: {rel}"));
     }
     let ts = chrono_like_timestamp();
-    let dir = project.backup_dir().join(ts);
+    let dir = project.canonical_inside(&project.backup_dir().join(ts))?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(&safe_rel);
     if let Some(parent) = path.parent() {

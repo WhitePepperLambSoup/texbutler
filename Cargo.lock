@@ -3972,7 +3972,7 @@ dependencies = [
 
 [[package]]
 name = "texbutler"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "dirs",
  "flate2",

@@ -651,9 +651,8 @@ pub async fn tb_ai_generate(
             .map(|(k, _)| k)
             .collect();
         let bib_keys: Vec<String> = proj
-            .tex_files()
+            .bib_files()
             .iter()
-            .filter(|f| f.ends_with(".bib"))
             .filter_map(|f| proj.read_file(f).ok())
             .flat_map(|src| crate::core::bib::parse_bib(&src))
             .map(|e| e.key)
