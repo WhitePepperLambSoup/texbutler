@@ -299,32 +299,24 @@ pub fn tb_import_clipboard_image(
     Ok(target.file_name().unwrap_or_default().to_string_lossy().to_string())
 }
 
-/// A parsed `.bib` entry for the reference panel.
-#[derive(serde::Serialize)]
-pub struct BibEntry {
-    pub key: String,
-    pub entry_type: String,
-    pub title: String,
-    pub author: String,
-    pub year: String,
-}
-
-/// Scan the project's `.bib` files and return parsed entries.
+/// Scan the project's `.bib` files and return parsed entries (with their
+/// location for click-to-jump in the reference panel).
 #[tauri::command]
-pub fn tb_list_bib_entries(state: State<'_, AppState>) -> Result<Vec<BibEntry>, String> {
+pub fn tb_list_bib_entries(state: State<'_, AppState>) -> Result<Vec<crate::core::bib::BibEntry>, String> {
     let guard = state.project.read().map_err(|e| e.to_string())?;
     let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
-    let mut out: Vec<BibEntry> = Vec::new();
+    let mut out: Vec<crate::core::bib::BibEntry> = Vec::new();
     for rel in proj.bib_files() {
         let Some(content) = proj.read_file(&rel).ok() else { continue };
-        for entry in crate::core::bib::parse_bib(&content) {
-            out.push(BibEntry {
-                key: entry.key,
-                entry_type: entry.entry_type,
-                title: entry.title,
-                author: entry.author,
-                year: entry.year,
-            });
+        for mut entry in crate::core::bib::parse_bib(&content) {
+            if let Some((idx, _)) = content.lines().enumerate().find(|(_, l)| {
+                l.contains(&format!("@{}", entry.entry_type))
+                    && l.contains(&format!("{{{},", entry.key))
+            }) {
+                entry.file = Some(rel.clone());
+                entry.line = Some(idx + 1);
+            }
+            out.push(entry);
         }
     }
     Ok(out)
@@ -558,13 +550,24 @@ pub fn tb_ref_index(state: State<'_, AppState>) -> Result<RefIndex, String> {
     for rel in proj.tex_files() {
         let Ok(content) = proj.read_file(&rel) else { continue };
         for (key, line) in crate::core::rules::refs::scan_labels(&content) {
-            labels.push(RefLabel { key, file: rel.clone(), line });
+            labels.push(RefLabel { key, file: proj.relative_path(&rel), line });
         }
     }
     let mut bib: Vec<crate::core::bib::BibEntry> = Vec::new();
     for rel in proj.bib_files() {
         let Ok(content) = proj.read_file(&rel) else { continue };
-        bib.extend(crate::core::bib::parse_bib(&content));
+        let entries = crate::core::bib::parse_bib(&content);
+        // attach the entry's location for Ctrl+Click navigation: the line
+        // where `@<type>{<key>,` appears (entry_type + key on one line)
+        for mut e in entries {
+            if let Some((idx, _)) = content.lines().enumerate().find(|(_, l)| {
+                l.contains(&format!("@{}", e.entry_type)) && l.contains(&format!("{{{},", e.key))
+            }) {
+                e.file = Some(rel.clone());
+                e.line = Some(idx + 1);
+            }
+            bib.push(e);
+        }
     }
     Ok(RefIndex { labels, bib })
 }
@@ -573,6 +576,47 @@ pub fn tb_ref_index(state: State<'_, AppState>) -> Result<RefIndex, String> {
 pub struct RefIndex {
     pub labels: Vec<RefLabel>,
     pub bib: Vec<crate::core::bib::BibEntry>,
+}
+
+/// One TODO/FIXME/HACK marker found inside a LaTeX comment.
+#[derive(serde::Serialize)]
+pub struct TodoHit {
+    pub file: String,
+    pub line: usize,
+    pub text: String,
+}
+
+/// Scan every `.tex` file for TODO / FIXME / HACK / XXX markers inside
+/// comments (`% ... TODO ...`). Returns hits sorted by file then line.
+#[tauri::command]
+pub fn tb_scan_todos(state: State<'_, AppState>) -> Result<Vec<TodoHit>, String> {
+    let guard = state.project.read().map_err(|e| e.to_string())?;
+    let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
+    let mut out: Vec<TodoHit> = Vec::new();
+    const KEYWORDS: [&str; 4] = ["TODO", "FIXME", "HACK", "XXX"];
+    for rel in proj.tex_files() {
+        let Ok(content) = proj.read_file(&rel) else { continue };
+        for (i, line) in content.lines().enumerate() {
+            // only markers inside comments: everything from the first `%`
+            let Some(pct) = line.find('%') else { continue };
+            let after = &line[pct + 1..];
+            let trimmed = after.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            for kw in KEYWORDS {
+                if let Some(pos) = trimmed.find(kw) {
+                    out.push(TodoHit {
+                        file: proj.relative_path(&rel),
+                        line: i + 1,
+                        text: trimmed[pos..].to_string(),
+                    });
+                    break;
+                }
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// Every compilable document root in the project (files containing

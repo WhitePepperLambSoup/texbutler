@@ -10,6 +10,12 @@ pub struct BibEntry {
     pub title: String,
     pub author: String,
     pub year: String,
+    /// Where the entry lives inside its .bib file (Ctrl+Click navigation);
+    /// filled by `tb_ref_index`, None for entries without a location.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<usize>,
 }
 
 /// Parse `@type{key, field = {value}, ...}` blocks from a .bib source.
@@ -57,6 +63,8 @@ pub fn parse_bib(content: &str) -> Vec<BibEntry> {
                     title: extract_bib_field(body, "title"),
                     author: extract_bib_field(body, "author"),
                     year: extract_bib_field(body, "year"),
+                    file: None,
+                    line: None,
                 });
             }
         }

@@ -95,6 +95,44 @@ pub async fn tb_ai_translate(
     crate::core::ai::translate::translate(&text, &target, &settings).await
 }
 
+/// Academic-polish a selected passage: compress / expand / rewrite in a
+/// formal academic register. Structure (commands, formulas, refs) is
+/// preserved; the reply is the polished text itself.
+#[tauri::command]
+pub async fn tb_ai_polish(
+    state: State<'_, AppState>,
+    text: String,
+    mode: String,
+) -> Result<String, String> {
+    let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
+    if settings.api_key.is_none()
+        && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. })
+    {
+        return Err("尚未配置 AI API Key。请在“设置”中填写 provider 配置。".into());
+    }
+    if text.trim().is_empty() {
+        return Err("没有可润色的内容：请先在编辑器中选中一段文本。".into());
+    }
+    let instruction = match mode.as_str() {
+        "compress" => "把文本压缩得更简洁精炼（删冗余、合并重复表达，保留全部关键信息与学术含义）",
+        "expand" => "把文本扩展得更充分详细（补充必要的过渡与阐释，不引入新的学术论断，保持原意）",
+        _ => "把文本改写为更正式、更学术化的表达（术语规范、句式严谨、避免口语化）",
+    };
+    let system = format!(
+        "你是学术写作润色助手。{instruction}。严格要求：LaTeX 命令、数学公式、引用与注释一律原样保留；只输出润色后的文本本身，不要任何解释、引号、Markdown 围栏；不改变学术含义；中文输入保持中文、英文输入保持英文。"
+    );
+    crate::core::ai::chat(
+        &settings,
+        &[
+            crate::core::ai::ChatMsg { role: "system".into(), content: system },
+            crate::core::ai::ChatMsg { role: "user".into(), content: text },
+        ],
+    )
+    .await
+    .map(|r| r.trim().to_string())
+    .map_err(|e| redact_key(&settings, e.to_string()))
+}
+
 /// AI-diagnose one compile issue (by index into the last result's issues).
 /// Refuse to diagnose/fix files outside the project (e.g. MiKTeX system
 /// files like `umsb.fd` that the log parser picks up): we cannot read or

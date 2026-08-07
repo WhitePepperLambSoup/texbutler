@@ -77,6 +77,12 @@ export interface RefIndex {
   bib: BibEntry[];
 }
 
+export interface TodoHit {
+  file: string;
+  line: number;
+  text: string;
+}
+
 export interface WordCount {
   chars: number;
   cjk_chars: number;
@@ -90,6 +96,9 @@ export interface BibEntry {
   title: string;
   author: string;
   year: string;
+  /** location of the entry inside its .bib file (Ctrl+Click jump) */
+  file?: string;
+  line?: number;
 }
 
 export interface AiDiagnosis {
@@ -165,6 +174,7 @@ export const api = {
   importClipboardImage: () => invoke<string>("tb_import_clipboard_image"),
   listBibEntries: () => invoke<BibEntry[]>("tb_list_bib_entries"),
   refIndex: () => invoke<RefIndex>("tb_ref_index"),
+  scanTodos: () => invoke<TodoHit[]>("tb_scan_todos"),
   countWords: (file?: string) =>
     invoke<WordCount>("tb_count_words", { file: file ?? null }),
   listRoots: () => invoke<string[]>("tb_list_roots"),
@@ -174,6 +184,8 @@ export const api = {
     invoke<string>("tb_export", { file, format }),
   aiTranslate: (text: string, target: string) =>
     invoke<string>("tb_ai_translate", { text, target }),
+  aiPolish: (text: string, mode: "compress" | "expand" | "academic") =>
+    invoke<string>("tb_ai_polish", { text, mode }),
   aiChat: (question: string, file?: string | null, selection?: string | null) =>
     invoke<string>("tb_ai_chat", { question, file: file ?? null, selection: selection ?? null }),
   aiChatStream: (question: string, file?: string | null, selection?: string | null, history?: { role: string; content: string }[]) =>

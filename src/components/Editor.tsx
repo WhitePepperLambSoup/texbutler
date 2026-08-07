@@ -277,6 +277,21 @@ export default function EditorPane() {
 
   const handleMount: OnMount = (editor) => {
     editorRef.current = editor;
+    // jump-to-line requests from panels (TODO scan / outline / bib): the
+    // panel already opened the file; reveal the line in the editor
+    const onReveal = (e: Event) => {
+      const d = (e as CustomEvent<{ file?: string; line?: number }>).detail;
+      if (!d || typeof d.line !== "number") return;
+      const st = useProjectStore.getState();
+      if (st.activeTab !== d.file) return; // panel opened it already
+      const m = editor.getModel();
+      if (!m) return;
+      const lineNo = Math.min(d.line, m.getLineCount());
+      editor.revealLineInCenter(lineNo);
+      editor.setPosition({ lineNumber: lineNo, column: 1 });
+      editor.focus();
+    };
+    window.addEventListener("tb:reveal", onReveal);
     // hover preview: KaTeX-rendered formula floating above the source
     // (inline $...$, display $$...$$, \(...\) / \[...\])
     const hoverProvider = monacoLocal.languages.registerHoverProvider("latex", {
@@ -309,6 +324,78 @@ export default function EditorPane() {
         };
       },
     });
+    // Ctrl+Click navigation: `\ref{key}` / `\eqref{key}` / `\cref{key}`
+    // jump to the `\label{key}` definition; `\cite{key}` jumps into the
+    // .bib file where the entry lives.
+    const linkProvider = monacoLocal.languages.registerLinkProvider("latex", {
+      provideLinks(model) {
+        const links: Array<{ range: monacoLocal.Range; url: string }> = [];
+        const re = /\\(?:ref|eqref|cref|Cref|cite|citep|citet)\{([^}]+)\}/g;
+        for (let ln = 1; ln <= model.getLineCount(); ln++) {
+          const line = model.getLineContent(ln);
+          re.lastIndex = 0;
+          let m: RegExpExecArray | null;
+          while ((m = re.exec(line))) {
+            const start = m.index;
+            const end = m.index + m[0].length;
+            links.push({
+              range: new monacoLocal.Range(ln, start + 1, ln, end + 1),
+              url: `tb-ref://${m[1].trim().split(",")[0]}`,
+            });
+          }
+        }
+        return { links };
+      },
+    });
+    // onDidOpenedLink exists on IStandaloneCodeEditor in monaco >= 0.47 but
+    // the bundled typings lag behind — assert through a narrow interface.
+    const opener = editor as unknown as {
+      onDidOpenedLink?: (cb: (link: { url?: string }) => void) => void;
+    };
+    opener.onDidOpenedLink?.(async (link) => {
+      const key = (link.url || "").replace(/^tb-ref:\/\//, "");
+      if (!key) return;
+      try {
+        const { useProjectStore } = await import("../store/projectStore");
+        const idx = await api.refIndex();
+        const label = idx.labels.find((l) => l.key === key);
+        if (label) {
+          const st = useProjectStore.getState();
+          await st.openFile(label.file);
+          // reveal after the tab content lands
+          await new Promise((r) => setTimeout(r, 60));
+          const ed = editorRef.current;
+          if (ed) {
+            const m = ed.getModel();
+            if (m) {
+              const lineNo = Math.min(label.line, m.getLineCount());
+              ed.revealLineInCenter(lineNo);
+              ed.setPosition({ lineNumber: lineNo, column: 1 });
+              ed.focus();
+            }
+          }
+          return;
+        }
+        const bib = idx.bib.find((b) => b.key === key);
+        if (bib && bib.file && bib.line) {
+          const st = useProjectStore.getState();
+          await st.openFile(bib.file);
+          await new Promise((r) => setTimeout(r, 60));
+          const ed = editorRef.current;
+          if (ed) {
+            const m = ed.getModel();
+            if (m) {
+              const lineNo = Math.min(bib.line, m.getLineCount());
+              ed.revealLineInCenter(lineNo);
+              ed.setPosition({ lineNumber: lineNo, column: 1 });
+              ed.focus();
+            }
+          }
+        }
+      } catch {
+        /* navigation failures are silent */
+      }
+    });
     // paste interception: a clipboard image (screenshot) is imported into the
     // project and inserted through the image dialog instead of raw pasting
     const dom = editor.getDomNode();
@@ -325,7 +412,9 @@ export default function EditorPane() {
     dom?.addEventListener("paste", onPaste);
     editor.onDidDispose(() => {
       dom?.removeEventListener("paste", onPaste);
+      window.removeEventListener("tb:reveal", onReveal);
       hoverProvider.dispose();
+      linkProvider.dispose();
     });
   };
 
@@ -594,6 +683,38 @@ export default function EditorPane() {
             }}
           >
             {t("editor.translate")}
+          </button>
+          <button
+            className="btn-mini"
+            title={t("editor.polishTitle")}
+            disabled={!active}
+            onClick={async () => {
+              const ed = editorRef.current;
+              if (!ed || !active) return;
+              const sel = ed.getSelection();
+              const text = sel ? ed.getModel()?.getValueInRange(sel) ?? "" : "";
+              if (!text.trim()) {
+                window.alert(t("editor.polishEmpty"));
+                return;
+              }
+              const mode = window.prompt(t("editor.polishAsk"));
+              if (!mode) return;
+              const m = (mode.includes("压缩") || mode.includes("精简") || mode.toLowerCase().includes("compress"))
+                ? "compress"
+                : mode.includes("扩展") || mode.toLowerCase().includes("expand")
+                  ? "expand"
+                  : "academic";
+              try {
+                const polished = await api.aiPolish(text, m);
+                if (sel && polished.trim()) {
+                  ed.executeEdits("polish", [{ range: sel, text: polished }]);
+                }
+              } catch (e) {
+                window.alert(String(e));
+              }
+            }}
+          >
+            ✎ {t("editor.polish")}
           </button>
           <button
             className="btn-mini"

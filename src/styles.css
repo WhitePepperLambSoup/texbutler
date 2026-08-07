@@ -667,7 +667,46 @@ body {
   overflow: hidden;
 }
 
+/* TODO/FIXME scanner rows */
+.todo-row {
+  display: grid;
+  grid-template-columns: auto 34px 1fr;
+  gap: 6px;
+  align-items: baseline;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+.todo-row:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.todo-file {
+  color: var(--fg-dim);
+  font-size: 11px;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.todo-line {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.todo-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .toast {
+
   position: fixed;
   bottom: 34px;
   left: 50%;
@@ -1930,3 +1969,23 @@ body {
 .diff-text {
   flex: 1;
 }
+
+/* CSV paste -> booktabs table */
+.table-csv {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+  margin: 8px 0;
+}
+.table-csv-input {
+  flex: 1;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  border-radius: 4px;
+  padding: 6px;
+  resize: vertical;
+}
+

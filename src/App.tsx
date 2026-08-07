@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import ProjectTree from "./components/ProjectTree";
 import OutlinePanel from "./components/OutlinePanel";
 import BibPanel from "./components/BibPanel";
+import TodoPanel from "./components/TodoPanel";
 import EditorPane from "./components/Editor";
 import PdfPreview from "./components/PdfPreview";
 import ProblemsPanel from "./components/ProblemsPanel";
@@ -56,7 +57,7 @@ export default function App() {
   const busy = useAiStore((s) => s.busy);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pdfRev, setPdfRev] = useState(0);
-  const [leftTab, setLeftTab] = useState<"tree" | "outline" | "bib">("tree");
+  const [leftTab, setLeftTab] = useState<"tree" | "outline" | "bib" | "todo">("tree");
   const [compileTarget, setCompileTarget] = useState<string>("main");
   const [roots, setRoots] = useState<string[]>([]);
   const [pdfPage, setPdfPage] = useState<number | null>(null);
@@ -420,10 +421,18 @@ export default function App() {
             >
               {t("bib.title")}
             </button>
+            <button
+              className={`tree-tab ${leftTab === "todo" ? "active" : ""}`}
+              onClick={() => setLeftTab("todo")}
+              title={t("todo.title")}
+            >
+              TODO
+            </button>
           </div>
           {leftTab === "tree" && <ProjectTree />}
           {leftTab === "outline" && <OutlinePanel />}
           {leftTab === "bib" && <BibPanel />}
+          {leftTab === "todo" && <TodoPanel />}
         </aside>
         <main className="col-editor">
           <EditorPane />

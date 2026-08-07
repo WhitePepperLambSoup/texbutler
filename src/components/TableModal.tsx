@@ -15,8 +15,51 @@ export default function TableModal({ onCancel, onConfirm }: Props) {
   const [align, setAlign] = useState("lcc"); // one char per column
   const [header, setHeader] = useState(true);
   const [caption, setCaption] = useState("");
+  const [csv, setCsv] = useState("");
 
   const clamp = (v: number) => Math.min(12, Math.max(1, Math.round(v)));
+
+  /** Build a booktabs table from pasted CSV / TSV data (Excel copy-paste):
+   *  first row = header when `header` is checked; quoted fields with
+   *  embedded commas are handled. */
+  const buildFromCsv = (): string => {
+    const lines = csv.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+    const sep = lines.some((l) => l.includes("\t")) ? "\t" : ",";
+    const parseRow = (l: string): string[] => {
+      if (sep === "\t") return l.split("\t").map((c) => c.trim().replace(/^"|"$/g, ""));
+      // CSV: split on commas outside double-quoted sections
+      const parts: string[] = [];
+      let cur = "";
+      let inQ = false;
+      for (const ch of l) {
+        if (ch === '"') inQ = !inQ;
+        else if (ch === "," && !inQ) {
+          parts.push(cur.trim());
+          cur = "";
+        } else cur += ch;
+      }
+      parts.push(cur.trim());
+      return parts;
+    };
+    const grid = lines.map(parseRow);
+    const n = Math.max(...grid.map((r) => r.length));
+    const cell = (r: number, c: number) => grid[r]?.[c] ?? "";
+    const body = grid
+      .map((_, r) => `  ${Array.from({ length: n }, (_, c) => cell(r, c)).join(" & ")} \\\\`)
+      .join("\n");
+    const cap = caption.trim()
+      ? `  \\caption{${caption.trim()}}\n  \\label{tab:${Date.now().toString(36)}}\n`
+      : "";
+    return `\\begin{table}[H]
+\\centering
+${cap}\\begin{tabular}{${"l".repeat(n)}}
+\\toprule
+${body}
+\\bottomrule
+\\end{tabular}
+\\end{table}
+`;
+  };
 
   const build = () => {
     const n = clamp(cols);
@@ -97,6 +140,26 @@ ${headerRow}  ${body}
             {t("table.caption")}
             <input value={caption} onChange={(e) => setCaption(e.target.value)} placeholder={t("table.captionPlaceholder")} />
           </label>
+          <div className="table-csv">
+            <textarea
+              className="table-csv-input"
+              placeholder={t("table.csvPlaceholder")}
+              value={csv}
+              onChange={(e) => setCsv(e.target.value)}
+              rows={3}
+              spellCheck={false}
+            />
+            <button
+              className="btn btn-mini"
+              disabled={!csv.trim()}
+              onClick={() => {
+                const code = buildFromCsv();
+                if (code) onConfirm(code);
+              }}
+            >
+              {t("table.csvGenerate")}
+            </button>
+          </div>
           <div className="table-preview" dir="ltr">
             {Array.from({ length: Math.min(rows, 6) }, (_, r) => (
               <div key={r} className="table-preview-row">
