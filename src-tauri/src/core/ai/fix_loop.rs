@@ -375,6 +375,13 @@ fn deterministic_fix(content: &str, issue: &Issue) -> Option<String> {
         return fix_paragraph_gluing(content);
     }
 
+    // 5) CJK/ASCII spacing (rule "cjk_spacing"): insert spaces between
+    //    Chinese characters and adjacent ASCII letters (deterministic).
+    if issue.rule_id.as_deref() == Some("cjk_spacing") {
+        let fixed = crate::core::rules::cjk_spacing::fix_cjk_spacing(content);
+        return if fixed != content { Some(fixed) } else { None };
+    }
+
     None
 }
 

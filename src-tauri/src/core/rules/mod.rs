@@ -4,6 +4,7 @@
 
 pub mod bold;
 pub mod bom;
+pub mod cjk_spacing;
 pub mod color;
 pub mod float;
 pub mod italic;
@@ -52,6 +53,7 @@ pub fn all_rules() -> Vec<Box<dyn Rule>> {
         Box::new(missing_end::MissingEndRule),
         Box::new(bom::BomRule),
         Box::new(refs::RefsRule),
+        Box::new(cjk_spacing::CjkSpacingRule),
     ]
 }
 
@@ -158,7 +160,7 @@ mod tests {
     #[test]
     fn registry_has_ten_rules() {
         let rules = all_rules();
-        assert_eq!(rules.len(), 10);
+        assert_eq!(rules.len(), 11);
         let ids: Vec<_> = rules.iter().map(|r| r.id()).collect();
         for expected in [
             "percent",

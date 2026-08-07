@@ -221,7 +221,10 @@ pub async fn tb_ai_fix(
 
 /// True when the issue has a deterministic fix (never needs the AI).
 fn is_deterministic_rule_issue(issue: &Issue) -> bool {
-    issue.rule_id.as_deref() == Some("paragraph")
+    matches!(
+        issue.rule_id.as_deref(),
+        Some("paragraph") | Some("cjk_spacing")
+    )
 }
 
 /// Fix a RULE issue (e.g. paragraph gluing, dangling refs): the issue is
