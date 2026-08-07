@@ -131,7 +131,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
     // crash recovery: a saved draft (unsaved edits from a previous session)
     // wins over the disk content when it differs
-    const draft = loadDraft(rel);
+    const root = get().root;
+    const draft = loadDraft(root, rel);
     const finalContent = draft !== null && draft !== content ? draft : content;
     const restored = draft !== null && draft !== content;
     set({
@@ -166,7 +167,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       ),
     });
     if (stillSame) {
-      clearDraft(tab.path);
+      clearDraft(get().root, tab.path);
       window.dispatchEvent(new Event("tb:file-saved"));
     }
   },
@@ -226,7 +227,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const cur = get();
     const stillThere = cur.tabs.some((t) => t.path === rel);
     if (!stillThere) return;
-    clearDraft(rel);
+    clearDraft(get().root, rel);
     const next = cur.tabs.filter((t) => t.path !== rel);
     const nextActive =
       rel === cur.activeTab

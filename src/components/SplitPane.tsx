@@ -48,7 +48,7 @@ export default function SplitPane({
           useProjectStore.setState((s) => ({
             tabs: s.tabs.map((t) => (t.path === file ? { ...t, dirty: false } : t)),
           }));
-          clearDraft(file);
+          clearDraft(useProjectStore.getState().root, file);
           window.dispatchEvent(new CustomEvent("tb:file-saved"));
         }
       } catch {

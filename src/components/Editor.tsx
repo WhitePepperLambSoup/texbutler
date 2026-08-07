@@ -859,7 +859,7 @@ export default function EditorPane() {
             if (v !== undefined && v !== null) {
               setTabContent(active.path, v);
               // crash recovery: debounced draft for unsaved edits
-              saveDraft(active.path, v);
+              saveDraft(useProjectStore.getState().root, active.path, v);
             }
           }}
           options={{
