@@ -2189,7 +2189,7 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.split-pane > .monaco-editor, .split-pane > section {
+.split-pane > section {
   flex: 1;
 }
 

@@ -31,13 +31,18 @@ export default function SplitPane({
     return () => mo.disconnect();
   }, [ensureTab, file]);
 
-  // save THIS pane's file (not the active tab — those are different)
+  // save THIS pane's file (not the active tab — those are different),
+  // then clear the dirty flag and notify listeners like saveFile does
   const saveAndClose = async () => {
     const st = useProjectStore.getState();
     const tab = st.tabs.find((t) => t.path === file);
     if (tab?.dirty) {
       try {
         await api.writeFile(tab.path, tab.content);
+        useProjectStore.setState((s) => ({
+          tabs: s.tabs.map((t) => (t.path === file ? { ...t, dirty: false } : t)),
+        }));
+        window.dispatchEvent(new CustomEvent("tb:file-saved"));
       } catch {
         /* keep the pane open on failure so edits are not lost */
         return;
@@ -67,7 +72,7 @@ export default function SplitPane({
         theme={theme}
         value={tab?.content ?? ""}
         onChange={(v) => {
-          if (v !== undefined && tab && tab.dirty !== undefined) {
+          if (v !== undefined && tab) {
             setTabContent(file, v);
           }
         }}

@@ -176,11 +176,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   async ensureTab(rel: string) {
-    const st = get();
-    if (st.tabs.some((t) => t.path === rel)) return;
+    if (get().tabs.some((t) => t.path === rel)) return;
     try {
       const content = await api.readFile(rel);
-      set({ tabs: [...st.tabs, { path: rel, content, dirty: false }] });
+      // re-read inside set: a concurrent openFile may have added the tab
+      set((s) => {
+        if (s.tabs.some((t) => t.path === rel)) return s;
+        return { tabs: [...s.tabs, { path: rel, content, dirty: false }] };
+      });
     } catch {
       /* missing file — the split pane shows empty */
     }
