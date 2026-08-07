@@ -47,6 +47,10 @@ export default function TableModal({ onCancel, onConfirm }: Props) {
     const body = grid
       .map((_, r) => `  ${Array.from({ length: n }, (_, c) => cell(r, c)).join(" & ")} \\\\`)
       .join("\n");
+    // first row as a bold header line when the header checkbox is on
+    const headerLine = header && grid.length > 1
+      ? body.split("\n")[0] + "\n\\midrule\n" + body.split("\n").slice(1).join("\n")
+      : body;
     const cap = caption.trim()
       ? `  \\caption{${caption.trim()}}\n  \\label{tab:${Date.now().toString(36)}}\n`
       : "";
@@ -54,7 +58,7 @@ export default function TableModal({ onCancel, onConfirm }: Props) {
 \\centering
 ${cap}\\begin{tabular}{${"l".repeat(n)}}
 \\toprule
-${body}
+${headerLine}
 \\bottomrule
 \\end{tabular}
 \\end{table}
