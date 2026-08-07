@@ -90,6 +90,7 @@ export default function AiPanel() {
           value={sessionId ?? ""}
           onChange={(e) => switchSession(e.target.value || null)}
           title={t("ai.sessionTitle")}
+          disabled={busy}
         >
           <option value="">{t("ai.sessionScratch")}</option>
           {sessions.map((s) => (
@@ -102,6 +103,7 @@ export default function AiPanel() {
           className="btn-mini"
           title={t("ai.sessionNew")}
           onClick={newSession}
+          disabled={busy}
         >
           +
         </button>
@@ -110,6 +112,7 @@ export default function AiPanel() {
             <button
               className="btn-mini"
               title={t("ai.sessionRename")}
+              disabled={busy}
               onClick={() => {
                 const name = window.prompt(t("ai.sessionRename"), sessions.find((s) => s.id === sessionId)?.name ?? "");
                 if (name) renameSession(sessionId, name);
@@ -120,6 +123,7 @@ export default function AiPanel() {
             <button
               className="btn-mini"
               title={t("ai.sessionDelete")}
+              disabled={busy}
               onClick={() => {
                 if (window.confirm(t("ai.sessionDeleteConfirm"))) deleteSession(sessionId);
               }}

@@ -103,20 +103,19 @@ export default function App() {
     });
     // auto-save: persist the active dirty tab on a configurable interval
     // (0 = off; the setting lives in localStorage, surfaced in Settings).
-    // The interval is re-read on every tick so changes apply immediately.
+    // A 1s tick accumulates elapsed time and only saves once the chosen
+    // interval has passed — the setting applies exactly.
+    let lastSave = Date.now();
     const autoSaveIv = setInterval(() => {
       const secs = Number(localStorage.getItem("tb-autosave-secs") ?? "30");
       if (secs <= 0) return;
+      if (Date.now() - lastSave < secs * 1000) return;
+      lastSave = Date.now();
       const st = useProjectStore.getState();
       if (!st.root || !st.activeTab) return;
       const tab = st.tabs.find((t) => t.path === st.activeTab);
       if (tab?.dirty) void st.saveFile();
-    }, 5000);
-    const onAutosavePref = (e: Event) => {
-      const v = (e as CustomEvent<number>).detail;
-      if (v === 0) clearInterval(autoSaveIv);
-    };
-    window.addEventListener("tb:autosave-pref", onAutosavePref);
+    }, 1000);
     // SyncTeX forward search: jump the PDF viewer to a page
     const onSynctex = (e: Event) => {
       const page = (e as CustomEvent<number>).detail;
@@ -126,7 +125,6 @@ export default function App() {
     return () => {
       unsub();
       clearInterval(autoSaveIv);
-      window.removeEventListener("tb:autosave-pref", onAutosavePref);
       window.removeEventListener("tb:synctex-page", onSynctex);
     };
   }, []);
