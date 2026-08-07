@@ -16,7 +16,7 @@
 6. **End-to-end verifiable** — real-API + real-compile e2e tests (`cargo test --test e2e_ai -- --ignored`) validate every layer of the fix loop.
 7. **Liquid Glass UI (v0.4.0)** — default glassmorphism theme: animated gradient light blobs behind frosted-glass panels with specular highlights; three themes (liquid glass / classic dark / classic light) switchable from the toolbar and persisted; the Monaco editor theme follows. Monaco is bundled locally — fully offline, no CDN. Always-visible quick math symbols (α β γ δ θ λ π √ ∫ ∞ ± ≤) plus a 90-symbol panel.
 8. **Dangling-ref rule + smart completions (v0.5.0)** — rule #10 checks every `\ref` against the project's `\label`s and every `\cite` against the `.bib` keys before you compile; `\ref{` / `\cite{` autocomplete from the live project index. Word count (comments/commands excluded) in the status bar; visual booktabs table generator; AI translate that preserves the LaTeX structure; SyncTeX forward search ("locate in PDF"); multi-document compile targets; LaTeX → Markdown/Word export; debounced save-triggered auto compile.
-9. **AI co-editing (v0.6.0)** — chat with the AI and it edits your files: ask in plain language ("change the title to…", "add a three-line table") and the AI applies a minimal diff automatically, snapshotted first so you can roll it back from the message bubble after compiling. The AI panel is a collapsible right-side rail (34px strip when closed). Streaming replies, selection-based questions, session token usage with cost estimate, and a per-project `AI_GUIDE.md` style guide generated from your requirements and injected into every AI prompt.
+9. **AI co-editing (v0.6.0)** — chat with the AI and it edits your files: ask in plain language ("change the title to…", "add a page break before every question") and the AI replies with declarative tool calls (insert / replace / delete) that the program executes precisely — batched, with automatic retry, no fragile diff parsing. Every edit is snapshotted first and lands in the editor and PDF preview instantly (compile-verify loop: the AI recompiles after each change and self-heals one round on failure). The AI knows your document (class, packages, CJK support, compiler engine), remembers the conversation, and never clobbers unsaved typing. The panel is a collapsible right-side rail (34px strip when closed), with streaming replies, selection-based questions, session token usage with cost estimate, and a per-project `AI_GUIDE.md` style guide injected into every AI prompt.
 
 ## Tech Stack
 
@@ -63,14 +63,14 @@ On the first compile, Tectonic downloads resources on demand from `https://relay
 2. Open `main.tex` in the file tree and edit (`Ctrl+S` saves & triggers rule checks; `Ctrl+B` compiles, `Ctrl+Shift+B` compiles the current file; right-click a `.tex` file to set it as main);
 3. Click **▶ Compile** → PDF preview on the right; the "Compile errors" panel lists errors with real line numbers (click to jump); the "Log" button shows the raw `main.log`;
 4. Select an error → **AI explain** (plain-Chinese explanation + fix advice) or **AI fix** (deterministic fix → AI diff → audit → apply → recompile → auto-rollback);
-5. The "Rule check" tab shows the 10 Chinese-LaTeX rule hits (with fix hints), toggleable in Settings;
+5. The "Rule check" tab shows the 10 Chinese-LaTeX rule hits (with fix hints and one-click deterministic fixes), toggleable in Settings;
 6. The status bar shows engine / duration / issue count; Settings shows system-font detection and bundle status.
 
 ### v0.2.0 writing aids
 
 - **Insert image**: click the image button in the editor toolbar, pick an image — it is copied into the project and a `figure`/`includegraphics` block is inserted at the cursor.
 - **Quick formats**: toolbar buttons for paragraph / section / bold / inline & display math / lists / tables.
-- **AI generate**: type a request in the AI panel (e.g. "generate a three-line booktabs table") → AI returns LaTeX → insert into the editor or save as a new file.
+- **AI generate**: type a request in the AI panel (e.g. "generate a three-line booktabs table") → the AI writes the code straight into your file (or returns it as a reply), with one-click rollback.
 - **Word import**: toolbar **Word→LaTeX** → pick a `.docx` → headings/paragraphs/tables are parsed and AI generates a complete compilable LaTeX document.
 - **Templates**: the star button in the project tree saves the current project as a reusable template; the new-project dialog lists built-in + user templates (user ones can be deleted).
 - **Math symbols**: the αβ button opens a 36-symbol panel (α β γ … ∑ ∫ √ ± ≤ ≥ ≈ ≠ ∈ ∀ ∃) — click to type, no need to memorize commands.
@@ -114,14 +114,18 @@ On the first compile, Tectonic downloads resources on demand from `https://relay
 | `missing_end` | `\begin{document}` without `\end{document}` | error |
 | `bom` | UTF-8 BOM header | warning |
 
-The registry is extensible: add a file under `src-tauri/src/core/rules/` and register it in `all_rules()`.
+The registry is extensible: add a file under `src-tauri/src/core/rules/` and register it in `all_rules()`. Most hits offer a one-click deterministic fix (e.g. glued paragraphs are repaired in batch without AI).
 
 ## AI Fix Loop (architecture)
 
-1. **Deterministic fixes** (no AI): missing xcolor → add `\usepackage{xcolor}`; standalone undefined command → delete exactly the compiler-reported line; missing `\end{document}` → append.
+1. **Deterministic fixes** (no AI): missing xcolor → add `\usepackage{xcolor}`; standalone undefined command → delete exactly the compiler-reported line; missing `\end{document}` → append; glued-paragraph batches (one click fixes them all, no AI needed).
 2. **AI diff generation**: project file inventory injected (the AI must never reference non-existent files) + full numbered source on later rounds (prevents line-number hallucination) + per-error-type handling rules.
 3. **Diff audit**: referenced-file existence check, content-based hunk location for line-number drift, ambiguity rejection, no-op pair cleanup, `*** End of diff` trailing-marker tolerance.
 4. **Progressive verification**: track the currently failing error, keep applied fixes, real compile after every round, ≤3 rounds, automatic rollback to the original (snapshots in `.texbutler/backup/`).
+
+### Conversational edits (tool-call channel)
+
+AI replies in the chat panel use the same hardened pipeline through **declarative tool calls** instead of free-form diffs: `insert_before` / `insert_after` / `replace` / `delete_line` with anchor-text matching (unique-match enforced, line numbers optional). The program executes them deterministically — a batch of calls applies atomically per file, each file gets its own snapshot and rollback entry, and a failed apply automatically retries once with the fresh file content. Free-form diffs remain as a fallback. After every edit the AI recompiles; on failure the errors feed back for one self-healing round, and the result (editor + PDF preview + diagnostics) syncs automatically — except into tabs you are actively typing in.
 
 ## AI Configuration
 
@@ -133,7 +137,7 @@ Settings support three providers (base_url / model / key persisted to `%APPDATA%
 
 2026-08 model presets: GPT-5.6 Luna/Terra, DeepSeek V4 Flash/Pro, Qwen3.7-Plus, Claude Sonnet-5/Haiku-4.5, Ollama Qwen3.5.
 
-Security: AI requests only receive the error snippet + a local context window (20 lines around; the full file on later rounds), never other files; the API key is stored locally and never logged; fixes always preview the diff first and every write is snapshotted for rollback.
+Security: AI requests only receive the error snippet + a local context window (20 lines around; the full file on later rounds), never other files; the API key is stored locally and never logged; fixes always preview the diff first and every write is snapshotted for rollback. Edits are limited to a `.tex/.bib/.sty/.cls` allowlist (`AI_GUIDE.md` and `.texbutler` are protected), paths are normalized against traversal, and guide injections ignore behavior-directive attempts.
 
 ## License
 
