@@ -56,20 +56,29 @@ pub async fn tb_bib_from_id(identifier: String) -> Result<String, String> {
             .text()
             .await
             .map_err(|e| format!("arXiv 响应读取失败: {e}"))?;
+        // the feed has a top-level <title> ("arXiv Query: ..."); the actual
+        // paper metadata lives inside the first <entry> block
+        let entry_start = xml.find("<entry>").ok_or_else(|| "arXiv 未返回结果：请检查编号是否正确".to_string())?;
+        let entry_end = xml[entry_start..]
+            .find("</entry>")
+            .map(|e| entry_start + e)
+            .unwrap_or(xml.len());
+        let entry = &xml[entry_start..entry_end];
         let grab = |tag: &str| -> String {
             let pat = format!("<{tag}>");
             let end = format!("</{tag}>");
-            xml.find(&pat)
+            entry
+                .find(&pat)
                 .and_then(|s| {
-                    let e = xml[s + pat.len()..].find(&end)?;
-                    Some(xml[s + pat.len()..s + pat.len() + e].trim().to_string())
+                    let e = entry[s + pat.len()..].find(&end)?;
+                    Some(entry[s + pat.len()..s + pat.len() + e].trim().to_string())
                 })
                 .unwrap_or_default()
         };
         let title = grab("title").replace("  ", " ");
         let published = grab("published");
         let year = published.chars().take(4).collect::<String>();
-        let authors: Vec<String> = xml
+        let authors: Vec<String> = entry
             .split("<name>")
             .skip(1)
             .map(|s| s.split("</name>").next().unwrap_or("").trim().to_string())

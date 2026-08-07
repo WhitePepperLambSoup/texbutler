@@ -127,10 +127,24 @@ async function main() {
   })()`);
   console.log("DOI -> BIB:", (bibRes || "").slice(0, 100).replace(/\n/g, " "));
 
+  // 3b) arXiv -> BibTeX: real export.arxiv.org call (1706.03762 is the
+  //     classic "Attention Is All You Need" paper)
+  const arxRes = await exec(`(async () => {
+    const { api } = await import('/src/api/index.ts');
+    try {
+      return await api.bibFromId('1706.03762');
+    } catch (e) {
+      return 'ERR:' + e;
+    }
+  })()`);
+  console.log("ARXIV -> BIB:", (arxRes || "").slice(0, 120).replace(/\n/g, " "));
+
   c.close();
   await rm(PROJ, { recursive: true, force: true }).catch(() => {});
   const pass = bigSize > 1_048_576 && envOk.includes("\\end{itemize}") && compressOk &&
-    typeof bibRes === "string" && bibRes.includes("@article") && !bibRes.startsWith("ERR");
+    typeof bibRes === "string" && bibRes.includes("@article") && !bibRes.startsWith("ERR") &&
+    typeof arxRes === "string" && arxRes.includes("@article") && !arxRes.startsWith("ERR") &&
+    /Attention Is All You Need/i.test(arxRes);
   console.log("E2E-DONE", pass ? "PASS" : "FAIL");
 }
 
