@@ -2044,3 +2044,110 @@ body {
   font-size: 12px;
 }
 
+
+/* Template marketplace */
+.market-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 10px 0 8px;
+}
+.market-tab {
+  padding: 4px 12px;
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px 4px 0 0;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+.market-tab.active {
+  color: var(--fg);
+  border-color: var(--accent);
+  border-bottom-color: transparent;
+}
+.market-panel {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  max-height: 300px;
+  overflow: auto;
+}
+.market-toolbar {
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg2);
+}
+.market-search {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+.market-cat {
+  font-size: 12px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.market-list {
+  display: flex;
+  flex-direction: column;
+}
+.market-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 2px 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+}
+.market-card:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.market-card:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+.market-card.template-active {
+  outline: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.market-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+.market-desc {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+.market-meta {
+  font-size: 11px;
+  color: var(--fg-dim);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.market-ready {
+  color: var(--accent);
+}
+.market-dl {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+}
+

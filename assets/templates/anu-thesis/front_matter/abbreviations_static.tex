@@ -1,0 +1,26 @@
+% =============================================================================
+% ABBREVIATIONS LIST (front matter)
+% =============================================================================
+% This list is generated automatically from your \gls{} usage throughout
+% the thesis. Only abbreviations you have actually used with \gls{} will
+% appear here — abbreviations defined but never used are excluded.
+%
+% To add a new abbreviation:
+%   1. Open abbreviations.tex
+%   2. Add:  \newabbreviation{KEY}{SHORT}{Long form}
+%   3. Use it in your text with \gls{KEY}
+%   The entry will appear here automatically on next compile.
+%
+% The output format (bold short form, aligned long form) is identical
+% to a hand-typed tabbing list — no manual formatting needed.
+% =============================================================================
+
+\begin{abbreviations}
+% Suppress the glossary's own section heading (which would trigger a page
+% break in the book class). The heading is already provided above by the
+% \begin{abbreviations} environment via \frontmatterchapter{Abbreviations}.
+\begingroup
+\renewcommand*{\glossarysection}[2][]{}%
+\printglossary[type=abbreviations, nonumberlist, title={}, style=abbrevtabbing]
+\endgroup
+\end{abbreviations}

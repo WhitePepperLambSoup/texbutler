@@ -1,0 +1,80 @@
+% !TeX program = pdflatex
+% !BIB program = biber
+% !TeX root = main.tex
+% =============================================================================
+% MAIN.TEX — Master document for the ANU MAE Thesis
+% =============================================================================
+%
+% This file controls the overall structure of your thesis.
+% Write your chapter content in the individual .tex files, not here.
+%
+% HOW TO COMPILE
+%   Overleaf:   click Recompile (Menu → Compiler → pdfLaTeX)
+%   TeXstudio:  press F5 (Build & View) — see README for one-time setup
+%   Terminal:   latexmk main.tex
+%
+% =============================================================================
+
+% =============================================================================
+% DOCUMENT FORMAT — activate ONE option by removing the leading %
+% Also update the matching geometry line in preamble.tex (same option number).
+% =============================================================================
+%
+% OPTION 1 — Digital submission (default)
+%   All margins 2.5 cm. Single-sided layout.
+\documentclass[a4paper, 11pt, oneside]{book}
+%
+% OPTION 2 — Hard copy, single-sided printing
+%   Wider left margin for binding. See preamble.tex Option 2 for margins.
+% \documentclass[a4paper, 11pt, oneside]{book}
+%
+% OPTION 3 — Hard copy, double-sided printing
+%   Wider inner (binding) margin on every page. See preamble.tex Option 3 for margins.
+% \documentclass[a4paper, 11pt, twoside]{book}
+%
+% =============================================================================
+
+\input{preamble}
+
+\begin{document}
+
+% =============================================================================
+% FRONT MATTER — Roman numeral page numbers (i, ii, iii...)
+% =============================================================================
+\frontmatter
+\pagestyle{plain}
+
+\include{titlepage/titlepage}
+\input{front_matter/originality_statement}
+\input{front_matter/acknowledgement}
+
+% Main table of contents — shows chapter titles only (tocdepth=0).
+% Each chapter has its own local TOC showing sections and subsections.
+\setcounter{tocdepth}{0}
+\setcounter{secnumdepth}{0}
+\tableofcontents
+
+\input{front_matter/abstract}
+
+% Abbreviations list — generated automatically from abbreviations.tex.
+% No manual updates needed; just define abbreviations in abbreviations.tex.
+\input{front_matter/abbreviations_static}
+
+
+% =============================================================================
+% MAIN MATTER — Arabic page numbers restart at 1
+% =============================================================================
+\mainmatter
+\pagestyle{fancy}
+
+% TO REORDER CHAPTERS: move \include lines into the order you want.
+% TO REMOVE A CHAPTER: comment out its line with % at the start.
+% TO ADD A CHAPTER:    copy an \include line and point it to your new .tex file.
+\include{experience/experience}
+\include{data_analysis/data_analysis}
+\include{surveillance/surveillance}
+\include{epistudy/epistudy}
+\include{outbreak/outbreak}
+\include{teaching/teaching}
+
+\end{document}

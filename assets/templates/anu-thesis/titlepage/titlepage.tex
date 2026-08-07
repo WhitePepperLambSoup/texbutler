@@ -1,0 +1,65 @@
+% =============================================================================
+% TITLE PAGE
+% =============================================================================
+% CHECKLIST — replace all placeholder text before submitting:
+%   [ ] TITLE OF THESIS         → your thesis title
+%   [ ] AUTHOR FULL NAME        → your full name (appears twice)
+%   [ ] YEAR -- YEAR            → e.g. 2024 -- 2026
+%   [ ] PLACEMENT UNIT,         → your unit name
+%   [ ] PLACEMENT DEPARTMENT    → your department / organisation
+%   [ ] Dr SUPERVISOR NAME      → academic supervisor's name and title
+%   [ ] Ms SUPERVISOR NAME 1    → first field supervisor's name and title
+%   [ ] Mr SUPERVISOR NAME 2    → second field supervisor's name and title
+%   [ ] Placement logo          → replace the TikZ placeholder (see below)
+%   [ ] YEAR (copyright)        → submission year
+%
+% PLACEMENT LOGO:
+%   Upload your logo to the titlepage/ folder, then replace the TikZ block with:
+%   \includegraphics[height=3.8cm]{titlepage/your_logo_filename.png}
+% =============================================================================
+
+\begin{titlepage}
+\begin{center}
+
+    \vspace*{1.3cm}
+
+    {\fontsize{20}{24}\selectfont\bfseries TITLE OF THESIS}
+    \vspace{1.3cm}
+
+    {\Large A thesis submitted for the degree of}\par
+    {\Large\itshape Master of Philosophy (Applied Epidemiology)}\par
+    {\Large of the Australian National University}\\
+    \vspace{1.3cm}
+
+    {\huge\bfseries AUTHOR FULL NAME}\\[0.5cm]
+    {\Large YEAR -- YEAR}\\
+    \vspace{1.3cm}
+
+    {\Large\itshape PLACEMENT UNIT,}\par
+    {\Large\itshape PLACEMENT DEPARTMENT}\\
+    \vspace{1.3cm}
+
+    \begin{tabular}{c @{\hspace{1cm}} c}
+        \begin{minipage}[t]{0.35\textwidth}
+            \centering
+            {\large\textbf{Academic supervisor:}}\\[0.5em]
+            Dr SUPERVISOR NAME\\[3cm]
+            \includegraphics[height=2.2cm]{titlepage/anu-logo-colour.pdf}
+        \end{minipage}
+        &
+        \begin{minipage}[t]{0.35\textwidth}
+            \centering
+            {\large\textbf{Field supervisors:}}\\[0.5em]
+            Ms SUPERVISOR NAME 1\\
+            Mr SUPERVISOR NAME 2\\[1.0cm]                          % remove if not needed
+            \includegraphics[height=3.8cm]{titlepage/nike.png}
+        \end{minipage}
+    \end{tabular}
+
+    \vspace{1.6cm}
+
+    {\small \textcopyright\ Copyright by AUTHOR FULL NAME, YEAR}\\
+    {\small All Rights Reserved}
+
+\end{center}
+\end{titlepage}

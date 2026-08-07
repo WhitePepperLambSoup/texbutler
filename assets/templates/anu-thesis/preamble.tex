@@ -1,0 +1,414 @@
+% ===================== Compiler =====================
+% This template uses pdfLaTeX (the default Overleaf compiler).
+% In Overleaf: Menu → Compiler → pdfLaTeX
+% Locally: run `latexmk main.tex` (see README and latexmkrc)
+
+% ===================== Core Packages =====================
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+
+% Pre-register xcolor options so makecell loading xcolor later doesn't warn
+\PassOptionsToPackage{table,xcdraw}{xcolor}
+
+% Declare Unicode characters that may appear in bibliography titles/fields
+% so pdfLaTeX does not error on them (Greek letters, math symbols).
+\DeclareUnicodeCharacter{03B1}{\ensuremath{\alpha}}   % α
+\DeclareUnicodeCharacter{03B2}{\ensuremath{\beta}}    % β
+\DeclareUnicodeCharacter{03B3}{\ensuremath{\gamma}}   % γ
+\DeclareUnicodeCharacter{03BC}{\ensuremath{\mu}}      % μ (Greek mu, distinct from µ micro)
+\DeclareUnicodeCharacter{2265}{\ensuremath{\geq}}     % ≥
+\DeclareUnicodeCharacter{2264}{\ensuremath{\leq}}     % ≤
+\DeclareUnicodeCharacter{2212}{\ensuremath{-}}        % − (minus sign)
+\DeclareUnicodeCharacter{F6D9}{\relax}                % private-use glyph in some PDF paths
+
+% Activate the geometry line that matches your chosen option in main.tex.
+% OPTION 1 — Digital submission: all margins 2.5 cm
+\usepackage[a4paper, margin=2.5cm]{geometry}
+% OPTION 2 — Hard copy, single-sided: left 4 cm (binding), top/right/bottom 2 cm
+% \usepackage[a4paper, left=4cm, top=2cm, right=2cm, bottom=2cm]{geometry}
+% OPTION 3 — Hard copy, double-sided: inner 4 cm (binding), outer/top/bottom 2 cm
+% \usepackage[a4paper, inner=4cm, outer=2cm, top=2cm, bottom=2cm]{geometry}
+
+\usepackage{ragged2e}
+\usepackage[none]{hyphenat}
+\usepackage{microtype}
+\usepackage{titlesec}
+\usepackage[english]{babel}
+\usepackage{xurl}
+\emergencystretch=3em
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{1em}
+\RaggedRight
+
+% ===================== Fonts =====================
+% Helvetica — visually equivalent to Arial, compatible with pdfLaTeX
+\usepackage[scaled]{helvet}
+\renewcommand\familydefault{\sfdefault}
+
+% ===================== Graphics and Layout =====================
+\usepackage{graphicx}
+\usepackage{rotating}
+\usepackage{pdfpages}
+\usepackage{emptypage}
+\usepackage{needspace}
+\usepackage{adjustbox}
+\usepackage{pdflscape}
+\usepackage{afterpage}
+\graphicspath{ {figures/} }
+
+% ===================== Floats and Tables =====================
+\usepackage{threeparttable}
+\usepackage{float}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage{makecell}
+\usepackage{array}
+\renewcommand{\arraystretch}{1.2}
+
+% ===================== Captions =====================
+\usepackage[font=it,justification=raggedright,singlelinecheck=false,hypcap=false]{caption}
+\setlength{\abovecaptionskip}{4pt}
+\setlength{\belowcaptionskip}{4pt}
+
+\DeclareCaptionType{textbox}[Box][List of boxes]
+
+% ===================== TOC and Lists =====================
+\usepackage[nottoc,notlof,notlot]{tocbibind}
+\usepackage[title,titletoc]{appendix}
+\usepackage{etoc}
+
+\renewcommand{\contentsname}{Table of Contents}
+\renewcommand{\listfigurename}{List of Figures}
+\renewcommand{\listtablename}{List of Tables}
+
+% --- Make TOC chapter entries bold ---
+\makeatletter
+\renewcommand*{\l@chapter}[2]{%
+  \addpenalty{-\@highpenalty}%
+  \vskip 1.0em
+  \@dottedtocline{0}{0em}{3em}{\bfseries #1}{\bfseries #2}%
+}
+\makeatother
+
+% --- Section formatting in TOC ---
+\makeatletter
+\renewcommand*\l@section[2]{%
+  \vspace{0.4em}%
+  \@dottedtocline{1}{1.5em}{3.2em}{\bfseries #1}{\bfseries #2}%
+}
+% Subsection numbers start level with the section name (indent = 1.5em + 3.2em = 4.7em)
+\renewcommand*\l@subsection[2]{%
+  \@dottedtocline{2}{4.7em}{3.2em}{#1}{#2}%
+}
+\makeatother
+
+% --- Hide Contents from TOC itself but add PDF bookmark ---
+\let\temptableofcontents\tableofcontents
+\renewcommand{\tableofcontents}{
+  \renewcommand{\contentsname}{Table of contents}
+  \cleardoublepage
+  \pdfbookmark[0]{\contentsname}{toc}
+  \temptableofcontents
+}
+
+% Set up etoc depth tags for chapters vs appendices
+\etocsettagdepth{mtchapter}{subsection}
+\etocsettagdepth{mtappendix}{none}
+
+% Local table of contents (one per chapter)
+\newcommand{\localtoc}{%
+  \etocsettocstyle{\section*{Table of contents}}{}
+  \begingroup
+  \setlength{\parskip}{1pt}
+  \etocsetnexttocdepth{subsection}
+  \localtableofcontents
+  \endgroup
+}
+
+% ── Per-chapter local figure / table lists ─────────────────────────────────
+% Strategy: mirror each lof/lot \addcontentsline call into the .toc file as
+% custom 'lofitem'/'lotitem' entries. \locallistoffigures / \locallistoftables
+% read those back per-chapter via etoc's \localtableofcontents.
+%
+% The patch is installed via \AddToHook{begindocument/end} — which fires after
+% ALL other begindocument hooks (including hyperref's), so we capture the truly
+% final \addcontentsline.  Using \edef expands the file-extension argument
+% before comparison so the \ifx test works correctly even when the argument is
+% a \csname...\endcsname token.  The hook body contains NO # characters,
+% avoiding the LaTeX 2025 L3 hook issue where ## is not halved to #.
+
+\etocsetlevel{lofitem}{5}
+\etocsetlevel{lotitem}{5}
+
+\renewcommand{\locallistoffigures}{%
+  \begingroup
+  \etocsettagdepth{mtchapter}{5}%
+  \etocsetlevel{lotitem}{6}%     % push tables to etoc's "never shown" sentinel depth
+  \etocsetlevel{lofitem}{5}%     % keep figures at depth 5
+  \RaggedRight
+  \setlength{\parskip}{0.5em}
+  \etocsettocstyle{\section*{List of figures}}{}%
+  \etocsetstyle{chapter}{}{}{}{}%
+  \etocsetstyle{section}{}{}{}{}%
+  \etocsetstyle{subsection}{}{}{}{}%
+  \etocsetstyle{subsubsection}{}{}{}{}%
+  \etocsetstyle{paragraph}{}{}{}{}%
+  \etocsetstyle{subparagraph}{}{}{}{}%
+  \etocsetstyle{lofitem}{}{}{\noindent\hangindent=2.5em\hangafter=1\etoclink{\makebox[2.5em][l]{\etocnumber}\etocname}\dotfill\etocthelinkedpage\par}{}%
+  \etocsetnexttocdepth{5}%
+  \localtableofcontents
+  \endgroup
+}
+
+\renewcommand{\locallistoftables}{%
+  \begingroup
+  \etocsettagdepth{mtchapter}{5}%
+  \etocsetlevel{lofitem}{6}%     % push figures to etoc's "never shown" sentinel depth
+  \etocsetlevel{lotitem}{5}%     % keep tables at depth 5
+  \RaggedRight
+  \setlength{\parskip}{0.5em}
+  \etocsettocstyle{\section*{List of tables}}{}%
+  \etocsetstyle{chapter}{}{}{}{}%
+  \etocsetstyle{section}{}{}{}{}%
+  \etocsetstyle{subsection}{}{}{}{}%
+  \etocsetstyle{subsubsection}{}{}{}{}%
+  \etocsetstyle{paragraph}{}{}{}{}%
+  \etocsetstyle{subparagraph}{}{}{}{}%
+  \etocsetstyle{lotitem}{}{}{\noindent\hangindent=2.5em\hangafter=1\etoclink{\makebox[2.5em][l]{\etocnumber}\etocname}\dotfill\etocthelinkedpage\par}{}%
+  \etocsetnexttocdepth{5}%
+  \localtableofcontents
+  \endgroup
+}
+
+% ── Per-chapter lof/lot mirror patch ────────────────────────────────────────
+\makeatletter
+\def\@ltl@lof{lof}%
+\def\@ltl@lot{lot}%
+\def\@ltl@patched@addcontentsline#1#2#3{%
+  \@ltl@orig@addcontentsline{#1}{#2}{#3}%
+  \edef\@ltl@ext{#1}%
+  \ifx\@ltl@ext\@ltl@lof
+    \addtocontents{toc}{\protect\contentsline{lofitem}{#3}{\thepage}{\@currentHref}}%
+  \else
+    \ifx\@ltl@ext\@ltl@lot
+      \addtocontents{toc}{\protect\contentsline{lotitem}{#3}{\thepage}{\@currentHref}}%
+    \fi
+  \fi
+}%
+\AddToHook{begindocument/end}{%
+  \global\let\@ltl@orig@addcontentsline\addcontentsline
+  \global\let\addcontentsline\@ltl@patched@addcontentsline
+}%
+\makeatother
+
+% --- Front matter unnumbered chapter heading ---
+\newcommand{\frontmatterchapter}[1]{%
+  \titleformat{\chapter}[hang]{\normalfont\huge\bfseries}{}{0pt}{}%
+  \titlespacing*{\chapter}{0pt}{0cm}{1em}
+  \chapter*{#1}%
+  \addcontentsline{toc}{chapter}{#1}%
+  \titleformat{\chapter}[hang]{\normalfont\huge\bfseries}{\thechapter}{1em}{}%
+  \titlespacing*{\chapter}{0pt}{3.5cm}{1em}%
+}
+
+
+% ===================== Dynamic Abbreviations =====================
+% Abbreviations auto-expand on first use per chapter (e.g. "polymerase chain
+% reaction (PCR)") and show only the short form thereafter.
+% Add new abbreviations to abbreviations.tex:
+%   \newabbreviation{KEY}{SHORT}{Long form}
+% Use in text with \gls{KEY}
+\usepackage[abbreviations,nomain]{glossaries-extra}
+\makeglossaries
+\input{abbreviations.tex}
+
+% Glossary style that matches the front-matter tabbing layout exactly.
+% Used by front_matter/abbreviations_static.tex to auto-generate the
+% printed abbreviations list from only the abbreviations actually used
+% with \gls{} — no manual maintenance required.
+\newglossarystyle{abbrevtabbing}{%
+  \renewenvironment{theglossary}%
+    {\begin{tabbing}\hspace{3cm}\=\kill}%
+    {\end{tabbing}}%
+  \renewcommand*{\glossaryheader}{}%
+  \renewcommand*{\glsgroupheading}[1]{}%
+  \renewcommand*{\glsgroupskip}{}%
+  \renewcommand*{\glossentry}[2]{%
+    \textbf{\glsentryshort{##1}}\>\glsentrylong{##1}\\%
+  }%
+  \renewcommand*{\subglossentry}[3]{%
+    \textbf{\glsentryshort{##2}}\>\glsentrylong{##2}\\%
+  }%
+}
+
+
+% ===================== References =====================
+%
+% ZOTERO INTEGRATION — choose one option:
+%
+% Option A — One-time export:
+%   Zotero → File → Export Library → Format: Better BibLaTeX
+%   Save as reference_library.bib and upload to your Overleaf project.
+%
+% Option B — Continuous sync (recommended for active writing):
+%   1. Install the Better BibTeX plugin: https://retorque.re/zotero-better-bibtex/
+%   2. Zotero → right-click your library/collection → Export Collection
+%      Format: Better BibLaTeX  |  tick "Keep updated"
+%   3. This creates a live-synced .bib file on your computer.
+%      Re-upload to Overleaf whenever references change.
+%
+% CITING REFERENCES
+%   Use \cite{key} anywhere in the text — superscript numbers are inserted
+%   automatically and a reference list is printed at the end of each chapter.
+%   The citation key is shown in the "Citation Key" field in Zotero (visible
+%   with Better BibTeX installed, e.g. smith_descriptive_2024).
+
+\usepackage{csquotes}
+
+\usepackage[
+  backend=biber,
+  style=numeric-comp,
+  autocite=superscript,
+  sorting=none,
+  language=british,
+  date=year,
+  dateabbrev=false,
+  maxnames=99,
+  url=true,
+  doi=true,
+  isbn=false,
+  refsection=chapter,
+  defernumbers=true,
+  giveninits=true,
+  uniquename=init,
+]{biblatex}
+
+\addbibresource{reference_library.bib}
+\DeclareNameAlias{default}{family-given}
+
+% Vancouver-style tweaks
+\setlength{\biblabelsep}{1.5em}
+\setlength\bibhang{0pt}
+\renewbibmacro{in:}{}
+
+% Render biblatex labels (URL:, DOI:, etc.) in the document font.
+% Without this, \mkbibacro applies small-caps which in pdfLaTeX+Helvetica
+% falls back to a different typeface.
+\renewcommand*{\mkbibacro}[1]{#1}
+
+\DeclareFieldFormat[article]{title}{#1}
+\DeclareFieldFormat[article]{journaltitle}{#1}
+\DeclareFieldFormat[article]{volume}{\mkbibbold{#1}}
+\DeclareFieldFormat[article]{number}{\mkbibparens{#1}}
+
+\DeclareFieldFormat{urldate}{%
+  \mkbibbrackets{Accessed\addspace
+    \thefield{urlday}\addspace
+    \mkbibmonth{\thefield{urlmonth}}\addspace
+    \thefield{urlyear}}}
+
+\renewbibmacro*{url+urldate}{%
+  \usebibmacro{url}%
+  \iffieldundef{urlyear}{}{\setunit*{\addspace}\printurldate}}
+
+\let\cite\autocite
+
+
+% ===================== Appendices =====================
+\usepackage{etoolbox}
+\AtBeginEnvironment{subappendices}{}
+\pretocmd{\bibliography}{\clearpage}{}{}
+
+
+% ===================== Front Matter Environments =====================
+\newenvironment{originality}{%
+  \clearpage
+  \frontmatterchapter{Originality Statement}%
+}{%
+  \vspace{2cm}
+  \begin{flushright}
+    \textbf{Signed:} \rule{6cm}{0.4pt}\\[1em]
+    YOUR FULL NAME\\              % <-- Replace with your name
+    DATE OF SUBMISSION\\          % <-- Replace, e.g. 1st~January~2026
+    \vspace{3em}
+    \noindent Word count: 30,000  % <-- Update if required
+  \end{flushright}
+  \clearpage
+}
+
+\newenvironment{acknowledgements}{%
+  \clearpage
+  \frontmatterchapter{Acknowledgements}%
+}{}
+
+\newenvironment{abstract}{%
+  \clearpage
+  \frontmatterchapter{Abstract}%
+}{}
+
+\newenvironment{abbreviations}{%
+  \clearpage
+  \frontmatterchapter{Abbreviations}%
+}{}
+
+
+% ===================== Header Formatting =====================
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[C]{\small\nouppercase{\leftmark}}
+\fancyfoot[c]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+\renewcommand{\chaptermark}[1]{\markboth{#1}{}}
+\setlength{\headheight}{13.59999pt}
+
+
+% ===================== Spacing =====================
+\titlespacing*{\section}{0pt}{0.8em}{0.5em}
+\titlespacing*{\subsection}{0pt}{0.5em}{0.3em}
+\titlespacing*{\subsubsection}{0pt}{0.0em}{0.0em}
+
+\titleformat{\paragraph}[hang]{\normalfont\normalsize\bfseries}{\theparagraph}{1em}{}
+\titlespacing*{\paragraph}{0pt}{0.5em}{0.5em}
+
+
+% ===================== Bibliography =====================
+\renewcommand{\bibsection}{\section*{References}\addcontentsline{toc}{section}{References}}
+
+
+% ===================== Hyperlinks =====================
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=[RGB]{21,61,99},                   % <-- replace with different colours if you want
+    urlcolor=[RGB]{21,61,99},                    % <-- replace with different colours if you want
+    citecolor=[RGB]{21,61,99},                   % <-- replace with different colours if you want
+    pdfborder={0 0 0},
+    pdftitle={THESIS TITLE},                     % <-- Replace with your thesis title
+    pdfauthor={YOUR FULL NAME},                  % <-- Replace with your name
+    pdfsubject={Applied Epidemiology},
+    pdfkeywords={Applied Epidemiology, MAE, ANU} % <-- Add your keywords
+}
+\urlstyle{same}
+
+\usepackage{cleveref}
+\crefformat{table}{#2Table~#1#3}
+\crefformat{figure}{#2Figure~#1#3}
+\crefformat{textbox}{#2Box~#1#3}
+\crefformat{section}{#2Appendix~#1#3}
+\crefformat{chapter}{#2Chapter~#1#3}
+\Crefformat{table}{#2Table~#1#3}
+\Crefformat{figure}{#2Figure~#1#3}
+\Crefformat{textbox}{#2Box~#1#3}
+\Crefformat{section}{#2Appendix~#1#3}
+\Crefformat{chapter}{#2Chapter~#1#3}
+
+
+% ===================== Silence Warnings =====================
+\usepackage{silence}
+\WarningFilter{latex}{Underfull \hbox}
+% xcolor is loaded by makecell after we already loaded it — the duplicate is harmless
+\WarningFilter{latex}{Package "xcolor" has already been loaded}
+% abbreviations_static.tex uses a manual tabbing list instead of \printglossary
+\WarningFilter{glossaries}{No \printglossary}

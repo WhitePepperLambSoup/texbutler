@@ -1,0 +1,156 @@
+% =============================================================================
+% REFERENCE LIBRARY
+% =============================================================================
+%
+% ZOTERO INTEGRATION — how to populate this file from your reference manager
+%
+% Option A — One-time export:
+%   1. In Zotero, select your library or a collection
+%   2. File → Export Library (or right-click collection → Export Collection)
+%   3. Format: Better BibLaTeX   (requires the Better BibTeX plugin — see below)
+%   4. Save the file as reference_library.bib and replace this file
+%   5. In Overleaf: upload the new .bib via the file tree on the left
+%
+% Option B — Continuous sync (recommended for active writing):
+%   1. Install the Better BibTeX plugin for Zotero:
+%        https://retorque.re/zotero-better-bibtex/
+%   2. Right-click your Zotero library or collection → Export Collection
+%      Format: Better BibLaTeX  |  tick "Keep updated"
+%   3. Zotero will keep the exported .bib file up to date automatically.
+%      Re-upload the file to Overleaf each time you add new references.
+%
+% Option C — Overleaf native Zotero sync (not recommended - doesn't allow you to adjust formatting):
+%   In Overleaf: Menu → Sync → Zotero
+%   This requires a linked Zotero account (set up under Overleaf account settings).
+%   Overleaf imports your entire Zotero library as a .bib file automatically.
+%
+% CITATION KEYS
+%   After exporting, each entry has a citation key (e.g. smith_title_2024).
+%   This key is shown in the "Citation Key" column in Zotero (visible after
+%   installing Better BibTeX). Use it to cite in text: \cite{smith_title_2024}
+%
+% CITATION STYLE
+%   This template uses Vancouver-style superscript numbers.
+%   \cite{key} inserts a superscript number and adds the reference to the
+%   current chapter's reference list.
+%
+% =============================================================================
+
+
+% ---------------------------------------------------------------------------
+% SAMPLE ENTRIES — replace with your own references after Zotero export
+% ---------------------------------------------------------------------------
+
+% Journal article
+@article{sample_author_article_2024,
+  title        = {A descriptive title of the journal article},
+  author       = {Sample, Author A and Coauthor, Author B},
+  journaltitle = {Journal of Applied Epidemiology},
+  volume       = {12},
+  number       = {3},
+  pages        = {100--110},
+  date         = {2024},
+  doi          = {10.0000/example.doi},
+  langid       = {english},
+}
+
+% Government / institutional report
+@report{sample_department_report_2023,
+  title       = {Annual Report on Communicable Disease},
+  author      = {{Department of Health}},
+  institution = {Department of Health},
+  date        = {2023},
+  url         = {https://example.gov.au/annual-report},
+  urldate     = {2025-01-01},
+  langid      = {english},
+}
+
+% Website / online source
+@online{sample_organisation_webpage_2025,
+  title   = {Title of the Webpage},
+  author  = {{Organisation Name}},
+  url     = {https://example.org/page},
+  urldate = {2025-06-01},
+  date    = {2025-01-15},
+  langid  = {english},
+}
+
+% Book
+@book{sample_author_book_2022,
+  title     = {Epidemiology: Principles and Practice},
+  author    = {Sample, Author},
+  publisher = {Publisher Name},
+  location  = {Sydney},
+  date      = {2022},
+  isbn      = {978-0-000000-00-0},
+}
+
+
+% ---------------------------------------------------------------------------
+% REFERENCES USED IN THIS TEMPLATE
+% ---------------------------------------------------------------------------
+
+@online{tasmanian_department_of_health_public_2025,
+  title   = {Public Health Services},
+  author  = {{Tasmanian Department of Health}},
+  url     = {https://www.health.tas.gov.au/about/public-health-services},
+  urldate = {2025-11-26},
+  date    = {2025-01-17},
+  langid  = {english},
+}
+
+@report{national_health_and_medical_research_council_nhmrc_2015,
+	location = {Canberra},
+	title = {{NHMRC} Information Paper: Evidence on the Effects of Lead on Human Health},
+	institution = {National Health and Medical Research Council},
+	author = {{National Health and Medical Research Council}},
+	date = {2015-05},
+	langid = {english},
+	keywords = {Lead},
+	file = {NHMRC Information Paper Evidence on the Effects o.pdf:C\:\\Users\\hgibbons1\\Zotero\\storage\\QKX5QGUD\\NHMRC Information Paper Evidence on the Effects o.pdf:application/pdf},
+}
+
+@online{australian_bureau_of_statistics_standard_2024,
+	title = {Standard Australian Classification of Countries ({SACC}), 2016},
+	url = {https://www.abs.gov.au/statistics/classifications/standard-australian-classification-countries-sacc/latest-release},
+	abstract = {This classification was developed for use in the collection, storage and dissemination of all Australian statistical data classified by country},
+	author = {{Australian Bureau of Statistics}},
+	urldate = {2025-07-08},
+	date = {2024-02-27},
+	langid = {english},
+	file = {sacc_12690do0001_202402:C\:\\Users\\hgibbons1\\Zotero\\storage\\78YFZYD8\\sacc_12690do0001_202402.xlsx:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;Snapshot:C\:\\Users\\hgibbons1\\Zotero\\storage\\9CPYBW9A\\latest-release.html:text/html},
+}
+
+@misc{tasmanian_department_of_health_guidelines_2024,
+	title = {Guidelines for Notifying Diseases and Food Contaminants},
+	url = {https://www.health.tas.gov.au/sites/default/files/2024-11/Guidelines%20for%20Notifying%20Diseases%20and%20Food%20Contaminants.pdf},
+	publisher = {Tasmanian Department of Health},
+	author = {{Tasmanian Department of Health}},
+	urldate = {2025-04-27},
+	date = {2024},
+	langid = {english},
+	file = {PDF:C\:\\Users\\hgibbons1\\Zotero\\storage\\46B48V7Z\\Veitch - Guidelines for Notifying Diseases and Food Contaminants.pdf:application/pdf},
+}
+
+@online{centres_for_disease_control_and_prevention_about_2024-1,
+	title = {About Norovirus},
+	url = {https://www.cdc.gov/norovirus/about/index.html},
+	abstract = {Norovirus is the leading cause of vomiting and diarrhea, and foodborne illness in the United States.},
+	titleaddon = {Norovirus},
+	author = {{Centres for Disease Control and Prevention}},
+	urldate = {2025-03-28},
+	date = {2024-06-03},
+	langid = {english},
+	file = {Snapshot:C\:\\Users\\hgibbons1\\Zotero\\storage\\VRZPUVLJ\\index.html:text/html},
+}
+
+@online{world_health_organization_syphilis_2024,
+	title = {Syphilis},
+	url = {https://www.who.int/news-room/fact-sheets/detail/syphilis},
+	abstract = {{WHO} fact sheet on syphilis, including overview, symptoms, treatment, prevention and {WHO} response.},
+	author = {{World Health Organization}},
+	urldate = {2025-04-14},
+	date = {2024-05-21},
+	langid = {english},
+	file = {Snapshot:C\:\\Users\\hgibbons1\\Zotero\\storage\\4LLAWC6T\\syphilis.html:text/html},
+}

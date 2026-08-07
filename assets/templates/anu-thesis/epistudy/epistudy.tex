@@ -1,0 +1,209 @@
+% =============================================================================
+% CHAPTER 4: EPIDEMIOLOGICAL STUDY (Major competency 3)
+% =============================================================================
+% Replace "PROJECT TITLE 3" with your project title.
+% See INSTRUCTIONS.md for how to add figures, tables, citations, abbreviations.
+% =============================================================================
+
+\chapter{PROJECT TITLE 3}
+\label{chap:project_3}
+\clearpage
+
+\setcounter{tocdepth}{5}
+\setcounter{secnumdepth}{4}
+\etocdepthtag.toc{mtchapter}
+
+\localtoc
+\clearpage
+
+% LOCAL LIST OF TABLES — remove this line if this chapter has no tables
+\locallistoftables
+% LOCAL LIST OF FIGURES — remove this line if this chapter has no figures
+\locallistoffigures
+\clearpage
+
+\glsresetall[abbreviations]
+
+
+% =============================================================================
+\section{Prologue}
+% =============================================================================
+
+\subsection{Study rationale}
+
+\subsection{My role}
+
+\subsection{Lessons learnt}
+
+\subsection{Public health impact}
+
+\subsection{MAE competencies addressed}
+\begin{itemize}
+  \item Design and conduct an epidemiological study
+  \item Literature review
+\end{itemize}
+
+\subsection{Acknowledgements}
+
+
+% =============================================================================
+\glsresetall[abbreviations]
+\clearpage
+\section{Abstract}
+% =============================================================================
+
+\subsection*{Objectives}
+
+\subsection*{Methods}
+
+\subsection*{Results}
+
+\subsection*{Conclusion}
+
+
+% =============================================================================
+\glsresetall[abbreviations]
+\clearpage
+\section{Introduction}
+% =============================================================================
+This is another random reference \cite{centres_for_disease_control_and_prevention_about_2024-1}.
+
+\subsection{Study aim}
+
+\subsection{Study objectives}
+
+
+% =============================================================================
+\section{Methods}
+% =============================================================================
+
+\subsection{Study period and population}
+
+\subsection{Case definition}
+
+\subsection{Data collection}
+
+\subsection{Study design}
+
+\subsection{Study outcomes}
+
+\subsection{Exposure variables}
+
+\subsection{Data cleaning}
+
+\subsection{Statistical analyses}
+
+\subsection{Ethics}
+
+
+% =============================================================================
+\section{Results}
+% =============================================================================
+% HOW TO ADD A TABLE (save image to epistudy/tables/):
+%
+%   \begin{table}[H]
+%       \caption{Caption goes ABOVE the table.}
+%       \label{tab:my_table}
+%       \centering
+%       \begin{tabular}{c}
+%           \includegraphics[width=0.95\textwidth]{epistudy/tables/my_table.png}
+%       \end{tabular}
+%   \end{table}
+%   Reference in text: \cref{tab:my_table}  →  "Table 1"
+%
+% HOW TO ADD A FIGURE (save image to epistudy/figures/):
+%
+%   \begin{figure}[H]
+%       \centering
+%       \includegraphics[width=0.85\textwidth]{epistudy/figures/my_figure.png}
+%       \caption{Caption goes BELOW the figure.}
+%       \label{fig:my_figure}
+%   \end{figure}
+%   Reference in text: \cref{fig:my_figure}  →  "Figure 1"
+
+
+% =============================================================================
+\section{Discussion}
+% =============================================================================
+
+
+% =============================================================================
+\section{Limitations}
+% =============================================================================
+
+
+% =============================================================================
+\section{Conclusion}
+% =============================================================================
+
+
+% =============================================================================
+\clearpage
+\section{Recommendations}
+% =============================================================================
+
+% Each recommendation should name the responsible party in bold italics.
+\textit{\textbf{Responsible: [Unit/team name]}}
+
+Recommendation text here.
+
+
+% =============================================================================
+% REFERENCES — do not edit these two lines
+% =============================================================================
+\clearpage
+\addcontentsline{toc}{section}{References}
+\printbibliography[heading=subbibliography, title={References}]
+
+
+% =============================================================================
+% APPENDICES
+% Uncomment the section(s) relevant to this chapter.
+% Upload your files to epistudy/appendices/ before including them.
+% REMOVE the entire subappendices block if this chapter has no appendices.
+% =============================================================================
+\begin{subappendices}
+
+% HOW TO INCLUDE A PDF APPENDIX
+% Each page of your PDF is included as a separate \includegraphics line.
+% Add or remove \includegraphics lines to match the number of pages in your file.
+% Upload your PDF to the epistudy/appendices/ folder before compiling.
+% Tip: avoid spaces in filenames — use underscores instead (e.g. my_factsheet.pdf).
+
+% --- LAY SUMMARY / FACTSHEET ---
+% \clearpage
+% \section{Lay summary}
+% \label{app:lay_summary}
+% \nopagebreak
+% \centering
+% \includegraphics[page=1,width=\textwidth]{epistudy/appendices/lay_summary.pdf}
+% \clearpage
+% \includegraphics[page=2,width=\textwidth]{epistudy/appendices/lay_summary.pdf}
+% % Add more \includegraphics lines here for additional pages
+% \RaggedRight
+
+% --- CONFERENCE PRESENTATION SLIDES ---
+% \clearpage
+% \section{Conference presentation slides}
+% \label{app:presentation}
+% \nopagebreak
+% \centering
+% \includegraphics[page=1,width=\textwidth]{epistudy/appendices/presentation.pdf}
+% \clearpage
+% \includegraphics[page=2,width=\textwidth]{epistudy/appendices/presentation.pdf}
+% % Add more \includegraphics lines here for additional pages
+% \RaggedRight
+
+% --- MANUSCRIPT ---
+% \clearpage
+% \section{Manuscript}
+% \label{app:manuscript}
+% \nopagebreak
+% \centering
+% \includegraphics[page=1,width=\textwidth]{epistudy/appendices/manuscript.pdf}
+% \clearpage
+% \includegraphics[page=2,width=\textwidth]{epistudy/appendices/manuscript.pdf}
+% % Add more \includegraphics lines here for additional pages
+% \RaggedRight
+
+\end{subappendices}

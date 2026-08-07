@@ -1,0 +1,198 @@
+% =============================================================================
+% CHAPTER 3: SURVEILLANCE SYSTEM PROJECT (Major competency 2)
+% =============================================================================
+% Replace "PROJECT TITLE 2" with your project title.
+% See INSTRUCTIONS.md for how to add figures, tables, citations, abbreviations.
+% =============================================================================
+
+\chapter{PROJECT TITLE 2}
+\label{chap:project_2}
+\clearpage
+
+\setcounter{tocdepth}{5}
+\setcounter{secnumdepth}{4}
+\etocdepthtag.toc{mtchapter}
+
+\localtoc
+\clearpage
+
+% LOCAL LIST OF TABLES — remove this line if this chapter has no tables
+\locallistoftables
+% LOCAL LIST OF FIGURES — remove this line if this chapter has no figures
+\locallistoffigures
+\clearpage
+
+\glsresetall[abbreviations]
+
+
+% =============================================================================
+\section{Prologue}
+% =============================================================================
+
+\subsection{Study rationale}
+
+\subsection{My role}
+
+\subsection{Lessons learnt}
+
+\subsection{Public health impact}
+
+\subsection{MAE competencies addressed}
+\begin{itemize}
+    \item Establish a surveillance system or health information system
+    \item Teaching field epidemiology
+\end{itemize}
+
+\subsection{Acknowledgements}
+
+
+% =============================================================================
+\glsresetall[abbreviations]
+\clearpage
+\section{Abstract}
+% =============================================================================
+
+\subsection*{Objective}
+
+\subsection*{Methods}
+
+\subsection*{Results}
+
+\subsection*{Conclusion}
+
+
+% =============================================================================
+\glsresetall[abbreviations]
+\clearpage
+\section{Introduction}
+% =============================================================================
+
+
+% =============================================================================
+\section{Methods}
+% =============================================================================
+
+\subsection{Ethics}
+
+
+% =============================================================================
+\section{Results}
+% =============================================================================
+% HOW TO ADD A FIGURE (save image to surveillance/figures/):
+%
+%   \begin{figure}[H]
+%       \centering
+%       \includegraphics[width=0.85\textwidth]{surveillance/figures/my_figure.png}
+%       \caption{Caption goes BELOW the figure.}
+%       \label{fig:my_figure}
+%   \end{figure}
+%   Reference in text: \cref{fig:my_figure}  →  "Figure 1"
+%
+% HOW TO ADD A TABLE (save image to surveillance/tables/):
+%
+%   \begin{table}[H]
+%       \caption{Caption goes ABOVE the table.}
+%       \label{tab:my_table}
+%       \centering
+%       \begin{tabular}{c}
+%           \includegraphics[width=0.95\textwidth]{surveillance/tables/my_table.png}
+%       \end{tabular}
+%   \end{table}
+%   Reference in text: \cref{tab:my_table}  →  "Table 1"
+
+% Example figure (replace with your own image and caption):
+As shown in \cref{fig:example}, ...
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{surveillance/figures/kitkat.png}
+    \caption{Example figure caption.}
+    \label{fig:example}
+\end{figure}
+
+
+% =============================================================================
+\section{Discussion}
+% =============================================================================
+This is another example of a reference \cite{australian_bureau_of_statistics_standard_2024}. If the chapter does not have a reference there will be a warning in the overleaf log, just ignore it if you don't need one :)
+
+% =============================================================================
+\section{Limitations}
+% =============================================================================
+
+
+% =============================================================================
+\section{Conclusion}
+% =============================================================================
+
+
+% =============================================================================
+\clearpage
+\section{Recommendations}
+% =============================================================================
+
+% Each recommendation should name the responsible party in bold italics.
+\textit{\textbf{Responsible: [Unit/team name]}}
+
+Recommendation text here.
+
+
+% =============================================================================
+% REFERENCES — do not edit these two lines
+% =============================================================================
+\clearpage
+\addcontentsline{toc}{section}{References}
+\printbibliography[heading=subbibliography, title={References}]
+
+
+% =============================================================================
+% APPENDICES
+% Uncomment the section(s) relevant to this chapter.
+% Upload your files to surveillance/appendices/ before including them.
+% REMOVE the entire subappendices block if this chapter has no appendices.
+% =============================================================================
+\begin{subappendices}
+
+% HOW TO INCLUDE A PDF APPENDIX
+% Each page of your PDF is included as a separate \includegraphics line.
+% Add or remove \includegraphics lines to match the number of pages in your file.
+% Upload your PDF to the surveillance/appendices/ folder before compiling.
+% Tip: avoid spaces in filenames — use underscores instead (e.g. my_factsheet.pdf).
+
+% --- LAY SUMMARY / FACTSHEET ---
+% \clearpage
+% \section{Lay summary}
+% \label{app:lay_summary}
+% \nopagebreak
+% \centering
+% \includegraphics[page=1,width=\textwidth]{surveillance/appendices/lay_summary.pdf}
+% \clearpage
+% \includegraphics[page=2,width=\textwidth]{surveillance/appendices/lay_summary.pdf}
+% % Add more \includegraphics lines here for additional pages
+% \RaggedRight
+
+% --- CONFERENCE PRESENTATION SLIDES ---
+% \clearpage
+% \section{Conference presentation slides}
+% \label{app:presentation}
+% \nopagebreak
+% \centering
+% \includegraphics[page=1,width=\textwidth]{surveillance/appendices/presentation.pdf}
+% \clearpage
+% \includegraphics[page=2,width=\textwidth]{surveillance/appendices/presentation.pdf}
+% % Add more \includegraphics lines here for additional pages
+% \RaggedRight
+
+% --- MANUSCRIPT ---
+% \clearpage
+% \section{Manuscript}
+% \label{app:manuscript}
+% \nopagebreak
+% \centering
+% \includegraphics[page=1,width=\textwidth]{surveillance/appendices/manuscript.pdf}
+% \clearpage
+% \includegraphics[page=2,width=\textwidth]{surveillance/appendices/manuscript.pdf}
+% % Add more \includegraphics lines here for additional pages
+% \RaggedRight
+
+\end{subappendices}

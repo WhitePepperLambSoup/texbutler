@@ -83,6 +83,19 @@ export interface TodoHit {
   text: string;
 }
 
+export interface MarketTemplate {
+  id: string;
+  name: string;
+  category: string;
+  repo: string;
+  desc: string;
+  stars: number;
+  size_kb: number;
+  mode: string;
+  builtin: boolean;
+  ready: boolean;
+}
+
 export interface WordCount {
   chars: number;
   cjk_chars: number;
@@ -176,6 +189,10 @@ export const api = {
   refIndex: () => invoke<RefIndex>("tb_ref_index"),
   scanTodos: () => invoke<TodoHit[]>("tb_scan_todos"),
   bibFromId: (identifier: string) => invoke<string>("tb_bib_from_id", { identifier }),
+  listMarketTemplates: () => invoke<MarketTemplate[]>("tb_list_market_templates"),
+  downloadTemplate: (id: string) => invoke<string>("tb_download_template", { id }),
+  createFromMarketTemplate: (parent: string, name: string, templateId: string) =>
+    invoke<string>("tb_create_from_market_template", { parent, name, templateId }),
   countWords: (file?: string) =>
     invoke<WordCount>("tb_count_words", { file: file ?? null }),
   listRoots: () => invoke<string[]>("tb_list_roots"),
