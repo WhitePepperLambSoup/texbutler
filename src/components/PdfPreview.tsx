@@ -37,7 +37,7 @@ export default function PdfPreview({ revision, page }: { revision: number; page?
         </span>
       </div>
       <iframe
-        key={revision}
+        key={`${revision}-${page ?? ""}`}
         src={src}
         title="PDF Preview"
         className="pdf-frame"

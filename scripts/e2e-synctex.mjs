@@ -1,7 +1,7 @@
 // e2e: PDF 定位（SyncTeX forward search）——编译后从编辑器行号定位 PDF 页码
 import { readFile, writeFile, rm, mkdir } from "node:fs/promises";
 
-const CDP_PORT = 9333;
+const CDP_PORT = 9336;
 const PROJ = "D:/reasonix program/idea/tex/assets/e2e/synctex-check";
 const FILE = PROJ + "/main.tex";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -75,22 +75,42 @@ async function main() {
   await exec(`(async () => { const { useProjectStore } = await import('/src/store/projectStore.ts'); await useProjectStore.getState().openProject(${JSON.stringify(PROJ)}); return true; })()`);
   await sleep(800);
 
-  // compile the project first (produces .synctex.gz)
+  // compile the project first (produces .synctex.gz); poll until the PDF
+  // exists (first run downloads the tectonic bundle — can take minutes)
   await exec(`(async () => {
     const { api } = await import('/src/api/index.ts');
     await api.compile(null);
     return true;
   })()`);
-  await sleep(15000); // wait for compile
+  let pdfReady = false;
+  for (let i = 0; i < 60; i++) {
+    await sleep(3000);
+    try {
+      const { readFile } = await import('node:fs/promises');
+      const r = await readFile(PROJ + "/.texbutler/build/main.synctex.gz");
+      pdfReady = r.length > 0;
+      if (pdfReady) break;
+    } catch {}
+  }
+  if (!pdfReady) {
+    console.log("SYNCTEX: build output not ready after 180s");
+  }
 
-  // forward search from a line on page 2
+  // forward search from a line on page 2 — full frontend chain: button
+  // logic (synctexForward + CustomEvent) + PdfPreview iframe src
   const res = JSON.parse(await exec(`(async () => {
     const { api } = await import('/src/api/index.ts');
     const page = await api.synctexForward("main.tex", 7); // \\section*{Second} is on line 7
+    if (page != null) {
+      window.dispatchEvent(new CustomEvent("tb:synctex-page", { detail: page }));
+    }
     return JSON.stringify({ page });
   })()`));
+  await sleep(1500); // let React re-render the iframe with the new key/src
+  const src = await exec(`document.querySelector('iframe.pdf-frame') ? document.querySelector('iframe.pdf-frame').src : ''`);
   console.log("SYNCTEX page for line 7 (section Second):", res.page);
-  const ok = res.page != null && res.page >= 2;
+  console.log("IFRAME src:", src);
+  const ok = res.page != null && res.page >= 2 && src.includes("#page=" + res.page);
   c.close();
   await rm(PROJ, { recursive: true, force: true }).catch(() => {});
   console.log("E2E-DONE", ok ? "PASS" : "FAIL");
