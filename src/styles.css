@@ -2004,3 +2004,43 @@ body {
   margin-left: 6px;
 }
 
+
+/* DOI / arXiv -> BibTeX fetch */
+.bib-fetch {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.bib-fetch-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+.bib-fetched {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.bib-fetched-pre {
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 11px;
+  max-height: 160px;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px;
+  margin: 0 0 6px;
+}
+.bib-fetch-err {
+  padding: 6px 8px;
+  color: var(--danger, #e5484d);
+  font-size: 12px;
+}
+

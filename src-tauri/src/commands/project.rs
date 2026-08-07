@@ -2,6 +2,7 @@
 
 use crate::core::project::{Project, flatten_tree};
 use crate::state::AppState;
+use image::GenericImageView;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, State};
@@ -30,6 +31,154 @@ fn to_project_file(n: &crate::core::project::FileNode) -> ProjectFile {
         is_dir: n.is_dir,
         children: n.children.iter().map(to_project_file).collect(),
     }
+}
+
+/// Fetch bibliography metadata for a DOI (Crossref) or arXiv id and return
+/// a ready-to-paste BibTeX entry.
+#[tauri::command]
+pub async fn tb_bib_from_id(identifier: String) -> Result<String, String> {
+    let id = identifier.trim();
+    if id.is_empty() {
+        return Err("请输入 DOI（如 10.1038/nature12373）或 arXiv 编号（如 2401.12345）".into());
+    }
+    let lower = id.to_ascii_lowercase();
+    // --- arXiv: export.arxiv.org Atom feed ---
+    if lower.contains("arxiv") || (id.contains('.') && !lower.starts_with("10.")) {
+        let arxid = lower
+            .trim_start_matches("arxiv:")
+            .trim_start_matches("https://arxiv.org/abs/")
+            .trim_start_matches("http://arxiv.org/abs/")
+            .to_string();
+        let url = format!("https://export.arxiv.org/api/query?id_list={arxid}");
+        let xml = reqwest::get(&url)
+            .await
+            .map_err(|e| format!("arXiv 请求失败: {e}"))?
+            .text()
+            .await
+            .map_err(|e| format!("arXiv 响应读取失败: {e}"))?;
+        let grab = |tag: &str| -> String {
+            let pat = format!("<{tag}>");
+            let end = format!("</{tag}>");
+            xml.find(&pat)
+                .and_then(|s| {
+                    let e = xml[s + pat.len()..].find(&end)?;
+                    Some(xml[s + pat.len()..s + pat.len() + e].trim().to_string())
+                })
+                .unwrap_or_default()
+        };
+        let title = grab("title").replace("  ", " ");
+        let published = grab("published");
+        let year = published.chars().take(4).collect::<String>();
+        let authors: Vec<String> = xml
+            .split("<name>")
+            .skip(1)
+            .map(|s| s.split("</name>").next().unwrap_or("").trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if title.is_empty() {
+            return Err("arXiv 未返回结果：请检查编号是否正确".into());
+        }
+        let key = bib_key(&title);
+        let auth = authors.join(" and ");
+        let out = format!(
+            "@article{{{key},\n  title = {{{title}}},\n  author = {{{auth}}},\n  year = {{{year}}},\n  eprint = {{{arxid}}},\n  archivePrefix = {{arXiv}},\n}}"
+        );
+        return Ok(format!("% arXiv:{arxid} — 请核对字段后使用\n{out}"));
+    }
+    // --- DOI: Crossref REST API ---
+    if lower.starts_with("10.") {
+        let url = format!("https://api.crossref.org/works/{}", id);
+        let resp = reqwest::get(&url)
+            .await
+            .map_err(|e| format!("Crossref 请求失败: {e}"))?;
+        if !resp.status().is_success() {
+            return Err(format!("Crossref 未找到该 DOI（HTTP {}）", resp.status().as_u16()));
+        }
+        let json: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("Crossref 响应解析失败: {e}"))?;
+        let m = &json["message"];
+        let title = m["title"]
+            .as_array()
+            .and_then(|a| a.first())
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if title.is_empty() {
+            return Err("Crossref 返回的条目缺少标题".into());
+        }
+        let authors: Vec<String> = m["author"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|a| {
+                        let family = a["family"].as_str().unwrap_or("");
+                        let given = a["given"].as_str().unwrap_or("");
+                        if family.is_empty() && given.is_empty() {
+                            None
+                        } else {
+                            Some(format!("{given} {family}").trim().to_string())
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let year = m["issued"]["date-parts"]
+            .as_array()
+            .and_then(|dp| dp.first())
+            .and_then(|d| d.as_array())
+            .and_then(|d| d.first())
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let journal = m["container-title"]
+            .as_array()
+            .and_then(|a| a.first())
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let volume = m["volume"].as_str().unwrap_or("");
+        let pages = m["page"].as_str().unwrap_or("");
+        let key = bib_key(title);
+        let auth = if authors.is_empty() {
+            "TODO: 作者".to_string()
+        } else {
+            authors.join(" and ")
+        };
+        let mut entry = format!(
+            "@article{{{key},\n  title = {{{title}}},\n  author = {{{auth}}},\n  journal = {{{journal}}},\n  year = {{{year}}}"
+        );
+        if !volume.is_empty() {
+            entry.push_str(&format!(",\n  volume = {{{volume}}}"));
+        }
+        if !pages.is_empty() {
+            entry.push_str(&format!(",\n  pages = {{{pages}}}"));
+        }
+        entry.push_str(&format!(",\n  doi = {{{id}}},\n}}"));
+        return Ok(format!("% DOI:{id} — 请核对字段后使用\n{entry}"));
+    }
+    Err("无法识别的标识符：请输入 DOI（10.xxxx/yyyy）或 arXiv 编号（2401.12345）".into())
+}
+
+/// Build a stable BibTeX key from a title: first word-ish + next
+/// significant words, lowercased.
+fn bib_key(title: &str) -> String {
+    let words: Vec<&str> = title
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+    let mut key = words
+        .first()
+        .unwrap_or(&"ref")
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .collect::<String>()
+        .to_lowercase();
+    for w in words.iter().skip(1).take(2) {
+        let wl = w.to_lowercase();
+        if !["the", "a", "an", "on", "of", "for", "and", "in"].contains(&wl.as_str()) {
+            key.push_str(&wl);
+        }
+    }
+    key
 }
 
 /// Emit a project-changed event to the frontend.
@@ -238,7 +387,46 @@ pub fn tb_import_image(state: State<'_, AppState>, source_path: String) -> Resul
         target = proj.root.join(format!("{stem}_{n}.{ext}"));
         n += 1;
     }
-    std::fs::copy(src, &proj.canonical_inside(&target)?).map_err(|e| format!("复制图片失败: {e}"))?;
+    let target_canon = proj.canonical_inside(&target)?;
+    // auto-compress oversized PNG/JPG imports (large screenshots slow the
+    // compiler; cap the long edge at 2048 px)
+    if matches!(ext.as_str(), "png" | "jpg" | "jpeg") {
+        if let Ok(meta) = src.metadata() {
+            if meta.len() > 1_048_576 {
+                if let Ok(img) = image::open(src) {
+                    let (w, h) = img.dimensions();
+                    let scale = (2048.0_f32 / w.max(h) as f32).min(1.0);
+                    if scale < 1.0 {
+                        let resized = img.resize(
+                            ((w as f32) * scale).max(1.0) as u32,
+                            ((h as f32) * scale).max(1.0) as u32,
+                            image::imageops::FilterType::Lanczos3,
+                        );
+                        let out = if ext == "png" {
+                            image::ImageFormat::Png
+                        } else {
+                            image::ImageFormat::Jpeg
+                        };
+                        let mut buf = Vec::new();
+                        if resized
+                            .write_to(&mut std::io::Cursor::new(&mut buf), out)
+                            .is_ok()
+                        {
+                            std::fs::write(&target_canon, buf).map_err(|e| format!("压缩图片失败: {e}"))?;
+                            drop(guard);
+                            if let Ok(mut g) = state.project.write() {
+                                if let Some(p) = g.as_mut() {
+                                    let _ = p.scan();
+                                }
+                            }
+                            return Ok(target.file_name().unwrap_or_default().to_string_lossy().to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    std::fs::copy(src, &target_canon).map_err(|e| format!("复制图片失败: {e}"))?;
     drop(guard);
     // refresh the file tree (scan needs a write lock)
     if let Ok(mut g) = state.project.write() {
@@ -719,6 +907,35 @@ pub fn tb_export(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn image_compress_pipeline_works_on_real_png() {
+        // regression probe: import-compress chain (open -> resize -> write)
+        // must succeed on a legitimately-encoded PNG
+        let png = Path::new("D:/reasonix program/idea/tex/assets/e2e/big-test.png");
+        if !png.exists() {
+            eprintln!("probe png missing — skipping (generated by PowerShell)");
+            return;
+        }
+        let img = image::open(png).expect("image::open must decode the PNG");
+        let (w, h) = img.dimensions();
+        let scale = (2048.0_f32 / w.max(h) as f32).min(1.0);
+        assert!(scale < 1.0, "4.4MB random PNG should exceed 2048px edge");
+        let resized = img.resize(
+            ((w as f32) * scale).max(1.0) as u32,
+            ((h as f32) * scale).max(1.0) as u32,
+            image::imageops::FilterType::Lanczos3,
+        );
+        let mut buf = Vec::new();
+        resized
+            .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+            .expect("PNG encode must succeed");
+        // PNG is lossless: random-noise fixtures can't shrink, but the
+        // resize must have cut the pixel count (dimensions <= 2048 edge)
+        assert!(resized.width() <= 2048 && resized.height() <= 2048,
+            "resize must cap the long edge at 2048px, got {}x{}", resized.width(), resized.height());
+        assert!(!buf.is_empty(), "encoded PNG must not be empty");
+    }
 
     #[test]
     fn parses_simple_bib_entry() {

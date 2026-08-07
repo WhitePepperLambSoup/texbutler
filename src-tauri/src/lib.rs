@@ -150,6 +150,7 @@ pub fn run() {
         commands::project::tb_check_refs,
         commands::project::tb_ref_index,
         commands::project::tb_scan_todos,
+        commands::project::tb_bib_from_id,
         commands::check::tb_count_words,
         commands::project::tb_list_roots,
         commands::ai::tb_ai_polish,

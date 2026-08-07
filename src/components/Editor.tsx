@@ -349,6 +349,32 @@ export default function EditorPane() {
     });
     // onDidOpenedLink exists on IStandaloneCodeEditor in monaco >= 0.47 but
     // the bundled typings lag behind — assert through a narrow interface.
+    // onDidType exists on IStandaloneCodeEditor in monaco >= 0.34 but the
+    // bundled typings lag behind — assert through a narrow interface.
+    const typer = editor as unknown as {
+      onDidType?: (cb: (text: string) => void) => void;
+    };
+    typer.onDidType?.((text) => {
+      // typing `\begin{env}` (complete with braces) auto-inserts the
+      // matching `\end{env}` two lines below, with the cursor left inside
+      const model2 = editor.getModel();
+      if (!model2 || !text.includes("\\begin{")) return;
+      const pos = editor.getPosition();
+      if (!pos) return;
+      const before = model2.getLineContent(pos.lineNumber).slice(0, pos.column - 1);
+      const m = before.match(/\\begin\{([^}]+)\}$/);
+      if (!m) return;
+      const env = m[1];
+      const after = model2.getLineContent(pos.lineNumber).slice(pos.column - 1).trimStart();
+      if (after.startsWith(`\\end{${env}}`)) return;
+      editor.executeEdits("env-close", [
+        {
+          range: new monacoLocal.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column),
+          text: `\n\n\\end{${env}}\n`,
+        },
+      ]);
+      editor.setPosition({ lineNumber: pos.lineNumber, column: pos.column });
+    });
     const opener = editor as unknown as {
       onDidOpenedLink?: (cb: (link: { url?: string }) => void) => void;
     };

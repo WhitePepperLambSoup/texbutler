@@ -175,6 +175,7 @@ export const api = {
   listBibEntries: () => invoke<BibEntry[]>("tb_list_bib_entries"),
   refIndex: () => invoke<RefIndex>("tb_ref_index"),
   scanTodos: () => invoke<TodoHit[]>("tb_scan_todos"),
+  bibFromId: (identifier: string) => invoke<string>("tb_bib_from_id", { identifier }),
   countWords: (file?: string) =>
     invoke<WordCount>("tb_count_words", { file: file ?? null }),
   listRoots: () => invoke<string[]>("tb_list_roots"),
