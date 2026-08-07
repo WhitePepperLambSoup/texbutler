@@ -3,7 +3,7 @@
 import Editor from "@monaco-editor/react";
 import { useProjectStore } from "../store/projectStore";
 import { api } from "../api";
-import { clearDraft } from "../store/drafts";
+import { clearDraft, saveDraft } from "../store/drafts";
 import { useT } from "../i18n";
 import { monacoThemeFor } from "./Editor";
 import { useEffect, useState } from "react";
@@ -82,6 +82,7 @@ export default function SplitPane({
         onChange={(v) => {
           if (v !== undefined && tab) {
             setTabContent(file, v);
+            saveDraft(useProjectStore.getState().root, file, v);
           }
         }}
         options={{
