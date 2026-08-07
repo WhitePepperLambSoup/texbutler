@@ -3,6 +3,7 @@
 import Editor from "@monaco-editor/react";
 import { useProjectStore } from "../store/projectStore";
 import { api } from "../api";
+import { clearDraft } from "../store/drafts";
 import { useT } from "../i18n";
 import { monacoThemeFor } from "./Editor";
 import { useEffect, useState } from "react";
@@ -47,6 +48,7 @@ export default function SplitPane({
           useProjectStore.setState((s) => ({
             tabs: s.tabs.map((t) => (t.path === file ? { ...t, dirty: false } : t)),
           }));
+          clearDraft(file);
           window.dispatchEvent(new CustomEvent("tb:file-saved"));
         }
       } catch {

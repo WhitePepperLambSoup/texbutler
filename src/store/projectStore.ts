@@ -5,6 +5,7 @@ import { create } from "zustand";
 import { api, type Issue, type ProjectFileNode, type ProjectInfo, type RefIndex } from "../api";
 import { useI18n } from "../i18n";
 import { saveFlow } from "../flow";
+import { loadDraft, clearDraft } from "./drafts";
 
 /** Monotonic openFile request counter (race guard for async tab activation). */
 let openFileSeq = 0;
@@ -128,8 +129,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       set({ activeTab: rel });
       return;
     }
+    // crash recovery: a saved draft (unsaved edits from a previous session)
+    // wins over the disk content when it differs
+    const draft = loadDraft(rel);
+    const finalContent = draft !== null && draft !== content ? draft : content;
+    const restored = draft !== null && draft !== content;
     set({
-      tabs: [...cur.tabs, { path: rel, content, dirty: false }],
+      tabs: [...cur.tabs, { path: rel, content: finalContent, dirty: restored }],
       activeTab: rel,
     });
     saveFlow({ lastFile: rel });
@@ -160,6 +166,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       ),
     });
     if (stillSame) {
+      clearDraft(tab.path);
       window.dispatchEvent(new Event("tb:file-saved"));
     }
   },
@@ -219,6 +226,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const cur = get();
     const stillThere = cur.tabs.some((t) => t.path === rel);
     if (!stillThere) return;
+    clearDraft(rel);
     const next = cur.tabs.filter((t) => t.path !== rel);
     const nextActive =
       rel === cur.activeTab

@@ -3,7 +3,6 @@ import { api, type MarketTemplate } from "../api";
 import { useProjectStore } from "../store/projectStore";
 import { useT } from "../i18n";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-
 interface Props {
   open: boolean;
   onClose: () => void;

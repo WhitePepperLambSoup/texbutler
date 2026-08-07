@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, type AiSettings, type ProviderKind, type RuleState } from "../api";
 import { useAiStore } from "../store/aiStore";
 import { loadFlow, saveFlow } from "../flow";
+import { keyCombo, loadKeymap, saveKeymap, comboLabel, type Keymap } from "../store/keymap";
 import { useI18n, useT } from "../i18n";
 
 interface Props {
@@ -34,6 +35,7 @@ export default function SettingsModal({ open, onClose }: Props) {
   const [autosaveSecs, setAutosaveSecs] = useState<number>(() =>
     Number(localStorage.getItem("tb-autosave-secs") ?? "30"),
   );
+  const [keymap, setKeymap] = useState<Keymap>(() => loadKeymap());
   const [updateCheck, setUpdateCheck] = useState(true);
   const [updateInfo, setUpdateInfo] = useState<{ version: string; name: string; body: string; url: string } | null>(null);
   const [updateChecking, setUpdateChecking] = useState(false);
@@ -110,6 +112,7 @@ export default function SettingsModal({ open, onClose }: Props) {
       await saveSettings(s);
       await api.setEngine(engine);
       await api.setTexlivePasses(passes);
+      saveKeymap(keymap);
       window.alert(t("settings.saved"));
     } catch (e) {
       console.error("save settings failed", e);
@@ -293,6 +296,35 @@ export default function SettingsModal({ open, onClose }: Props) {
               <option value="120">120s</option>
             </select>
           </label>
+
+          <h4>{t("settings.shortcuts")}</h4>
+          <label>
+            {t("settings.shortcutCompile")}
+            <input
+              className="shortcut-input"
+              value={comboLabel(keymap.compileMain)}
+              readOnly
+              onKeyDown={(e) => {
+                e.preventDefault();
+                const combo = keyCombo(e.nativeEvent);
+                if (combo) setKeymap((k) => ({ ...k, compileMain: combo }));
+              }}
+            />
+          </label>
+          <label>
+            {t("settings.shortcutCompileCurrent")}
+            <input
+              className="shortcut-input"
+              value={comboLabel(keymap.compileCurrent)}
+              readOnly
+              onKeyDown={(e) => {
+                e.preventDefault();
+                const combo = keyCombo(e.nativeEvent);
+                if (combo) setKeymap((k) => ({ ...k, compileCurrent: combo }));
+              }}
+            />
+          </label>
+          <p className="settings-hint">{t("settings.shortcutHint")}</p>
           <label>
             {t("settings.passes")}
             <select

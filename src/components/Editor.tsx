@@ -9,6 +9,7 @@ import { useCompileStore } from "../store/compileStore";
 import { useAiStore } from "../store/aiStore";
 import { useT } from "../i18n";
 import ImageInsertModal from "./ImageInsertModal";
+import { saveDraft } from "../store/drafts";
 import FormulaModal from "./FormulaModal";
 import TableModal from "./TableModal";
 import katex from "katex";
@@ -857,6 +858,8 @@ export default function EditorPane() {
           onChange={(v) => {
             if (v !== undefined && v !== null) {
               setTabContent(active.path, v);
+              // crash recovery: debounced draft for unsaved edits
+              saveDraft(active.path, v);
             }
           }}
           options={{

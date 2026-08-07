@@ -12,6 +12,7 @@ import AiPanel from "./components/AiPanel";
 import SettingsModal from "./components/SettingsModal";
 import { api } from "./api";
 import { useProjectStore } from "./store/projectStore";
+import { keyCombo, loadKeymap } from "./store/keymap";
 import { useCompileStore } from "./store/compileStore";
 import { useAiStore } from "./store/aiStore";
 import { useT } from "./i18n";
@@ -276,17 +277,16 @@ export default function App() {
 
   // Global shortcuts: Ctrl+B compile (like VS Code), Ctrl+Shift+K compile current.
   // (Ctrl+Shift+B is reserved for the editor's bold-wrap; registering both
+  // (Ctrl+B is reserved for the editor's bold formatting in Monaco, which
   // made one keypress compile AND bold at the same time.)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "b") return;
+      if (keyCombo(e) !== loadKeymap().compileMain) return;
       e.preventDefault();
-      const target = e.shiftKey ? null : "main";
-      if (!target) return;
-      void useCompileStore.getState().compile(target);
+      void useCompileStore.getState().compile("main");
     };
     const onKeyK = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.key.toLowerCase() !== "k") return;
+      if (keyCombo(e) !== loadKeymap().compileCurrent) return;
       e.preventDefault();
       void useCompileStore.getState().compile("current");
     };

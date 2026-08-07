@@ -2193,3 +2193,22 @@ body {
   flex: 1;
 }
 
+
+/* Shortcut rebind inputs */
+.shortcut-input {
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  width: 180px;
+  cursor: pointer;
+}
+.settings-hint {
+  font-size: 11px;
+  color: var(--fg-dim);
+  margin: 4px 0 0;
+}
+
