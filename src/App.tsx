@@ -277,8 +277,8 @@ export default function App() {
 
   // Global shortcuts: Ctrl+B compile (like VS Code), Ctrl+Shift+K compile current.
   // (Ctrl+Shift+B is reserved for the editor's bold-wrap; registering both
-  // (Ctrl+B is reserved for the editor's bold formatting in Monaco, which
-  // made one keypress compile AND bold at the same time.)
+  // Compile shortcuts are configurable (Settings → 快捷键); the default
+  // compile-main binding is Ctrl+B.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (keyCombo(e) !== loadKeymap().compileMain) return;

@@ -78,9 +78,10 @@ async function main() {
     const { saveDraft, loadDraft } = await import('/src/store/drafts.ts');
     const st = useProjectStore.getState();
     st.setTabContent('main.tex', '\\documentclass{article}\\n\\begin{document}\\n崩溃前未保存的编辑。\\n\\end{document}\\n');
-    saveDraft('main.tex', useProjectStore.getState().tabs.find((t) => t.path === 'main.tex').content, 50);
+    const root = useProjectStore.getState().root;
+    saveDraft(root, 'main.tex', useProjectStore.getState().tabs.find((t) => t.path === 'main.tex').content, 50);
     await new Promise((r) => setTimeout(r, 200));
-    const draft = loadDraft('main.tex');
+    const draft = loadDraft(root, 'main.tex');
     // simulate a restart: reopen from disk (draft should be restored)
     await st.closeProject();
     await st.openProject(${JSON.stringify(PROJ)});
