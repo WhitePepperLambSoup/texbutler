@@ -246,7 +246,7 @@ const QUICK_SYMBOLS = ["α", "β", "γ", "δ", "θ", "λ", "π", "√", "∫", "
 
 type MonacoThemeId = "texbutler" | "texbutler-dark" | "texbutler-liquid";
 
-function monacoThemeFor(dataTheme: string | undefined): MonacoThemeId {
+export function monacoThemeFor(dataTheme: string | undefined): MonacoThemeId {
   if (dataTheme === "liquid") return "texbutler-liquid";
   if (dataTheme === "dark") return "texbutler-dark";
   return "texbutler";
@@ -762,6 +762,15 @@ export default function EditorPane() {
             }}
           >
             ✎ {t("editor.polish")}
+          </button>
+          <button
+            className="btn-mini"
+            title={t("editor.splitTitle")}
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent("tb:split-open"));
+            }}
+          >
+            ⧉ {t("editor.split")}
           </button>
           <button
             className="btn-mini"

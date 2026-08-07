@@ -5,6 +5,7 @@ import OutlinePanel from "./components/OutlinePanel";
 import BibPanel from "./components/BibPanel";
 import TodoPanel from "./components/TodoPanel";
 import EditorPane from "./components/Editor";
+import SplitPane from "./components/SplitPane";
 import PdfPreview from "./components/PdfPreview";
 import ProblemsPanel from "./components/ProblemsPanel";
 import AiPanel from "./components/AiPanel";
@@ -62,6 +63,17 @@ export default function App() {
   const [roots, setRoots] = useState<string[]>([]);
   const [pdfPage, setPdfPage] = useState<number | null>(null);
   const [quickOpen, setQuickOpen] = useState(false);
+  const [splitFile, setSplitFile] = useState<string | null>(null);
+  const [splitPick, setSplitPick] = useState(false);
+  // "split view" button in the editor toolbar opens QuickOpen in split mode
+  useEffect(() => {
+    const onSplit = () => {
+      setSplitPick(true);
+      setQuickOpen(true);
+    };
+    window.addEventListener("tb:split-open", onSplit);
+    return () => window.removeEventListener("tb:split-open", onSplit);
+  }, []);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [wordCount, setWordCount] = useState<{ chars: number; cjk: number; words: number } | null>(null);
   const t = useT();
@@ -450,8 +462,9 @@ export default function App() {
           {leftTab === "bib" && <BibPanel />}
           {leftTab === "todo" && <TodoPanel />}
         </aside>
-        <main className="col-editor">
+        <main className={`col-editor ${splitFile ? "is-split" : ""}`}>
           <EditorPane />
+          {splitFile && <SplitPane file={splitFile} onClose={() => setSplitFile(null)} />}
         </main>
         <aside className={`col-pdf ${pdfPath ? "has-pdf" : ""}`}>
           <PdfPreview revision={pdfRev} page={pdfPage ?? undefined} />
@@ -495,7 +508,22 @@ export default function App() {
         </span>
       </div>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      {quickOpen && <QuickOpenModal onClose={() => setQuickOpen(false)} />}
+      {quickOpen && (
+        <QuickOpenModal
+          onClose={() => {
+            setQuickOpen(false);
+            setSplitPick(false);
+          }}
+          onPick={(p) => {
+            if (splitPick) {
+              setSplitFile(p);
+            } else {
+              void useProjectStore.getState().openFile(p);
+            }
+            setSplitPick(false);
+          }}
+        />
+      )}
       {busy && <div className="busy-overlay">{t("ai.busyDiagnose")}</div>}
     </div>
   );

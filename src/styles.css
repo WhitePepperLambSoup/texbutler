@@ -2151,3 +2151,45 @@ body {
   text-decoration: underline;
 }
 
+
+/* Split view: side-by-side second editor */
+.col-editor.is-split {
+  flex-direction: row;
+}
+.col-editor.is-split > .editor-pane,
+.col-editor.is-split > .split-pane {
+  flex: 1 1 50%;
+  min-width: 0;
+}
+.split-pane {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  min-width: 0;
+  background: var(--bg);
+}
+.split-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  background: var(--bg2);
+}
+.split-title {
+  font-weight: 600;
+  color: var(--fg);
+}
+.split-path {
+  flex: 1;
+  color: var(--fg-dim);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.split-pane > .monaco-editor, .split-pane > section {
+  flex: 1;
+}
+

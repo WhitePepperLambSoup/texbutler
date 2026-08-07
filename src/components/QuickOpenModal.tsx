@@ -16,7 +16,13 @@ function flatten(nodes: ProjectFileNode[]): { path: string; name: string }[] {
   return out;
 }
 
-export default function QuickOpenModal({ onClose }: { onClose: () => void }) {
+export default function QuickOpenModal({
+  onClose,
+  onPick,
+}: {
+  onClose: () => void;
+  onPick?: (path: string) => void;
+}) {
   const t = useT();
   const files = useProjectStore((s) => s.files);
   const [query, setQuery] = useState("");
@@ -39,7 +45,11 @@ export default function QuickOpenModal({ onClose }: { onClose: () => void }) {
   }, [all, query]);
 
   const open = (path: string) => {
-    void useProjectStore.getState().openFile(path);
+    if (onPick) {
+      onPick(path);
+    } else {
+      void useProjectStore.getState().openFile(path);
+    }
     onClose();
   };
 

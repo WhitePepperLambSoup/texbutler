@@ -37,6 +37,8 @@ interface ProjectState {
   openFile: (rel: string) => Promise<void>;
   saveFile: () => Promise<void>;
   reloadTab: (rel: string) => Promise<void>;
+  /** Load a file into a tab WITHOUT switching the active tab (split view). */
+  ensureTab: (rel: string) => Promise<void>;
   closeTab: (rel: string) => Promise<void>;
   setTabContent: (rel: string, content: string) => void;
   closeProject: () => void;
@@ -171,6 +173,17 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     set((s) => ({
       tabs: s.tabs.map((t) => (t.path === rel && !t.dirty ? { ...t, content, dirty: false } : t)),
     }));
+  },
+
+  async ensureTab(rel: string) {
+    const st = get();
+    if (st.tabs.some((t) => t.path === rel)) return;
+    try {
+      const content = await api.readFile(rel);
+      set({ tabs: [...st.tabs, { path: rel, content, dirty: false }] });
+    } catch {
+      /* missing file — the split pane shows empty */
+    }
   },
 
   /** Close a tab; unsaved edits are auto-saved first (no blocking dialog). */
