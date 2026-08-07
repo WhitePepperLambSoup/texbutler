@@ -274,10 +274,11 @@ export default function AiPanel() {
             rows={3}
             onKeyDown={(e) => {
               // Enter sends (also Ctrl/Cmd+Enter for muscle memory);
-              // Shift+Enter inserts a newline
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
+              // Shift+Enter inserts a newline. isComposing guards the IME
+              // confirmation Enter (Chinese input methods) from sending.
+              if (e.key === "Enter" && !e.shiftKey && !(e.nativeEvent as KeyboardEvent).isComposing) {
                 if (!busy && genInput.trim()) {
+                  e.preventDefault();
                   void askAi(genInput);
                   setGenInput("");
                 }

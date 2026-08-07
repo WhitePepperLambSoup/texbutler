@@ -62,18 +62,17 @@ impl Rule for ParagraphRule {
             }
             prev_text = Some((line_no, trimmed));
         }
-        for (start, end) in chains {
-            let msg = if end > start {
-                format!(
-                    "第 {start} 至 {end} 行之间存在段落粘连（{} 处相邻正文行缺少空行），LaTeX 会把它们合并为同一段落。若需分段，请在每对相邻行之间补一个空行。",
-                    end - start
-                )
-            } else {
-                format!(
-                    "第 {start} 行与第 {end} 行之间没有空行：LaTeX 会把它们合并为同一段落（段落粘连）。若这是两段，请在中间补一个空行。"
-                )
-            };
-            issues.push(
+    for (start, end) in chains {
+        let mut msg = format!(
+            "第 {start} 至 {end} 行之间存在段落粘连（{} 处相邻正文行缺少空行），LaTeX 会把它们合并为同一段落。若需分段，请在每对相邻行之间补一个空行。",
+            end - start
+        );
+        if end == start + 1 {
+            msg = format!(
+                "第 {start} 行与第 {end} 行之间没有空行：LaTeX 会把它们合并为同一段落（段落粘连）。若这是两段，请在中间补一个空行。"
+            );
+        }
+        issues.push(
                 Issue::new(Severity::Info, IssueKind::RuleCheck, msg)
                     .with_file(file)
                     .with_line(start)
