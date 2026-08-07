@@ -84,6 +84,19 @@ interface AiState {
 }
 
 let msgId = 0;
+// align the id counter with persisted messages so ids never collide after
+// a restart (React keys + streamed-update lookups would double-match)
+try {
+  const raw = localStorage.getItem(SESSIONS_KEY);
+  if (raw) {
+    const sessions = JSON.parse(raw) as AiSession[];
+    for (const s of sessions) {
+      for (const m of s.messages) msgId = Math.max(msgId, m.id);
+    }
+  }
+} catch {
+  /* corrupted storage — start from 0 */
+}
 
 export const useAiStore = create<AiState>((set, get) => ({
   settings: null,
@@ -289,10 +302,12 @@ export const useAiStore = create<AiState>((set, get) => ({
 
   deleteSession(id) {
     const next = get().sessions.filter((s) => s.id !== id);
+    const isCurrent = get().sessionId === id;
     set({
       sessions: next,
-      sessionId: get().sessionId === id ? null : get().sessionId,
-      messages: get().sessionId === id ? [] : get().messages,
+      sessionId: isCurrent ? null : get().sessionId,
+      messages: isCurrent ? [] : get().messages,
+      diffPending: isCurrent ? null : get().diffPending,
     });
     persistSessions(next);
   },

@@ -106,7 +106,7 @@ async function main() {
     const saved = JSON.parse(localStorage.getItem('tb-ai-sessions') || '[]');
     const sess = saved.find((s) => s.id === sid);
     const lastMsg = sess && sess.messages[sess.messages.length - 1];
-    return JSON.stringify({ sid, savedCount: saved.length, lastRole: lastMsg && lastMsg.role, lastText: lastMsg && lastMsg.text });
+    return JSON.stringify({ sid, savedCount: saved.length, lastRole: lastMsg && lastMsg.role, lastKind: lastMsg && lastMsg.kind, lastText: lastMsg && lastMsg.text });
   })()`));
   console.log("SESSION saved count:", sessRes.savedCount, "| last role:", sessRes.lastRole);
   console.log("SESSION last text:", (sessRes.lastText || "").slice(0, 60));
@@ -117,7 +117,8 @@ async function main() {
   c.close();
   await rm(PROJ, { recursive: true, force: true }).catch(() => {});
   const pass = autosaveOk && sessRes.savedCount >= 1 && sessRes.lastRole === "assistant" &&
-    typeof sessRes.lastText === "string" && sessRes.lastText.length > 0 && !sessRes.lastText.startsWith("ERR");
+    sessRes.lastKind === "plain" &&
+    typeof sessRes.lastText === "string" && sessRes.lastText.length > 0;
   console.log("E2E-DONE", pass ? "PASS" : "FAIL");
 }
 
