@@ -307,7 +307,9 @@ export default function SettingsModal({ open, onClose }: Props) {
               onKeyDown={(e) => {
                 e.preventDefault();
                 const combo = keyCombo(e.nativeEvent);
-                if (combo) setKeymap((k) => ({ ...k, compileMain: combo }));
+                // require at least one modifier — a bare letter would
+                // swallow typing in the editor
+                if (combo && combo.includes("+")) setKeymap((k) => ({ ...k, compileMain: combo }));
               }}
             />
           </label>
@@ -320,7 +322,7 @@ export default function SettingsModal({ open, onClose }: Props) {
               onKeyDown={(e) => {
                 e.preventDefault();
                 const combo = keyCombo(e.nativeEvent);
-                if (combo) setKeymap((k) => ({ ...k, compileCurrent: combo }));
+                if (combo && combo.includes("+")) setKeymap((k) => ({ ...k, compileCurrent: combo }));
               }}
             />
           </label>
