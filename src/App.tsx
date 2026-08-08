@@ -64,7 +64,7 @@ export default function App() {
   // dashboard: bump the per-project compile counter when a build finishes
   useEffect(() => {
     const unsub = useCompileStore.subscribe((s, prev) => {
-      if (!s.running && prev.running && s.lastResult && s.lastResult !== prev.lastResult) {
+      if (!s.running && prev.running && s.lastResult?.ok && s.lastResult !== prev.lastResult) {
         const root = useProjectStore.getState().root;
         if (root) setCompileCount(recordCompile(root).compiles);
       }
