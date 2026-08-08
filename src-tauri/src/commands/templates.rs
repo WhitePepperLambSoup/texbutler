@@ -389,16 +389,18 @@ fn create_missing_target_parents(project: &Project, target: &Path) -> Result<Vec
 
     for component in relative_parent.components() {
         let std::path::Component::Normal(name) = component else {
+            remove_created_empty_parents(&created);
             return Err("invalid template import directory".into());
         };
         current.push(name);
         match std::fs::symlink_metadata(&current) {
             Ok(metadata) if metadata.is_dir() => {}
             Ok(_) => {
+                remove_created_empty_parents(&created);
                 return Err(format!(
                     "template import parent is not a directory: {}",
                     current.display()
-                ))
+                ));
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 if let Err(error) = std::fs::create_dir(&current) {
@@ -410,9 +412,10 @@ fn create_missing_target_parents(project: &Project, target: &Path) -> Result<Vec
                 created.push(current.clone());
             }
             Err(error) => {
+                remove_created_empty_parents(&created);
                 return Err(format!(
                     "could not inspect template import directory: {error}"
-                ))
+                ));
             }
         }
     }
@@ -666,6 +669,31 @@ mod tests {
             );
         }
 
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn import_cleans_created_parent_when_nested_target_validation_fails() {
+        let root = test_root("cleanup-created-parent");
+        let project_root = root.join("project");
+        write_fixture(
+            &project_root.join("main.tex"),
+            b"\\documentclass{article}\n",
+        );
+        write_fixture(&project_root.join("existing-file"), b"blocked");
+        let project = Project::open(&project_root).unwrap();
+        let target = project_root
+            .join("new-parent")
+            .join("..")
+            .join("existing-file")
+            .join("template");
+
+        assert!(create_missing_target_parents(&project, &target).is_err());
+        assert!(!project_root.join("new-parent").exists());
+        assert_eq!(
+            std::fs::read(project_root.join("existing-file")).unwrap(),
+            b"blocked"
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 
