@@ -73,6 +73,11 @@ async function main() {
     localStorage.removeItem('tb-ai-w');
     localStorage.removeItem('tb-bottom-h');
     localStorage.removeItem('tb-flow');
+    location.reload();
+    return true;
+  })()`);
+  await sleep(2500);
+  await exec(`(async () => {
     const { useProjectStore } = await import('/src/store/projectStore.ts');
     await useProjectStore.getState().openProject(${JSON.stringify(PROJ)});
     await useProjectStore.getState().openFile('main.tex');
