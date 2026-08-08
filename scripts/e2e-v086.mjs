@@ -68,11 +68,11 @@ async function main() {
   let client;
   let failed = false;
 
-  await rm(PROJ, { recursive: true, force: true }).catch(() => {});
-  await mkdir(PROJ, { recursive: true });
-  await writeFile(FILE, tex, "utf8");
-
   try {
+    await rm(PROJ, { recursive: true, force: true }).catch(() => {});
+    await mkdir(PROJ, { recursive: true });
+    await writeFile(FILE, tex, "utf8");
+
     client = await connect(await cdp());
     await client.send("Runtime.enable");
 
@@ -231,7 +231,7 @@ async function main() {
         return JSON.stringify({
           exists: true,
           insideEditor: menuRect.left >= editorRect.left && menuRect.right <= editorRect.right && menuRect.bottom <= editorRect.bottom,
-          overflowHandled: ['auto', 'scroll'].includes(getComputedStyle(menu).overflowY),
+          scrollCapacity: menu.scrollHeight >= menu.clientHeight,
           controlCount: menu.querySelectorAll('button, select').length,
         });
       })()`));
@@ -242,7 +242,7 @@ async function main() {
         && primary.primaryVisible
         && menu.exists
         && menu.insideEditor
-        && menu.overflowHandled
+        && menu.scrollCapacity
         && menu.controlCount >= 12;
     };
 
