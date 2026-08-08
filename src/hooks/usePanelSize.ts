@@ -12,8 +12,11 @@ export function usePanelSize(
 ): { size: number; startDrag: (e: React.MouseEvent) => void; reset: () => void } {
   const [size, setSize] = useState<number>(() => {
     try {
-      const v = Number(localStorage.getItem(key));
-      if (Number.isFinite(v) && v >= min && v <= max) return v;
+      const raw = localStorage.getItem(key);
+      if (raw !== null) {
+        const v = Number(raw);
+        if (Number.isFinite(v) && v >= min && v <= max) return v;
+      }
     } catch {
       /* storage unavailable */
     }
@@ -64,8 +67,11 @@ export function usePanelHeight(
 ): { size: number; startDrag: (e: React.MouseEvent) => void; reset: () => void } {
   const [size, setSize] = useState<number>(() => {
     try {
-      const v = Number(localStorage.getItem(key));
-      if (Number.isFinite(v) && v >= min && v <= max) return v;
+      const raw = localStorage.getItem(key);
+      if (raw !== null) {
+        const v = Number(raw);
+        if (Number.isFinite(v) && v >= min && v <= max) return v;
+      }
     } catch {
       /* storage unavailable */
     }

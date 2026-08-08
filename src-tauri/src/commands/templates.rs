@@ -198,9 +198,12 @@ pub async fn tb_download_template(id: String) -> Result<String, String> {
             .unwrap_or(false)
     });
     if !has_root {
-        let _ = std::fs::remove_dir_all(&target);
+        let mut cleanup = String::new();
+        if let Err(e) = std::fs::remove_dir_all(&target) {
+            cleanup = format!("（清理失败: {e}，残留目录将在下次下载时重建）");
+        }
         return Err(format!(
-            "模板结构无效：仓库内未找到含 \\documentclass 的主 .tex 文件（已删除下载内容）"
+            "模板结构无效：仓库内未找到含 \\documentclass 的主 .tex 文件（已删除下载内容{cleanup}）"
         ));
     }
     // verified marker: the structure check passed; UI shows "已验证"
