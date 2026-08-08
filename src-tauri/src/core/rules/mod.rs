@@ -158,7 +158,7 @@ mod tests {
     }
 
     #[test]
-    fn registry_has_ten_rules() {
+    fn registry_has_eleven_rules() {
         let rules = all_rules();
         assert_eq!(rules.len(), 11);
         let ids: Vec<_> = rules.iter().map(|r| r.id()).collect();
