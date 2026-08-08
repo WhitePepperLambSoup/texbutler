@@ -67,18 +67,22 @@ async function main() {
     return r.result.value;
   };
 
-  // 1) clear recent + close project → welcome screen is visible
-  const step1 = JSON.parse(await exec(`(async () => {
+  // 1) clear recent + session flow + reload → welcome screen shows empty
+  await exec(`(async () => {
     localStorage.removeItem('tb-recent-projects');
-    const { useProjectStore } = await import('/src/store/projectStore.ts');
-    useProjectStore.setState({ root: '', mainFile: null, activeTab: null, files: [], pdfPath: null });
-    await new Promise((r) => setTimeout(r, 400));
+    localStorage.removeItem('tb-flow');
+    location.reload();
+    return true;
+  })()`);
+  await sleep(2500);
+  const step1b = JSON.parse(await exec(`(async () => {
     const welcome = document.querySelector('.welcome');
     const recentCount = document.querySelectorAll('.welcome-recent li').length;
-    return JSON.stringify({ welcome: !!welcome, recentCount });
+    const root = document.querySelector('.toolbar-root');
+    return JSON.stringify({ welcome: !!welcome, recentCount, hasProject: !!root });
   })()`));
-  console.log("STEP1 (welcome, no recent):", JSON.stringify(step1));
-  const step1Ok = step1.welcome === true && step1.recentCount === 0;
+  console.log("STEP1 (welcome after reload):", JSON.stringify(step1b));
+  const step1Ok = step1b.welcome === true && step1b.recentCount === 0 && step1b.hasProject === false;
 
   // 2) open a project → recorded in recent
   const step2 = JSON.parse(await exec(`(async () => {
@@ -112,10 +116,40 @@ async function main() {
   console.log("STEP3 (restore):", JSON.stringify(step3));
   const step3Ok = step3.shown === true && step3.reopenedRoot === PROJ;
 
+  // 4) failed open (deleted dir) removes the entry + refreshes the list
+  const step4 = JSON.parse(await exec(`(async () => {
+    const { useProjectStore } = await import('/src/store/projectStore.ts');
+    const { removeRecent } = await import('/src/store/recent.ts');
+    const { api } = await import('/src/api/index.ts');
+    // simulate a stale entry: force-record a path that no longer exists
+    removeRecent(${JSON.stringify(PROJ)});
+    const ghost = ${JSON.stringify(PROJ)} + '/ghost-deleted';
+    localStorage.setItem('tb-recent-projects', JSON.stringify([
+      { path: ghost, name: 'ghost-deleted', lastOpened: Date.now() },
+      ...(JSON.parse(localStorage.getItem('tb-recent-projects') ?? '[]')),
+    ]));
+    useProjectStore.setState({ root: '', mainFile: null, activeTab: null, files: [], pdfPath: null });
+    await new Promise((r) => setTimeout(r, 400));
+    // click the ghost entry; openProject will fail and remove it
+    const items = [...document.querySelectorAll('.welcome-recent-item')];
+    const ghostBtn = items.find((b) => b.textContent.includes('ghost-deleted'));
+    if (ghostBtn) {
+      ghostBtn.click();
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
+    const after = JSON.parse(localStorage.getItem('tb-recent-projects') ?? '[]');
+    const stillThere = after.some((p) => p.path === ghost);
+    return JSON.stringify({ removed: !stillThere });
+  })()`));
+  console.log("STEP4 (failed open cleanup):", JSON.stringify(step4));
+  const step4Ok = step4.removed === true;
+
   c.close();
   await rm(PROJ, { recursive: true, force: true }).catch(() => {});
-  const pass = step1Ok && step2Ok && step3Ok;
-  console.log("E2E-DONE", pass ? "PASS" : "FAIL", { step1Ok, step2Ok, step3Ok });
+  const pass = step1Ok && step2Ok && step3Ok && step4Ok;
+  console.log("E2E-DONE", pass ? "PASS" : "FAIL", { step1Ok, step2Ok, step3Ok, step4Ok });
 }
 
 main().catch((e) => { console.error("E2E-FAIL", e); process.exit(1); });
