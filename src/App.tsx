@@ -16,6 +16,7 @@ import { api } from "./api";
 import { useProjectStore } from "./store/projectStore";
 import { keyCombo, loadKeymap } from "./store/keymap";
 import { loadStats, recordCompile, recordWords } from "./store/stats";
+import { removeRecent } from "./store/recent";
 import { useCompileStore } from "./store/compileStore";
 import { useAiStore } from "./store/aiStore";
 import { useT } from "./i18n";
@@ -86,6 +87,7 @@ export default function App() {
   const busy = useAiStore((s) => s.busy);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [welcomeRev, setWelcomeRev] = useState(0);
   const [pdfRev, setPdfRev] = useState(0);
   const [leftTab, setLeftTab] = useState<"tree" | "outline" | "bib" | "todo">("tree");
   const [compileTarget, setCompileTarget] = useState<string>("main");
@@ -460,11 +462,18 @@ export default function App() {
       )}
       {!root && (
         <WelcomePanel
+          rev={welcomeRev}
           onOpen={(p) => {
             void useProjectStore
               .getState()
               .openProject(p)
-              .catch((e) => window.alert(String(e)));
+              .catch((e) => {
+                // failed open (project deleted/moved): drop it from the
+                // recent list so the welcome screen stops offering it
+                removeRecent(p);
+                setWelcomeRev((r) => r + 1);
+                window.alert(String(e));
+              });
           }}
           onBrowse={() => {
             void useProjectStore.getState().openProject().catch((e) => window.alert(String(e)));

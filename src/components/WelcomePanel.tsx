@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { loadRecent, removeRecent, type RecentProject } from "../store/recent";
 import { useT } from "../i18n";
 
@@ -6,13 +6,19 @@ interface Props {
   onOpen: (path: string) => void;
   onBrowse: () => void;
   onNew: () => void;
+  /** bump to re-read the recent list (e.g. after a failed open removed one) */
+  rev?: number;
 }
 
 /** Welcome screen shown when no project is open: recently opened projects
  *  for one-click restore, plus browse/new actions. */
-export default function WelcomePanel({ onOpen, onBrowse, onNew }: Props) {
+export default function WelcomePanel({ onOpen, onBrowse, onNew, rev = 0 }: Props) {
   const t = useT();
   const [recent, setRecent] = useState<RecentProject[]>(() => loadRecent());
+
+  useEffect(() => {
+    setRecent(loadRecent());
+  }, [rev]);
 
   return (
     <div className="welcome">

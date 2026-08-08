@@ -87,6 +87,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   async createProject(parent, name, template?: string) {
     const info = await api.newProject(parent, name, template);
+    recordRecent(info.root); // new projects appear in the recent list too
     set({
       root: info.root,
       mainFile: info.main_file,
