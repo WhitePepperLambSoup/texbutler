@@ -82,7 +82,9 @@ pub fn tb_list_market_templates() -> Result<Vec<MarketTemplateView>, String> {
             } else {
                 dl_dir.join(&t.id).exists()
             };
-            let verified = if ready && !legacy_builtin && !t.builtin {
+            let verified = if legacy_builtin {
+                Some("ok".to_string()) // classic built-ins ship verified
+            } else if ready && !t.builtin {
                 let marker = dl_dir.join(&t.id).join(".texbutler-verified");
                 if marker.exists() {
                     std::fs::read_to_string(&marker).ok().filter(|s| !s.trim().is_empty())
@@ -216,7 +218,7 @@ fn collect_tex_rel(root: &Path) -> Vec<String> {
         for entry in entries.flatten() {
             let p = entry.path();
             if p.is_dir() {
-                let n = entry.file_name().to_string_lossy();
+                let n = entry.file_name().to_string_lossy().to_string();
                 if n.starts_with('.') || n == "target" || n == "node_modules" {
                     continue;
                 }
