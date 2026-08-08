@@ -156,11 +156,33 @@ async function main() {
   console.log("STEP4 (failed open cleanup):", JSON.stringify(step4));
   const step4Ok = step4.removed === true;
 
+  // 5) startup restore failure cleans the recent entry: preset a session
+  //    flow pointing at a deleted project, reload, and check cleanup
+  const step5 = JSON.parse(await exec(`(async () => {
+    const ghost = ${JSON.stringify(PROJ)} + '/ghost-restore';
+    localStorage.setItem('tb-flow', JSON.stringify({ restoreSession: true, lastProject: ghost, lastFile: null }));
+    localStorage.setItem('tb-recent-projects', JSON.stringify([
+      { path: ghost, name: 'ghost-restore', lastOpened: Date.now() },
+    ]));
+    const { useProjectStore } = await import('/src/store/projectStore.ts');
+    useProjectStore.setState({ root: '', mainFile: null, activeTab: null, files: [], pdfPath: null });
+    location.reload();
+    return true;
+  })()`));
+  await sleep(2500);
+  const step5b = JSON.parse(await exec(`(async () => {
+    const arr = JSON.parse(localStorage.getItem('tb-recent-projects') ?? '[]');
+    const welcome = document.querySelector('.welcome');
+    return JSON.stringify({ cleaned: !arr.some((p) => p.path.includes('ghost-restore')), welcome: !!welcome });
+  })()`));
+  console.log("STEP5 (restore-failure cleanup):", JSON.stringify(step5b));
+  const step5Ok = step5b.cleaned === true && step5b.welcome === true;
+
   c.close();
   clearInterval(dialogTimer);
   await rm(PROJ, { recursive: true, force: true }).catch(() => {});
-  const pass = step1Ok && step2Ok && step3Ok && step4Ok;
-  console.log("E2E-DONE", pass ? "PASS" : "FAIL", { step1Ok, step2Ok, step3Ok, step4Ok });
+  const pass = step1Ok && step2Ok && step3Ok && step4Ok && step5Ok;
+  console.log("E2E-DONE", pass ? "PASS" : "FAIL", { step1Ok, step2Ok, step3Ok, step4Ok, step5Ok });
 }
 
 main().catch((e) => { console.error("E2E-FAIL", e); process.exit(1); });
