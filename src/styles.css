@@ -1054,40 +1054,6 @@ body {
   align-items: flex-start;
 }
 
-.recent-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 100%;
-  margin-top: 6px;
-}
-
-.recent-title {
-  font-size: 11.5px;
-  color: var(--fg-dim);
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 3px;
-}
-
-.recent-item {
-  background: transparent;
-  border: none;
-  color: var(--fg);
-  text-align: left;
-  padding: 3px 4px;
-  font-size: 12.5px;
-  cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  border-radius: 3px;
-}
-
-.recent-item:hover {
-  background: var(--bg3);
-  color: #fff;
-}
-
 /* ---------- editor ---------- */
 .editor-pane {
   display: flex;
