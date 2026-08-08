@@ -127,12 +127,12 @@ async function main() {
 
   // 4) UI: open the new-project modal and check the marketplace tab renders
   const ui = JSON.parse(await exec(`(async () => {
-    const btn = [...document.querySelectorAll('button')].find((b) => (b.textContent || '').includes('新建'));
-    if (!btn) return JSON.stringify({ modal: false });
-    btn.click();
+    const toolbarButton = document.querySelector('.toolbar-new-file');
+    if (!toolbarButton) return JSON.stringify({ modal: false });
+    toolbarButton.click();
     await new Promise((r) => setTimeout(r, 400));
-    const tabs = [...document.querySelectorAll('.market-tab')].map((b) => b.textContent);
-    const marketBtn = document.querySelector('.market-tab:nth-child(2)');
+    const tabs = [...document.querySelectorAll('[data-new-file-tab]')].map((b) => b.dataset.newFileTab);
+    const marketBtn = document.querySelector('[data-new-file-tab="market"]');
     if (marketBtn) marketBtn.click();
     await new Promise((r) => setTimeout(r, 1200));
     // clear any residual search filter (the modal keeps state between
@@ -157,12 +157,21 @@ async function main() {
       await new Promise((r) => setTimeout(r, 300));
       searchHits = document.querySelectorAll('.market-card').length;
     }
-    const closeBtn = [...document.querySelectorAll('.modal-header button')].pop();
+    const closeBtn = document.querySelector('.new-file-modal .modal-header button');
     closeBtn && closeBtn.click();
-    return JSON.stringify({ modal: true, tabs, cards, searchHits, fullListCount: fullList.length });
+    await new Promise((r) => setTimeout(r, 100));
+    document.querySelector('.project-tree .panel-actions button:nth-child(2)')?.click();
+    await new Promise((r) => setTimeout(r, 100));
+    const newProjectHasMarketTabs = !!document.querySelector('.new-project-modal .market-tabs');
+    document.querySelector('.new-project-modal .modal-header button')?.click();
+    return JSON.stringify({ modal: true, tabs, cards, searchHits, fullListCount: fullList.length, newProjectHasMarketTabs });
   })()`));
   console.log("UI tabs:", JSON.stringify(ui.tabs), "| cards:", ui.cards, "| search hits:", ui.searchHits, "| fullList:", ui.fullListCount, "| names:", JSON.stringify(ui.cardNames), "| modals:", ui.otherModals);
-  const uiOk = ui.modal === true && (ui.tabs || []).length === 2 && ui.cards > 0 && ui.searchHits >= 1;
+  const uiOk = ui.modal === true
+    && JSON.stringify(ui.tabs) === JSON.stringify(['basic', 'user', 'market'])
+    && ui.cards > 0
+    && ui.searchHits >= 1
+    && ui.newProjectHasMarketTabs === false;
   c.close();
   await rm(PROJ, { recursive: true, force: true }).catch(() => {});
   const pass = catalogOk && createOk && dlOk && uiOk;

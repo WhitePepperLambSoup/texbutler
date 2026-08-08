@@ -1795,6 +1795,62 @@ html[data-theme="liquid"] .tree-active .tree-main-tag {
   color: #fff;
 }
 
+.new-file-modal {
+  width: 620px;
+}
+
+.new-file-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.new-file-tab {
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+  background: transparent;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+
+.new-file-tab.active {
+  color: var(--fg);
+  border-color: var(--accent);
+  background: var(--bg2);
+}
+
+.new-file-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.new-file-template-select {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.target-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.modal-error {
+  color: var(--err);
+  border: 1px solid color-mix(in srgb, var(--err) 60%, var(--border));
+  border-radius: 4px;
+  padding: 7px 8px;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
 .font-grid {
   display: flex;
   flex-wrap: wrap;

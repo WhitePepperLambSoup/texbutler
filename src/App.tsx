@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Bot } from "lucide-react";
-import ProjectTree, { NewFileModal } from "./components/ProjectTree";
+import ProjectTree from "./components/ProjectTree";
+import NewFileModal from "./components/NewFileModal";
 import OutlinePanel from "./components/OutlinePanel";
 import BibPanel from "./components/BibPanel";
 import TodoPanel from "./components/TodoPanel";
@@ -430,7 +431,7 @@ export default function App() {
           Word→LaTeX
         </button>
         <button
-          className="btn"
+          className="btn toolbar-new-file"
           title={t("tree.newFile")}
           disabled={!root}
           onClick={() => setNewFileOpen(true)}
@@ -568,7 +569,7 @@ export default function App() {
               TODO
             </button>
           </div>
-          {leftTab === "tree" && <ProjectTree />}
+          {leftTab === "tree" && <ProjectTree onNewFile={() => setNewFileOpen(true)} />}
           {leftTab === "outline" && <OutlinePanel />}
           {leftTab === "bib" && <BibPanel />}
           {leftTab === "todo" && <TodoPanel />}
@@ -643,19 +644,7 @@ export default function App() {
       </div>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <NewProjectModal open={newProjectOpen} onClose={() => setNewProjectOpen(false)} />
-      {newFileOpen && (
-        <NewFileModal
-          onClose={() => setNewFileOpen(false)}
-          onCreated={async (rel) => {
-            setNewFileOpen(false);
-            try {
-              await useProjectStore.getState().openFile(rel);
-            } catch (e) {
-              window.alert(String(e));
-            }
-          }}
-        />
-      )}
+      <NewFileModal open={newFileOpen} onClose={() => setNewFileOpen(false)} />
       {quickOpen && (
         <QuickOpenModal
           onClose={() => {
