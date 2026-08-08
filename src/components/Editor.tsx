@@ -572,11 +572,15 @@ export default function EditorPane() {
     void compile("main");
   };
 
+  const activeRef = useRef(active);
+  activeRef.current = active;
+
   useEffect(() => {
     let disposed = false;
     let unlistenDrag: (() => void) | undefined;
     void getCurrentWebviewWindow()
       .onDragDropEvent((event) => {
+        if (!activeRef.current) return; // editor not focused: ignore drops
         if (event.payload.type !== "drop") return;
         // multi-file drop: import every image (whitelist matches the
         // backend tb_import_image formats), dedupe by path

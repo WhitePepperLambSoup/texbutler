@@ -115,9 +115,12 @@ async function main() {
   })()`));
   console.log("IMAGE IMPORT:", JSON.stringify(wiring));
   // big-test.png is 3000x2000 (over 2048px) — import must compress it
-  const imgOk = existsSync("D:/reasonix program/idea/tex/assets/e2e/big-test.png")
-    ? typeof wiring.name === "string" && wiring.name.endsWith(".png")
-    : true;
+  let imgOk = true;
+  if (existsSync("D:/reasonix program/idea/tex/assets/e2e/big-test.png")) {
+    imgOk = typeof wiring.name === "string" && wiring.name.endsWith(".png");
+  } else {
+    console.log("IMAGE IMPORT: skipped (big-test.png missing)");
+  }
 
   c.close();
   await rm(PROJ, { recursive: true, force: true }).catch(() => {});
