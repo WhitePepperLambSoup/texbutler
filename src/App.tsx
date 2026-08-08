@@ -20,7 +20,7 @@ import { removeRecent } from "./store/recent";
 import { useCompileStore } from "./store/compileStore";
 import { useAiStore } from "./store/aiStore";
 import { useT } from "./i18n";
-import { loadFlow } from "./flow";
+import { loadFlow, saveFlow } from "./flow";
 import QuickOpenModal from "./components/QuickOpenModal";
 
 /** Collapsible right rail hosting the AI panel: a thin
@@ -242,9 +242,11 @@ export default function App() {
         })
         .catch(() => {
           // project no longer exists — drop it from the recent list so the
-          // welcome screen stops offering it
+          // welcome screen stops offering it, and clear the session flow so
+          // we don't retry a dead project on every startup
           removeRecent(flow.lastProject);
           setWelcomeRev((r) => r + 1);
+          saveFlow({ lastProject: "", lastFile: "" });
         });
     }
     let timer: number | undefined;
