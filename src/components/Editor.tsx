@@ -552,6 +552,32 @@ export default function EditorPane() {
     setImgModal({ fileName: name, root });
   };
 
+  // drag-and-drop image import: dropping a PNG/JPG/PDF onto the editor
+  // imports (auto-compressed) and opens the insert dialog
+  useEffect(() => {
+    if (!active) return;
+    const w = getCurrentWebviewWindow();
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    w.onDragDropEvent((event) => {
+      if (event.payload.type !== "drop") return;
+      const paths: string[] = event.payload.paths ?? [];
+      for (const p of paths) {
+        const ext = p.split(".").pop()?.toLowerCase() ?? "";
+        if (["png", "jpg", "jpeg", "gif", "svg", "pdf", "eps", "bmp", "webp"].includes(ext)) {
+          startImageImport(p).catch((e) => window.alert(String(e)));
+        }
+      }
+    }).then((f) => {
+      if (disposed) f();
+      else unlisten = f;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [active]);
+
   /** Import the clipboard image (screenshot) and open the insert dialog. */
   const importClipboardImage = async () => {
     if (!active) return;
@@ -704,6 +730,31 @@ export default function EditorPane() {
           <button className="btn-mini" title="列表" onClick={() => insertSnippet("\\begin{itemize}\n\\item 第一项\n\\item 第二项\n\\end{itemize}\n")} disabled={!active}>
             ••
           </button>
+          <span className="export-wrap">
+            <select
+              className="btn-mini export-select"
+              title={t("editor.exportTitle")}
+              disabled={!active}
+              defaultValue=""
+              onChange={(e) => {
+                const fmt = e.target.value as "md" | "docx";
+                e.target.value = "";
+                if (!fmt) return;
+                const st = useProjectStore.getState();
+                if (!st.activeTab) return;
+                api
+                  .exportFile(st.activeTab, fmt)
+                  .then((out) => window.alert(t("editor.exportDone", { path: out })))
+                  .catch((err) => window.alert(String(err)));
+              }}
+            >
+              <option value="" disabled>
+                {t("editor.export")}
+              </option>
+              <option value="md">{t("editor.exportMd")}</option>
+              <option value="docx">{t("editor.exportDocx")}</option>
+            </select>
+          </span>
           <button className="btn-mini" title={t("table.title")} onClick={() => setTableOpen(true)} disabled={!active}>
             ▦
           </button>
