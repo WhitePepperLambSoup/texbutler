@@ -90,6 +90,14 @@ async function main() {
       return result.result.value;
     };
 
+    let projectStoreUrl = '/src/store/projectStore.ts';
+    const resolveProjectStoreUrl = async () => {
+      projectStoreUrl = await exec(`(() => performance.getEntriesByType('resource')
+        .map((entry) => entry.name)
+        .find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+        ?? '/src/store/projectStore.ts')()`);
+    };
+
     const pressEscape = async () => {
       const event = {
         key: 'Escape',
@@ -153,8 +161,9 @@ async function main() {
       })()`);
       await client.send("Page.reload", { ignoreCache: true });
       await sleep(2200);
+      await resolveProjectStoreUrl();
       await exec(`(async () => {
-        const { useProjectStore } = await import('/src/store/projectStore.ts');
+        const { useProjectStore } = await import(${JSON.stringify(projectStoreUrl)});
         const { useAiStore } = await import('/src/store/aiStore.ts');
         await useProjectStore.getState().openProject(${JSON.stringify(PROJ)});
         await useProjectStore.getState().openFile('main.tex');
@@ -390,7 +399,7 @@ async function main() {
           const panelRect = panel?.getBoundingClientRect();
           const editorRect = editor?.getBoundingClientRect();
           const symbolRect = firstSymbol?.getBoundingClientRect();
-          const { useProjectStore } = await import('/src/store/projectStore.ts');
+          const { useProjectStore } = await import(${JSON.stringify(projectStoreUrl)});
           const state = useProjectStore.getState();
           const beforeContent = state.tabs.find((tab) => tab.path === state.activeTab)?.content ?? null;
           return JSON.stringify({
@@ -436,7 +445,7 @@ async function main() {
           });
           await sleep(80);
           const afterPointer = JSON.parse(await exec(`(async () => {
-            const { useProjectStore } = await import('/src/store/projectStore.ts');
+            const { useProjectStore } = await import(${JSON.stringify(projectStoreUrl)});
             const state = useProjectStore.getState();
             const content = state.tabs.find((tab) => tab.path === state.activeTab)?.content ?? null;
             return JSON.stringify({
