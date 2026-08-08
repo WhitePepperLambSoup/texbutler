@@ -13,6 +13,7 @@ import { saveDraft } from "../store/drafts";
 import FormulaModal from "./FormulaModal";
 import TableModal from "./TableModal";
 import katex from "katex";
+import { MessageSquareText, MoreHorizontal, Save } from "lucide-react";
 
 // Load Monaco from the LOCAL npm package instead of the jsdelivr CDN.
 // @monaco-editor/react defaults to the CDN — when the network is slow or
@@ -259,6 +260,8 @@ export default function EditorPane() {
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const t = useT();
   const [symbolOpen, setSymbolOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const toolsMenuRef = useRef<HTMLDivElement>(null);
   const [imgModal, setImgModal] = useState<{ fileName: string; root: string } | null>(null);
   const [formulaMode, setFormulaMode] = useState<"inline" | "display" | null>(null);
   const [tableOpen, setTableOpen] = useState(false);
@@ -493,6 +496,37 @@ export default function EditorPane() {
     void saveFile();
   }, [saveFile]);
 
+  const askAboutSelection = useCallback(() => {
+    const ed = editorRef.current;
+    if (!ed || !active) return;
+    const sel = ed.getSelection();
+    const text = sel ? ed.getModel()?.getValueInRange(sel) ?? "" : "";
+    useAiStore.getState().setSelection(text.trim() ? text : null);
+    window.dispatchEvent(new CustomEvent("tb:focus-ai-panel"));
+  }, [active]);
+
+  useEffect(() => {
+    if (!toolsOpen) return;
+    const closeIfOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (
+        !toolsMenuRef.current?.contains(target) &&
+        !(target instanceof Element && target.closest(".editor-more-action"))
+      ) {
+        setToolsOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setToolsOpen(false);
+    };
+    window.addEventListener("mousedown", closeIfOutside);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("mousedown", closeIfOutside);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [toolsOpen]);
+
   const insertSnippet = (snippet: string) => {
     const ed = editorRef.current;
     if (!ed) return;
@@ -652,8 +686,8 @@ export default function EditorPane() {
 
   return (
     <div className="editor-pane">
-      <div className="panel-header">
-        <span className="editor-tabs">
+      <div className="panel-header editor-header">
+        <div className="editor-tabs">
           {tabs.map((tab) => (
             <span
               key={tab.path}
@@ -674,8 +708,40 @@ export default function EditorPane() {
               </button>
             </span>
           ))}
-        </span>
-        <span className="format-buttons" title={t("editor.insert")}>
+        </div>
+        <div className="panel-actions editor-primary-actions">
+          <button
+            className="icon-btn editor-save-action"
+            title={t("editor.save")}
+            aria-label={t("editor.save")}
+            onClick={doSave}
+            disabled={!active?.dirty}
+          >
+            <Save size={15} aria-hidden="true" />
+          </button>
+          <button
+            className="icon-btn editor-ask-ai-action"
+            title={t("editor.askAiTitle")}
+            aria-label={t("editor.askAi")}
+            onClick={askAboutSelection}
+            disabled={!active}
+          >
+            <MessageSquareText size={15} aria-hidden="true" />
+          </button>
+          <button
+            className="icon-btn editor-more-action"
+            title={t("editor.moreTools")}
+            aria-label={t("editor.moreTools")}
+            aria-expanded={toolsOpen}
+            onClick={() => setToolsOpen((open) => !open)}
+          >
+            <MoreHorizontal size={16} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+      {toolsOpen && (
+        <div className="editor-tools-menu" ref={toolsMenuRef} role="menu">
+          <div className="format-buttons" title={t("editor.insert")}>
           <button className="btn-mini" title="插入图片" onClick={() => void insertImage()} disabled={!active}>
             {t("toolbar.image")}
           </button>
@@ -817,26 +883,11 @@ export default function EditorPane() {
           >
             ⧉ {t("editor.split")}
           </button>
-          <button
-            className="btn-mini"
-            title={t("editor.askAiTitle")}
-            disabled={!active}
-            onClick={() => {
-              const ed = editorRef.current;
-              if (!ed || !active) return;
-              const sel = ed.getSelection();
-              const text = sel ? ed.getModel()?.getValueInRange(sel) ?? "" : "";
-              useAiStore.getState().setSelection(text.trim() ? text : null);
-              window.dispatchEvent(new CustomEvent("tb:focus-ai-panel"));
-            }}
-          >
-            {t("editor.askAi")}
-          </button>
           <button className="btn-mini" title="数学符号" onClick={() => setSymbolOpen((v) => !v)} disabled={!active}>
             αβ
           </button>
-        </span>
-        <span className="panel-actions">
+          </div>
+          <div className="editor-tools-footer">
           <select
             className="snippet-select"
             title={t("editor.insert")}
@@ -854,9 +905,6 @@ export default function EditorPane() {
               </option>
             ))}
           </select>
-          <button className="btn-mini" onClick={doSave} disabled={!active?.dirty}>
-            {t("editor.save")}
-          </button>
           <button
             className="btn-mini"
             title={t("editor.locateInPdfTitle")}
@@ -879,8 +927,9 @@ export default function EditorPane() {
           >
             {t("editor.locateInPdf")}
           </button>
-        </span>
-      </div>
+          </div>
+        </div>
+      )}
       {symbolOpen && (
         <div className="symbol-panel">
           {MATH_SYMBOLS.map((s) => (

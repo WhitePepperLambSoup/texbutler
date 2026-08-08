@@ -686,6 +686,16 @@ body {
   flex-direction: column;
 }
 
+.col-editor,
+.editor-pane {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.editor-pane {
+  position: relative;
+}
+
 .col-pdf {
   flex: 0 1 auto;
   min-width: 0;
@@ -982,6 +992,52 @@ body {
   display: flex;
   gap: 4px;
   align-items: center;
+}
+
+.editor-header {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.editor-primary-actions {
+  flex: 0 0 auto;
+}
+
+.editor-tools-menu {
+  position: absolute;
+  z-index: 50;
+  top: 38px;
+  left: 8px;
+  right: 8px;
+  width: auto;
+  max-width: 420px;
+  max-height: calc(100% - 54px);
+  overflow: auto;
+  padding: 8px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+}
+
+.editor-tools-menu .format-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.editor-tools-menu .sym-quick {
+  flex-wrap: wrap;
+}
+
+.editor-tools-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
 }
 
 /* ---------- project tree ---------- */
