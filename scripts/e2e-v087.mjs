@@ -56,6 +56,7 @@ async function main() {
   let client;
   let exec;
   let files = true;
+  let theme = true;
   let failed = false;
   let inspectLocale;
   let setLocale;
@@ -75,6 +76,8 @@ async function main() {
       deviceScaleFactor: 1,
       mobile: false,
     });
+    await client.send("Page.reload", { ignoreCache: true });
+    await sleep(1200);
     exec = async (expression) => {
       const result = await client.send("Runtime.evaluate", {
         expression,
@@ -225,7 +228,108 @@ async function main() {
       return result;
     };
 
+    const runTheme = async () => {
+      const result = {
+        widths: {},
+        moreMenuHasSecondaryActions: false,
+        themeSelections: { liquid: false, dark: false, light: false },
+        outsidePointerPreservesFocus: false,
+        escapeRestoresTriggerFocus: false,
+        menuHitTest: false,
+      };
+      const setViewport = async (width, height) => {
+        await client.send("Emulation.setDeviceMetricsOverride", {
+          width,
+          height,
+          deviceScaleFactor: 1,
+          mobile: false,
+        });
+        await sleep(100);
+      };
+      const inspectToolbar = async () => JSON.parse(await exec(`(() => {
+        const insideViewport = (selector) => {
+          const node = document.querySelector(selector);
+          if (!node) return false;
+          const rect = node.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0
+            && rect.left >= 0 && rect.top >= 0
+            && rect.right <= window.innerWidth + 1 && rect.bottom <= window.innerHeight + 1;
+        };
+        const toolbar = document.querySelector('.toolbar');
+        return JSON.stringify({
+          toolbarFits: !!toolbar && toolbar.scrollWidth <= toolbar.clientWidth + 1,
+          compileVisible: insideViewport('.toolbar-compile'),
+          newFileVisible: insideViewport('.toolbar-new-file'),
+          themeVisible: insideViewport('.theme-picker-btn'),
+          moreVisible: insideViewport('.toolbar-more-btn'),
+          settingsVisible: insideViewport('.toolbar-settings'),
+        });
+      })()`));
+
+      for (const [width, height] of [[940, 700], [1280, 800]]) {
+        await setViewport(width, height);
+        result.widths[`${width}x${height}`] = await inspectToolbar();
+      }
+
+      await setViewport(940, 700);
+      if (await clickSelector('.toolbar-more-btn')) {
+        const menu = JSON.parse(await exec(`JSON.stringify({
+          word: !!document.querySelector('.toolbar-more-menu .toolbar-word-import'),
+          markdown: !!document.querySelector('.toolbar-more-menu .toolbar-export-md'),
+          docx: !!document.querySelector('.toolbar-more-menu .toolbar-export-docx'),
+        })`));
+        result.moreMenuHasSecondaryActions = menu.word && menu.markdown && menu.docx;
+      }
+
+      await setViewport(1280, 800);
+      for (const [id, index] of [["liquid", 1], ["dark", 2], ["light", 3]]) {
+        if (!await clickSelector('.theme-picker-btn')) continue;
+        if (!await clickSelector(`.theme-picker-menu .theme-option:nth-child(${index})`)) continue;
+        result.themeSelections[id] = JSON.parse(await exec(`JSON.stringify(
+          document.documentElement.dataset.theme === ${JSON.stringify(id)}
+            && window.localStorage.getItem('tb-theme') === ${JSON.stringify(id)}
+        )`));
+      }
+
+      if (await clickSelector('.theme-picker-btn')) {
+        const editorPoint = JSON.parse(await exec(`(() => {
+          const rect = document.querySelector('.monaco-editor')?.getBoundingClientRect();
+          return JSON.stringify(rect ? {
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2,
+          } : null);
+        })()`));
+        if (editorPoint) await pointerClick(editorPoint);
+        result.outsidePointerPreservesFocus = JSON.parse(await exec(`JSON.stringify(
+          !document.querySelector('.theme-picker-menu')
+            && !!document.activeElement?.closest('.monaco-editor')
+        )`));
+      }
+
+      if (await clickSelector('.theme-picker-btn')) {
+        await exec(`document.querySelector('.theme-picker-menu .theme-option')?.focus()`);
+        await pressEscape();
+        result.escapeRestoresTriggerFocus = JSON.parse(await exec(`JSON.stringify(
+          !document.querySelector('.theme-picker-menu')
+            && document.activeElement === document.querySelector('.theme-picker-btn')
+        )`));
+      }
+
+      if (await clickSelector('.theme-picker-btn')) {
+        result.menuHitTest = JSON.parse(await exec(`(() => {
+          const menu = document.querySelector('.theme-picker-menu');
+          if (!menu) return JSON.stringify(false);
+          const rect = menu.getBoundingClientRect();
+          const target = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+          return JSON.stringify(!!target && menu.contains(target));
+        })()`));
+        await pressEscape();
+      }
+      return result;
+    };
+
     files = suite === "theme" || suite === "pdf" ? true : await runFiles();
+    theme = suite === "files" || suite === "pdf" ? true : await runTheme();
     if (files !== true) await setLocale(testLocaleBaseline);
   } finally {
     if (client && localeBefore && inspectLocale && setLocale) {
@@ -268,9 +372,25 @@ async function main() {
     && files.localeRestored.live
     && files.localeRestored.storage
   );
-  failed = !filesOk;
+  const themeOk = theme === true || (
+    Object.values(theme.widths).every((snapshot) => (
+      snapshot.toolbarFits
+      && snapshot.compileVisible
+      && snapshot.newFileVisible
+      && snapshot.themeVisible
+      && snapshot.moreVisible
+      && snapshot.settingsVisible
+    ))
+    && theme.moreMenuHasSecondaryActions
+    && Object.values(theme.themeSelections).every(Boolean)
+    && theme.outsidePointerPreservesFocus
+    && theme.escapeRestoresTriggerFocus
+    && theme.menuHitTest
+  );
+  failed = !filesOk || !themeOk;
   console.log("FILES", JSON.stringify(files));
-  console.log("E2E-DONE", failed ? "FAIL" : "PASS", { suite, filesOk });
+  console.log("THEME", JSON.stringify(theme));
+  console.log("E2E-DONE", failed ? "FAIL" : "PASS", { suite, filesOk, themeOk });
   if (failed) process.exitCode = 1;
 }
 

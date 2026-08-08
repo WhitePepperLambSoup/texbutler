@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Bot } from "lucide-react";
 import ProjectTree from "./components/ProjectTree";
@@ -133,6 +133,11 @@ export default function App() {
     return () => window.removeEventListener("tb:split-open", onSplit);
   }, []);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
+  const [toolbarMoreOpen, setToolbarMoreOpen] = useState(false);
+  const themePickerRef = useRef<HTMLDivElement>(null);
+  const themeTriggerRef = useRef<HTMLButtonElement>(null);
+  const toolbarMoreRef = useRef<HTMLDivElement>(null);
+  const toolbarMoreTriggerRef = useRef<HTMLButtonElement>(null);
   const [wordCount, setWordCount] = useState<{ chars: number; cjk: number; words: number } | null>(null);
   const t = useT();
 
@@ -236,24 +241,47 @@ export default function App() {
     }
   }, [theme]);
 
-  // close the theme picker on outside click / Escape
+  // Keep the appearance menu anchored to its trigger and preserve the
+  // clicked control's focus when it is dismissed with a pointer.
   useEffect(() => {
     if (!themePickerOpen) return;
-    const onDown = (e: MouseEvent | KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (e instanceof KeyboardEvent) {
-        if (e.key === "Escape") setThemePickerOpen(false);
-        return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!themePickerRef.current?.contains(event.target as Node)) {
+        setThemePickerOpen(false);
       }
-      if (t && !t.closest(".theme-picker")) setThemePickerOpen(false);
     };
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onDown);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setThemePickerOpen(false);
+      themeTriggerRef.current?.focus();
+    };
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
     return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
     };
   }, [themePickerOpen]);
+
+  useEffect(() => {
+    if (!toolbarMoreOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!toolbarMoreRef.current?.contains(event.target as Node)) {
+        setToolbarMoreOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setToolbarMoreOpen(false);
+      toolbarMoreTriggerRef.current?.focus();
+    };
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [toolbarMoreOpen]);
 
   // session restore + auto-compile + Ctrl+P quick open
   useEffect(() => {
@@ -343,6 +371,42 @@ export default function App() {
     }
   };
 
+  const exportActive = async (format: "md" | "docx") => {
+    if (!activeTab) return;
+    try {
+      const out = await api.exportFile(activeTab, format);
+      window.alert(t("toolbar.exported", { file: out }));
+    } catch (e) {
+      window.alert(String(e));
+    }
+  };
+
+  const renderSecondaryActions = () => (
+    <>
+      <button className="btn toolbar-word-import" onClick={() => void importWord()} disabled={!root}>
+        {t("toolbar.importWord")}
+      </button>
+      {root && activeTab?.endsWith(".tex") && (
+        <>
+          <button
+            className="btn toolbar-export-md"
+            title={t("toolbar.exportMdTitle")}
+            onClick={() => void exportActive("md")}
+          >
+            {t("toolbar.exportMd")}
+          </button>
+          <button
+            className="btn toolbar-export-docx"
+            title={t("toolbar.exportDocxTitle")}
+            onClick={() => void exportActive("docx")}
+          >
+            {t("toolbar.exportDocx")}
+          </button>
+        </>
+      )}
+    </>
+  );
+
   // Bump the PDF iframe key on every successful compile.
   useEffect(() => {
     const un = useCompileStore.subscribe((s, prev) => {
@@ -419,7 +483,7 @@ export default function App() {
               : t("toolbar.target.currentEmpty")}
           </option>
         </select>
-        <button className="btn" onClick={handleCompile} disabled={running || !root}>
+        <button className="btn toolbar-compile" onClick={handleCompile} disabled={running || !root}>
           {running ? t("toolbar.compiling") : t("toolbar.compile")}
         </button>
         {running && (
@@ -427,9 +491,6 @@ export default function App() {
             {t("toolbar.cancel")}
           </button>
         )}
-        <button className="btn" onClick={() => void importWord()} disabled={!root}>
-          Word→LaTeX
-        </button>
         <button
           className="btn toolbar-new-file"
           title={t("tree.newFile")}
@@ -438,58 +499,34 @@ export default function App() {
         >
           {t("toolbar.newFile")}
         </button>
-        {root && activeTab?.endsWith(".tex") && (
-          <>
-            <button
-              className="btn"
-              title={t("toolbar.exportMdTitle")}
-              onClick={async () => {
-                if (!activeTab) return;
-                try {
-                  const out = await api.exportFile(activeTab, "md");
-                  window.alert(t("toolbar.exported", { file: out }));
-                } catch (e) {
-                  window.alert(String(e));
-                }
-              }}
-            >
-              {t("toolbar.exportMd")}
-            </button>
-            <button
-              className="btn"
-              title={t("toolbar.exportDocxTitle")}
-              onClick={async () => {
-                if (!activeTab) return;
-                try {
-                  const out = await api.exportFile(activeTab, "docx");
-                  window.alert(t("toolbar.exported", { file: out }));
-                } catch (e) {
-                  window.alert(String(e));
-                }
-              }}
-            >
-              {t("toolbar.exportDocx")}
-            </button>
-          </>
-        )}
-        <button
-          className="btn theme-picker-btn"
-          title={t("theme.title")}
-          onClick={() => setThemePickerOpen((v) => !v)}
-        >
-          <span className={`theme-swatch swatch-${theme}`} />
-          {theme === "liquid" ? t("theme.liquid") : theme === "dark" ? t("theme.dark") : t("theme.light")}
-        </button>
-        {themePickerOpen && (
-          <div className="theme-picker">
+        <div className="toolbar-secondary">{renderSecondaryActions()}</div>
+        <div className="toolbar-more" ref={toolbarMoreRef}>
+          <button
+            ref={toolbarMoreTriggerRef}
+            className="btn toolbar-more-btn"
+            aria-expanded={toolbarMoreOpen}
+            onClick={() => setToolbarMoreOpen((value) => !value)}
+          >
+            {t("toolbar.more")}
+          </button>
+          {toolbarMoreOpen && (
+            <div className="toolbar-more-menu">{renderSecondaryActions()}</div>
+          )}
+        </div>
+        <div className="theme-picker" ref={themePickerRef}>
+          <button
+            ref={themeTriggerRef}
+            className="btn theme-picker-btn"
+            title={t("theme.title")}
+            aria-expanded={themePickerOpen}
+            onClick={() => setThemePickerOpen((value) => !value)}
+          >
+            <span className={`theme-swatch swatch-${theme}`} />
+            {theme === "liquid" ? t("theme.liquid") : theme === "dark" ? t("theme.dark") : t("theme.light")}
+          </button>
+          {themePickerOpen && (
             <div className="theme-picker-menu">
-              {(
-                [
-                  ["liquid", "theme.liquid", "swatch-liquid"],
-                  ["dark", "theme.dark", "swatch-dark"],
-                  ["light", "theme.light", "swatch-light"],
-                ] as const
-              ).map(([id, key, swatch]) => (
+              {(["liquid", "dark", "light"] as const).map((id) => (
                 <button
                   key={id}
                   className={`theme-option ${theme === id ? "active" : ""}`}
@@ -498,14 +535,13 @@ export default function App() {
                     setThemePickerOpen(false);
                   }}
                 >
-                  <span className={`theme-swatch ${swatch}`} />
-                  {t(key)}
+                  {id === "liquid" ? t("theme.liquid") : id === "dark" ? t("theme.dark") : t("theme.light")}
                 </button>
               ))}
             </div>
-          </div>
-        )}
-        <button className="btn" onClick={() => setSettingsOpen(true)}>
+          )}
+        </div>
+        <button className="btn toolbar-settings" onClick={() => setSettingsOpen(true)}>
           {t("toolbar.settings")}
         </button>
       </div>
