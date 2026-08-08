@@ -99,7 +99,11 @@ async function main() {
     };
 
     await exec(`(async () => {
-      const { useProjectStore } = await import('/src/store/projectStore.ts');
+      const storeUrl = performance.getEntriesByType('resource')
+        .map((entry) => entry.name)
+        .find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+        ?? '/src/store/projectStore.ts';
+      const { useProjectStore } = await import(storeUrl);
       await useProjectStore.getState().openProject(${JSON.stringify(PROJ)});
       await useProjectStore.getState().openFile('main.tex');
       return true;
@@ -113,13 +117,21 @@ async function main() {
         sameModalContract: false,
         tabs: [],
         basicHasSixSeeds: false,
+        importTargetGuidance: { en: false, zh: false },
         newProjectHasNoTemplateTabs: false,
         newProjectHasParentAndNameOnly: false,
       };
+      if (await exec(`document.querySelector('.modal') ? '.modal-header button' : null`)) {
+        await clickSelector('.modal-header button');
+      }
       const toolbarSelector = await exec(`(async () => {
         const direct = document.querySelector('.toolbar-new-file');
         if (direct) return '.toolbar-new-file';
-        const { useI18n } = await import('/src/i18n/index.ts');
+        const i18nUrl = performance.getEntriesByType('resource')
+          .map((entry) => entry.name)
+          .find((name) => new URL(name).pathname.endsWith('/src/i18n/index.ts') && new URL(name).search)
+          ?? '/src/i18n/index.ts';
+        const { useI18n } = await import(i18nUrl);
         const title = useI18n.getState().t('tree.newFile');
         const button = [...document.querySelectorAll('.toolbar button')].find((candidate) => candidate.title === title);
         if (!button) return null;
@@ -128,12 +140,36 @@ async function main() {
       })()`);
       const toolbarClicked = toolbarSelector ? await clickSelector(toolbarSelector) : false;
       result.toolbarEntryOpensNewFile = toolbarClicked && JSON.parse(await exec(`JSON.stringify(!!document.querySelector('.new-file-modal'))`));
+      if (result.toolbarEntryOpensNewFile) await clickSelector('[data-new-file-tab="basic"]');
       const toolbarContract = JSON.parse(await exec(`JSON.stringify({
         tabs: [...document.querySelectorAll('[data-new-file-tab]')].map((button) => button.dataset.newFileTab),
         basicSeeds: document.querySelectorAll('.new-file-modal .template-card').length,
       })`));
       result.tabs = toolbarContract.tabs;
       result.basicHasSixSeeds = toolbarContract.basicSeeds === 6;
+      await clickSelector('[data-new-file-tab="user"]');
+      const importTargetGuidance = async (lang) => {
+        await exec(`(async () => {
+          const i18nUrl = performance.getEntriesByType('resource')
+            .map((entry) => entry.name)
+            .find((name) => new URL(name).pathname.endsWith('/src/i18n/index.ts') && new URL(name).search)
+            ?? '/src/i18n/index.ts';
+          const { useI18n } = await import(i18nUrl);
+          useI18n.getState().setLang(${JSON.stringify(lang)});
+          return true;
+        })()`);
+        await sleep(80);
+        return JSON.parse(await exec(`JSON.stringify(
+          document.querySelector('.new-file-modal .new-file-panel label.target-row')?.textContent?.trim() ?? ''
+        )`));
+      };
+      const englishTargetGuidance = await importTargetGuidance("en");
+      const chineseTargetGuidance = await importTargetGuidance("zh");
+      result.importTargetGuidance = {
+        en: /project-relative/i.test(englishTargetGuidance) && !/absolute/i.test(englishTargetGuidance),
+        zh: /项目相对/.test(chineseTargetGuidance) && !/绝对路径/.test(chineseTargetGuidance),
+      };
+      await clickSelector('[data-new-file-tab="basic"]');
       await pressEscape();
       await sleep(80);
       if (await exec(`document.querySelector('.modal') ? '.modal-header button' : null`)) await clickSelector('.modal-header button');
@@ -157,7 +193,9 @@ async function main() {
       })`));
       result.newProjectHasNoTemplateTabs = projectContract.hasModal && !projectContract.hasMarketTabs;
       result.newProjectHasParentAndNameOnly = projectContract.hasModal && projectContract.fields === 2;
-      await pressEscape();
+      if (await exec(`document.querySelector('.modal') ? '.modal-header button' : null`)) {
+        await clickSelector('.modal-header button');
+      }
       return result;
     };
 
@@ -168,6 +206,8 @@ async function main() {
       && files.sameModalContract
       && JSON.stringify(files.tabs) === JSON.stringify(["basic", "user", "market"])
       && files.basicHasSixSeeds
+      && files.importTargetGuidance.en
+      && files.importTargetGuidance.zh
       && files.newProjectHasNoTemplateTabs
       && files.newProjectHasParentAndNameOnly
     );
