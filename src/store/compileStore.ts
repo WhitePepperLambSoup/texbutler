@@ -31,6 +31,21 @@ export const useCompileStore = create<CompileState>((set, get) => ({
 
   async compile(target?: "main" | "current" | string) {
     if (get().running) return;
+    // save every dirty tab first: the compile must reflect exactly what
+    // the editor shows right now, not whatever is on disk
+    const ps = useProjectStore.getState();
+    const dirty = ps.tabs.filter((t) => t.dirty);
+    if (dirty.length > 0) {
+      try {
+        await Promise.all(dirty.map((t) => ps.saveFile(t.path)));
+      } catch (e) {
+        set({
+          running: false,
+          progress: { stage: "error", progress: 0, message: String(e) },
+        });
+        return;
+      }
+    }
     let override: string | undefined;
     if (target === "current") {
       override = useProjectStore.getState().activeTab ?? undefined;

@@ -285,9 +285,17 @@ export default function App() {
     };
     window.addEventListener("tb:file-saved", onSaved);
     window.addEventListener("keydown", onKey);
+    // per-file AI conversations: switching the editor tab auto-switches
+    // the AI conversation bound to that file
+    const unsubTab = useProjectStore.subscribe((s, prev) => {
+      if (s.activeTab !== prev.activeTab) {
+        useAiStore.getState().attachFile(s.activeTab);
+      }
+    });
     return () => {
       window.removeEventListener("tb:file-saved", onSaved);
       window.removeEventListener("keydown", onKey);
+      unsubTab();
       window.clearTimeout(timer);
       window.clearTimeout(ruleTimer);
     };

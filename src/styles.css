@@ -2062,6 +2062,16 @@ body {
 
 
 /* AI conversation sessions */
+.ai-file-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--fg-dim, #888);
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 4px;
+}
 .session-select {
   flex: 1;
   min-width: 60px;

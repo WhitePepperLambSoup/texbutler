@@ -46,7 +46,7 @@ function DiffHighlight({ diff }: { diff: string }) {
 }
 
 export default function AiPanel() {
-  const { messages, busy, busyKind, diffPending, acceptDiff, rejectDiff, applyHunk, clearMessages, suggestMode, toggleSuggestMode, pendingSelection, setSelection, askAi, lastEdits, rollbackEdit, sessions, sessionId, newSession, switchSession, renameSession, deleteSession } =
+  const { messages, busy, busyKind, diffPending, acceptDiff, rejectDiff, applyHunk, clearMessages, suggestMode, toggleSuggestMode, pendingSelection, setSelection, askAi, lastEdits, rollbackEdit, sessions, sessionId, newSession, switchSession, renameSession, deleteSession, activeFile } =
     useAiStore();
   const [expandedRaw, setExpandedRaw] = useState<number | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -88,7 +88,11 @@ export default function AiPanel() {
         <select
           className="session-select"
           value={sessionId ?? ""}
-          onChange={(e) => switchSession(e.target.value || null)}
+          onChange={(e) => {
+            switchSession(e.target.value || null);
+            // manual switch rebinds the current file to the picked session
+            useAiStore.getState().recordFileBinding();
+          }}
           title={t("ai.sessionTitle")}
           disabled={busy}
         >
@@ -99,6 +103,12 @@ export default function AiPanel() {
             </option>
           ))}
         </select>
+        <span
+          className="ai-file-badge"
+          title={t("ai.sessionFileTitle")}
+        >
+          {activeFile ? activeFile.split("/").pop() : t("ai.sessionNoFile")}
+        </span>
         <button
           className="btn-mini"
           title={t("ai.sessionNew")}

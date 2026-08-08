@@ -25,6 +25,7 @@ export interface AiSession {
 }
 
 const SESSIONS_KEY = "tb-ai-sessions";
+const FILE_SESSIONS_KEY = "tb-ai-file-sessions";
 
 function loadSessions(): AiSession[] {
   try {
@@ -34,6 +35,25 @@ function loadSessions(): AiSession[] {
     return Array.isArray(parsed) ? (parsed as AiSession[]) : [];
   } catch {
     return [];
+  }
+}
+
+function loadFileSessions(): Record<string, string | null> {
+  try {
+    const raw = localStorage.getItem(FILE_SESSIONS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, string | null>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistFileSessions(map: Record<string, string | null>) {
+  try {
+    localStorage.setItem(FILE_SESSIONS_KEY, JSON.stringify(map));
+  } catch {
+    /* storage full / unavailable — best-effort */
   }
 }
 
@@ -61,6 +81,10 @@ interface AiState {
   sessions: AiSession[];
   /** Id of the active conversation; null = unsaved scratch chat. */
   sessionId: string | null;
+  /** Per-file conversation bindings (rel path → session id). */
+  fileSessions: Record<string, string | null>;
+  /** The editor file currently bound to the AI panel. */
+  activeFile: string | null;
 
   loadSettings: () => Promise<void>;
   diagnoseIssue: (issue: Issue, index: number) => Promise<void>;
@@ -79,6 +103,8 @@ interface AiState {
   /** Start a fresh named conversation (the old one stays persisted). */
   newSession: () => void;
   switchSession: (id: string | null) => void;
+  attachFile: (file: string | null) => void;
+  recordFileBinding: () => void;
   renameSession: (id: string, name: string) => void;
   deleteSession: (id: string) => void;
 }
@@ -109,6 +135,8 @@ export const useAiStore = create<AiState>((set, get) => ({
   lastEdits: [],
   sessions: loadSessions(),
   sessionId: null,
+  fileSessions: loadFileSessions(),
+  activeFile: null,
 
   setSelection(sel) {
     set({ pendingSelection: sel });
@@ -120,6 +148,7 @@ export const useAiStore = create<AiState>((set, get) => ({
     if (get().busy) return;
     set({ busy: true, busyKind: "diagnose" });
     const st = useProjectStore.getState();
+    get().recordFileBinding();
     get().pushMessage({ role: "user", kind: "plain", text: q });
     // streaming answer: collect tb://ai-stream deltas into a live message
     let streamed = "";
@@ -260,6 +289,8 @@ export const useAiStore = create<AiState>((set, get) => ({
   pushMessage(m) {
     const id = ++msgId;
     set({ messages: [...get().messages, { ...m, id }] });
+    // bind the conversation to the active file (fix/diagnose chat too)
+    get().recordFileBinding();
     // persist the active conversation (best-effort; streamed text updates
     // are persisted on finalize, not per delta)
     const { sessions, sessionId } = get();
@@ -290,6 +321,36 @@ export const useAiStore = create<AiState>((set, get) => ({
       messages: s ? [...s.messages] : [],
       diffPending: null,
     });
+  },
+
+  /** Per-file conversations: switching the active editor tab auto-switches
+   *  the AI conversation to the one bound to that file. The binding is
+   *  remembered on every message sent while the file is active. */
+  attachFile(file: string | null) {
+    const { fileSessions, sessionId, activeFile } = get();
+    if (activeFile !== file) {
+      // remember the outgoing binding, then restore the incoming one
+      const next = { ...fileSessions };
+      if (activeFile != null && sessionId != null) {
+        next[activeFile] = sessionId;
+      }
+      const bound = file != null ? next[file] ?? null : null;
+      set({ fileSessions: next, activeFile: file });
+      persistFileSessions(next);
+      if (file != null && bound != null) {
+        get().switchSession(bound);
+      }
+    }
+  },
+
+  /** Called when a message is sent: bind the active conversation to the
+   *  active file so switching back restores it. */
+  recordFileBinding() {
+    const { fileSessions, sessionId, activeFile } = get();
+    if (activeFile == null || sessionId == null) return;
+    const next = { ...fileSessions, [activeFile]: sessionId };
+    set({ fileSessions: next });
+    persistFileSessions(next);
   },
 
   renameSession(id, name) {

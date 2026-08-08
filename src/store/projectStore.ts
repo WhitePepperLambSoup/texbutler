@@ -37,7 +37,7 @@ interface ProjectState {
   createProject: (parent: string, name: string, template?: string) => Promise<void>;
   refresh: () => Promise<void>;
   openFile: (rel: string) => Promise<void>;
-  saveFile: () => Promise<void>;
+  saveFile: (path?: string) => Promise<void>;
   reloadTab: (rel: string) => Promise<void>;
   /** Load a file into a tab WITHOUT switching the active tab (split view). */
   ensureTab: (rel: string) => Promise<void>;
@@ -156,9 +156,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
   },
 
-  async saveFile() {
+  async saveFile(path?: string) {
     const { tabs, activeTab } = get();
-    const tab = tabs.find((t) => t.path === activeTab);
+    const tab = tabs.find((t) => t.path === (path ?? activeTab));
     if (!tab) return;
     await api.writeFile(tab.path, tab.content);
     // re-read after await: if the user kept typing during the write, keep

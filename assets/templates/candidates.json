@@ -1,0 +1,3587 @@
+{
+  "thesis-cn": [
+    {
+      "repo": "zhanwen/MathModel",
+      "stars": 11111,
+      "desc": "研究生数学建模，本科生数学建模、数学建模竞赛优秀论文，数学建模算法，LaTeX论文模板，算法思维导图，参考书籍，Matlab软件教程，PPT",
+      "size_kb": 3883443,
+      "html": "https://github.com/zhanwen/MathModel"
+    },
+    {
+      "repo": "sjtug/SJTUThesis",
+      "stars": 3830,
+      "desc": "上海交通大学 LaTeX 论文模板 | Shanghai Jiao Tong University LaTeX Thesis Template",
+      "size_kb": 3048,
+      "html": "https://github.com/sjtug/SJTUThesis"
+    },
+    {
+      "repo": "hithesis/hithesis",
+      "stars": 2358,
+      "desc": "嗨！thesis！哈尔滨工业大学毕业论文LaTeX模板",
+      "size_kb": 4923,
+      "html": "https://github.com/hithesis/hithesis"
+    },
+    {
+      "repo": "bdebye/thesisuestc",
+      "stars": 1671,
+      "desc": "ThesisUESTC-电子科技大学毕业论文模板",
+      "size_kb": 8883,
+      "html": "https://github.com/bdebye/thesisuestc"
+    },
+    {
+      "repo": "BHOSC/BUAAthesis",
+      "stars": 1267,
+      "desc": "北航毕设论文LaTeX模板",
+      "size_kb": 3846,
+      "html": "https://github.com/BHOSC/BUAAthesis"
+    },
+    {
+      "repo": "latexstudio/CUMCMThesis",
+      "stars": 990,
+      "desc": "全国大学生数学建模竞赛LaTeX论文模板 已经适配到 2023 年格式",
+      "size_kb": 12425,
+      "html": "https://github.com/latexstudio/CUMCMThesis"
+    },
+    {
+      "repo": "SYSU-SCC/sysu-thesis",
+      "stars": 950,
+      "desc": "中山大学 LaTeX 毕业论文项目模板",
+      "size_kb": 33031,
+      "html": "https://github.com/SYSU-SCC/sysu-thesis"
+    },
+    {
+      "repo": "nju-lug/NJUThesis",
+      "stars": 692,
+      "desc": "南京大学学位论文模板",
+      "size_kb": 3158,
+      "html": "https://github.com/nju-lug/NJUThesis"
+    },
+    {
+      "repo": "shifujun/UESTCthesis",
+      "stars": 648,
+      "desc": "电子科技大学毕设设计论文LaTeX模板",
+      "size_kb": 23838,
+      "html": "https://github.com/shifujun/UESTCthesis"
+    },
+    {
+      "repo": "CheckBoxStudio/BUAAThesis",
+      "stars": 608,
+      "desc": "北航研究生学位论文模板（Word+LaTeX）.",
+      "size_kb": 9541,
+      "html": "https://github.com/CheckBoxStudio/BUAAThesis"
+    },
+    {
+      "repo": "MGG1996/DissertationUESTC",
+      "stars": 567,
+      "desc": "电子科技大学学位论文LaTeX模板",
+      "size_kb": 123571,
+      "html": "https://github.com/MGG1996/DissertationUESTC"
+    },
+    {
+      "repo": "mengchaoheng/SCUT_thesis",
+      "stars": 567,
+      "desc": "华南理工大学硕博士学位论文模板(LaTeX)。Latex templates for the thesis of South China University of Technology",
+      "size_kb": 91076,
+      "html": "https://github.com/mengchaoheng/SCUT_thesis"
+    },
+    {
+      "repo": "sheng-qiang/BUPTBachelorThesis",
+      "stars": 554,
+      "desc": "A LaTeX Template for BUPT Bachelor Thesis (updated in 2018) 北京邮电大学学士学位论文LaTeX模板",
+      "size_kb": 13139,
+      "html": "https://github.com/sheng-qiang/BUPTBachelorThesis"
+    },
+    {
+      "repo": "a171232886/TJUThesis_master_2021",
+      "stars": 447,
+      "desc": "天大博士/硕士学位论文Latex模板，根据2021年版要求修改，可直接在Overleaf上运行。:star:所写的论文成功提交天津大学图书馆存档！（2021.12.24）",
+      "size_kb": 3766,
+      "html": "https://github.com/a171232886/TJUThesis_master_2021"
+    },
+    {
+      "repo": "TJ-CSCCG/TongjiThesis",
+      "stars": 432,
+      "desc": "同济大学毕业设计论文 LaTeX 模板 | TongjiThesis - LaTeX Thesis Template for Tongji University",
+      "size_kb": 2944,
+      "html": "https://github.com/TJ-CSCCG/TongjiThesis"
+    },
+    {
+      "repo": "obster-y/XJTU-thesis",
+      "stars": 414,
+      "desc": "西安交通大学学位论文模板（LaTeX）（适用硕士、博士学位）An official LaTeX template for Xi'an Jiaotong University degree thesis (Chinese and Englis",
+      "size_kb": 18857,
+      "html": "https://github.com/obster-y/XJTU-thesis"
+    },
+    {
+      "repo": "nuaatug/nuaathesis",
+      "stars": 395,
+      "desc": "LaTeX document class for NUAA, supporting bachelor/master/PH.D thesis in Chinese/English/Japanese. 南航本科、硕士、博士学位论文 LaTeX ",
+      "size_kb": 5834,
+      "html": "https://github.com/nuaatug/nuaathesis"
+    },
+    {
+      "repo": "njuhan/njuthesis-nju-thesis-template",
+      "stars": 371,
+      "desc": "南京大学学位论文(本科/硕士/博士)，毕业论文LaTeX模板",
+      "size_kb": 5515,
+      "html": "https://github.com/njuhan/njuthesis-nju-thesis-template"
+    },
+    {
+      "repo": "marquistj13/TongjiThesis",
+      "stars": 352,
+      "desc": "同济大学硕博士论文LaTeX模板",
+      "size_kb": 4921,
+      "html": "https://github.com/marquistj13/TongjiThesis"
+    },
+    {
+      "repo": "iydon/sustechthesis",
+      "stars": 345,
+      "desc": "南方科技大学本科生毕业论文 LaTeX 模板",
+      "size_kb": 49805,
+      "html": "https://github.com/iydon/sustechthesis"
+    }
+  ],
+  "thesis-cn-2": [
+    {
+      "repo": "NWPUMetaphysicsOffice/Yet-Another-LaTeX-Template-for-NPU-Thesis",
+      "stars": 607,
+      "desc": "西北工业大学硕博学位论文模版 | Yet Another Thesis Template for Northwestern Polytechnical University",
+      "size_kb": 23908,
+      "html": "https://github.com/NWPUMetaphysicsOffice/Yet-Another-LaTeX-Template-for-NPU-Thesis"
+    },
+    {
+      "repo": "kevinleeex/scu_thesis_2020",
+      "stars": 250,
+      "desc": " 四川大学研究生学位论文模板LaTex(复刻官方word模板)Here you go!",
+      "size_kb": 52116,
+      "html": "https://github.com/kevinleeex/scu_thesis_2020"
+    },
+    {
+      "repo": "xiaoyao9933/UCASthesis",
+      "stars": 237,
+      "desc": "**国科大新版标准** 中国科学院大学学位论文模板，目前遵守2018国科大指导标准。 a LaTeX template for UCAS.",
+      "size_kb": 11332,
+      "html": "https://github.com/xiaoyao9933/UCASthesis"
+    },
+    {
+      "repo": "StickCui/XDUthesis-personal",
+      "stars": 174,
+      "desc": "XDUthesis 西安电子科技大学学位论文模板  Xidian University thesis template",
+      "size_kb": 16329,
+      "html": "https://github.com/StickCui/XDUthesis-personal"
+    },
+    {
+      "repo": "ywgATustcbbs/ustcthesis",
+      "stars": 145,
+      "desc": "Moved to USTCTUG on Github中国科学技术大学学位论文通用LaTeX模板. LaTeX templates for UNDERGRADUATE and GRADUATE STUDENTS of USTC. Backup",
+      "size_kb": 11112,
+      "html": "https://github.com/ywgATustcbbs/ustcthesis"
+    },
+    {
+      "repo": "jonzhaocn/szu-thesis-master",
+      "stars": 131,
+      "desc": "深圳大学（深大）硕士学位论文latex模板",
+      "size_kb": 6324,
+      "html": "https://github.com/jonzhaocn/szu-thesis-master"
+    },
+    {
+      "repo": "BlueFisher/shuthesis",
+      "stars": 129,
+      "desc": "上海大学硕博学位论文 LaTeX 模板 Thesis Template for Shanghai University",
+      "size_kb": 21131,
+      "html": "https://github.com/BlueFisher/shuthesis"
+    },
+    {
+      "repo": "jiec827/njustThesis",
+      "stars": 119,
+      "desc": "LaTeX thesis template for Nanjing University of Sci & Tech（南京理工大学学位论文LaTeX模版）",
+      "size_kb": 7376,
+      "html": "https://github.com/jiec827/njustThesis"
+    },
+    {
+      "repo": "Liam0205/sduthesis",
+      "stars": 87,
+      "desc": "山东大学学位论文模板 (LaTeX thesis template for Shandong University)",
+      "size_kb": 2046,
+      "html": "https://github.com/Liam0205/sduthesis"
+    },
+    {
+      "repo": "Sophie10001b/swjtuThesisV3.0",
+      "stars": 78,
+      "desc": "V3.0 LaTeX Template for PhD/MA Thesis of Southwest Jiaotong University (SWJTU) / 西南交通大学研究生学位论文LaTeX模板(V3.0)",
+      "size_kb": 10905,
+      "html": "https://github.com/Sophie10001b/swjtuThesisV3.0"
+    },
+    {
+      "repo": "CSGrandeur/CSU-Thesis-LaTeX-Template",
+      "stars": 77,
+      "desc": "中南大学学位论文LaTeX模板",
+      "size_kb": 4439,
+      "html": "https://github.com/CSGrandeur/CSU-Thesis-LaTeX-Template"
+    },
+    {
+      "repo": "OpenCUMT/thesis-latex",
+      "stars": 67,
+      "desc": "中国矿业大学学位论文 LaTeX 模板 (CUMT Thesis LaTeX Template)。支持本科、硕士、博士学位论文撰写。",
+      "size_kb": 40848,
+      "html": "https://github.com/OpenCUMT/thesis-latex"
+    },
+    {
+      "repo": "haimingz/tjuthesis",
+      "stars": 67,
+      "desc": "LaTeX template for Tianjin University Master's and Doctoral Theses. 天津大学硕博学位论文 LaTeX 模板。",
+      "size_kb": 6620,
+      "html": "https://github.com/haimingz/tjuthesis"
+    },
+    {
+      "repo": "jiangqideng/tjuthesis_master_2016",
+      "stars": 48,
+      "desc": "LaTeX templates for TJU thesis. Forked from code.google.com/p/tjuthesis. （根据2016年天津大学硕士学位论文格式要求进行修改）",
+      "size_kb": 2028,
+      "html": "https://github.com/jiangqideng/tjuthesis_master_2016"
+    },
+    {
+      "repo": "Ronchy2000/Xidian-LaTeX-Template-for-macOS",
+      "stars": 45,
+      "desc": "最新跨平台验证的西电学位论文模板，针对 macOS/Windows + TeX Live 2025 提供完整字体、编译与多版本管理流程。",
+      "size_kb": 24259,
+      "html": "https://github.com/Ronchy2000/Xidian-LaTeX-Template-for-macOS"
+    }
+  ],
+  "buaa": [
+    {
+      "repo": "yzd-v/BUAA_thesis_overleaf",
+      "stars": 44,
+      "desc": "北航毕设论文overleaf Latex模板",
+      "size_kb": 13502,
+      "html": "https://github.com/yzd-v/BUAA_thesis_overleaf"
+    },
+    {
+      "repo": "qwweezeng/BUAA_open_thesis_latex",
+      "stars": 5,
+      "desc": "北航学位论文开题报告latex模板",
+      "size_kb": 28611,
+      "html": "https://github.com/qwweezeng/BUAA_open_thesis_latex"
+    },
+    {
+      "repo": "MiMaxUltra/BUAA-Assay",
+      "stars": 0,
+      "desc": "北航毕设论文模板-Latex",
+      "size_kb": 199,
+      "html": "https://github.com/MiMaxUltra/BUAA-Assay"
+    },
+    {
+      "repo": "she-is-automatic/BUAA_Report_LaTeX_Template",
+      "stars": 0,
+      "desc": "北航课程报告/课程论文latex模板",
+      "size_kb": 354,
+      "html": "https://github.com/she-is-automatic/BUAA_Report_LaTeX_Template"
+    }
+  ],
+  "hit": [],
+  "nwpu": [
+    {
+      "repo": "1195343015/nwputhesis",
+      "stars": 257,
+      "desc": "西北工业大学本科毕业设计/硕士博士学位论文 LaTeX 模板 （2026）",
+      "size_kb": 4151,
+      "html": "https://github.com/1195343015/nwputhesis"
+    },
+    {
+      "repo": "NPUSCG/nputhesis",
+      "stars": 79,
+      "desc": "西北工业大学硕士/博士学位论文 LaTeX 模板",
+      "size_kb": 12005,
+      "html": "https://github.com/NPUSCG/nputhesis"
+    },
+    {
+      "repo": "moetayuko/NPU_PhD_proposal",
+      "stars": 12,
+      "desc": "西北工业大学博士研究生学位论文开题报告表LaTeX模板",
+      "size_kb": 144,
+      "html": "https://github.com/moetayuko/NPU_PhD_proposal"
+    }
+  ],
+  "seu": [
+    {
+      "repo": "TouchFishPioneer/SEU-master-thesis",
+      "stars": 236,
+      "desc": "东南大学硕士研究生学位论文LaTeX模板",
+      "size_kb": 29841,
+      "html": "https://github.com/TouchFishPioneer/SEU-master-thesis"
+    },
+    {
+      "repo": "wen-fei/seu-thesis-latex-template",
+      "stars": 183,
+      "desc": "东南大学毕业论文latex模板",
+      "size_kb": 1872,
+      "html": "https://github.com/wen-fei/seu-thesis-latex-template"
+    },
+    {
+      "repo": "DansYU/SeuThesiY",
+      "stars": 86,
+      "desc": "用于排版东南大学硕博学位论文的LaTeX模板",
+      "size_kb": 34107,
+      "html": "https://github.com/DansYU/SeuThesiY"
+    },
+    {
+      "repo": "kanhao100/SEU-master-thesis-template-2026",
+      "stars": 30,
+      "desc": "东南大学硕博毕业论文latex模板",
+      "size_kb": 28719,
+      "html": "https://github.com/kanhao100/SEU-master-thesis-template-2026"
+    },
+    {
+      "repo": "chenmicro/seu-thesis",
+      "stars": 26,
+      "desc": "The Latex template for Southeast University. 东南大学学位论文latex模板",
+      "size_kb": 6261,
+      "html": "https://github.com/chenmicro/seu-thesis"
+    },
+    {
+      "repo": "Dcwjh/SEUThesis-Latex",
+      "stars": 23,
+      "desc": "东南大学研究生论文模板",
+      "size_kb": 10152,
+      "html": "https://github.com/Dcwjh/SEUThesis-Latex"
+    },
+    {
+      "repo": "garbagecodes/SEU-master-thesis-template",
+      "stars": 22,
+      "desc": "东南大学硕士毕业论文Latex模板",
+      "size_kb": 20209,
+      "html": "https://github.com/garbagecodes/SEU-master-thesis-template"
+    },
+    {
+      "repo": "jasonbian97/Southeast-University-Paper-Latex-Template",
+      "stars": 8,
+      "desc": "东南大学学位论文latex模板",
+      "size_kb": 48041,
+      "html": "https://github.com/jasonbian97/Southeast-University-Paper-Latex-Template"
+    },
+    {
+      "repo": "Thisis8868/SEU_Course_Template_Latex",
+      "stars": 8,
+      "desc": "东南大学通用课程论文/报告latex模板",
+      "size_kb": 365,
+      "html": "https://github.com/Thisis8868/SEU_Course_Template_Latex"
+    },
+    {
+      "repo": "Yunchang-Liu/SEUXiaoBaoLaTex",
+      "stars": 8,
+      "desc": "东南大学校庆研究生学术报告会论文 LaTeX 模板（非官方） 使用需谨慎！  本模板目前仍在持续迭代中，欢迎大家提交 Issue 和 PR，共同完善。",
+      "size_kb": 17493,
+      "html": "https://github.com/Yunchang-Liu/SEUXiaoBaoLaTex"
+    },
+    {
+      "repo": "WCY-dt/SEU-Master-LaTeX-Template",
+      "stars": 6,
+      "desc": "东南大学硕士论文LaTeX模板，适用于2026+标准，可一键生成标准/盲审等多种版本",
+      "size_kb": 3560,
+      "html": "https://github.com/WCY-dt/SEU-Master-LaTeX-Template"
+    }
+  ],
+  "tju": [
+    {
+      "repo": "lebronyxm/TJU-master-Latex",
+      "stars": 9,
+      "desc": "天津大学硕士论文Latex模板，这是我在余蓝涛等人的模板基础上，根据16年最新格式修改的。author：杨雪梦",
+      "size_kb": 527,
+      "html": "https://github.com/lebronyxm/TJU-master-Latex"
+    },
+    {
+      "repo": "VMnK-Run/TJUThesisLatexTemplate2024",
+      "stars": 9,
+      "desc": "[天津大学][Tianjin University][TJU]2024本科生毕业论文Latex模板",
+      "size_kb": 2112,
+      "html": "https://github.com/VMnK-Run/TJUThesisLatexTemplate2024"
+    },
+    {
+      "repo": "marvel084/latex-2023thesis",
+      "stars": 3,
+      "desc": "TJU 2023 college graduate thesis LaTeX / 天津大学本科生毕业设计（论文）LaTeX模板改良版",
+      "size_kb": 3766,
+      "html": "https://github.com/marvel084/latex-2023thesis"
+    },
+    {
+      "repo": "jinyu121/tju-thesis-simple",
+      "stars": 2,
+      "desc": "天津大学研究生毕业论文LaTeX模板（简易非官方版）",
+      "size_kb": 201,
+      "html": "https://github.com/jinyu121/tju-thesis-simple"
+    },
+    {
+      "repo": "nathanatgit/tju_MasterDr_Latex_template",
+      "stars": 2,
+      "desc": "Tianjin University thesis latex template for personal use. Based on 2021 revised version. 天津大学大论文模板（硕士、博士）",
+      "size_kb": 5616,
+      "html": "https://github.com/nathanatgit/tju_MasterDr_Latex_template"
+    },
+    {
+      "repo": "alanzeng423/TJU-Thesis-Latex-Template",
+      "stars": 0,
+      "desc": "天津大学本科生毕业论文Latex模板",
+      "size_kb": 1976,
+      "html": "https://github.com/alanzeng423/TJU-Thesis-Latex-Template"
+    },
+    {
+      "repo": "LilLeapo/graduation-thesis-2026",
+      "stars": 0,
+      "desc": "天津大学2026届本科生毕业论文 - 基于 LaTeX 模板撰写",
+      "size_kb": 22393,
+      "html": "https://github.com/LilLeapo/graduation-thesis-2026"
+    }
+  ],
+  "hust2": [
+    {
+      "repo": "zhy617/HUST-Template-of-Thesis",
+      "stars": 1,
+      "desc": "华科计算机学院毕设论文 LaTeX 模板 + LaTeX 转 Word Workflow",
+      "size_kb": 4862,
+      "html": "https://github.com/zhy617/HUST-Template-of-Thesis"
+    }
+  ],
+  "hnu": [
+    {
+      "repo": "hnuthesis/hnuthesis",
+      "stars": 134,
+      "desc": "湖南大学硕士学位论文 LaTeX 模板",
+      "size_kb": 14683,
+      "html": "https://github.com/hnuthesis/hnuthesis"
+    },
+    {
+      "repo": "leaf-hsiao/HNUThesisTemplate",
+      "stars": 93,
+      "desc": "湖南大学本科生毕业论文LaTeX模板",
+      "size_kb": 1485,
+      "html": "https://github.com/leaf-hsiao/HNUThesisTemplate"
+    },
+    {
+      "repo": "XayahSuSuSu/Latex-HNUThesisTemplate",
+      "stars": 82,
+      "desc": "湖南大学本科毕业论文LaTeX模板（大理类）",
+      "size_kb": 34934,
+      "html": "https://github.com/XayahSuSuSu/Latex-HNUThesisTemplate"
+    },
+    {
+      "repo": "zcyeee/HNU_LaTeX_Template",
+      "stars": 22,
+      "desc": "湖南大学课程论文LaTeX模板",
+      "size_kb": 44090,
+      "html": "https://github.com/zcyeee/HNU_LaTeX_Template"
+    },
+    {
+      "repo": "Gwinel/hnuthesis",
+      "stars": 17,
+      "desc": "湖南大学硕士学位论文模板（latex）",
+      "size_kb": 476,
+      "html": "https://github.com/Gwinel/hnuthesis"
+    },
+    {
+      "repo": "zyh-hnu/HNU-Master-Latex2026",
+      "stars": 8,
+      "desc": "湖南大学2026硕士Latex论文模板",
+      "size_kb": 14601,
+      "html": "https://github.com/zyh-hnu/HNU-Master-Latex2026"
+    },
+    {
+      "repo": "zyk121381/HNU-UG-Thesis-Of-Mve-2025",
+      "stars": 5,
+      "desc": "湖南大学机械与运载工程学院本科生毕业论文Latex模板（2025修订版，适用于2026年毕业生，非官方）",
+      "size_kb": 40325,
+      "html": "https://github.com/zyk121381/HNU-UG-Thesis-Of-Mve-2025"
+    },
+    {
+      "repo": "AE4012/hnu-thesis-2025-latex",
+      "stars": 3,
+      "desc": "🚀 湖南大学学位论文 LaTeX 模板 (2025版)  本模板基于 《湖南大学研究生学位论文或实践成果撰写规范》（湖大研字〔2025〕17号，2025年4月）开发，符合湖南大学研究生/博士生学位论文撰写规范，符合湖大最新论文引用规范。",
+      "size_kb": 15419,
+      "html": "https://github.com/AE4012/hnu-thesis-2025-latex"
+    },
+    {
+      "repo": "MaFuyan/HNU_Thesis_LaTeX_MacOS",
+      "stars": 2,
+      "desc": "湖南大学硕士学位论文LaTeX模板 MacOS",
+      "size_kb": 870,
+      "html": "https://github.com/MaFuyan/HNU_Thesis_LaTeX_MacOS"
+    },
+    {
+      "repo": "shleewiner/hnuthesis-2025",
+      "stars": 0,
+      "desc": "湖南大学硕士学位论文 LaTeX 模板",
+      "size_kb": 14587,
+      "html": "https://github.com/shleewiner/hnuthesis-2025"
+    },
+    {
+      "repo": "antRainZ/hnuthesis",
+      "stars": 0,
+      "desc": "记录自己写论文的latex模板，湖南大学信科院专业硕士论文",
+      "size_kb": 15164,
+      "html": "https://github.com/antRainZ/hnuthesis"
+    },
+    {
+      "repo": "jnhu76/HNU-Thesis-Latex-Template",
+      "stars": 0,
+      "desc": "优化的湖南大学学位论文LaTeX模板，修复了图表索引排版问题。",
+      "size_kb": 14491,
+      "html": "https://github.com/jnhu76/HNU-Thesis-Latex-Template"
+    },
+    {
+      "repo": "Cui-ZW/hnuthesis_mve",
+      "stars": 0,
+      "desc": "湖南大学本科生毕业论文LaTeX非官方模板，教学用途",
+      "size_kb": 32113,
+      "html": "https://github.com/Cui-ZW/hnuthesis_mve"
+    }
+  ],
+  "csu": [
+    {
+      "repo": "disc0ver-csu/csu-thesis",
+      "stars": 244,
+      "desc": "中南大学学术论文LaTex模板。Central South University Thesis LaTeX Template.",
+      "size_kb": 14846,
+      "html": "https://github.com/disc0ver-csu/csu-thesis"
+    },
+    {
+      "repo": "BlurryLight/CSU-Thesis-LaTeX-Template",
+      "stars": 19,
+      "desc": "中南大学本科学位论文LaTeX模板",
+      "size_kb": 9310,
+      "html": "https://github.com/BlurryLight/CSU-Thesis-LaTeX-Template"
+    },
+    {
+      "repo": "zhong-yy/CSU_Thesis_Proposal",
+      "stars": 15,
+      "desc": "中南大学研究生学位论文开题报告LaTeX模板",
+      "size_kb": 268,
+      "html": "https://github.com/zhong-yy/CSU_Thesis_Proposal"
+    },
+    {
+      "repo": "hezhujun/CSU-Thesis-LaTeX",
+      "stars": 7,
+      "desc": "中南大学硕士论文LaTex模板。",
+      "size_kb": 7503,
+      "html": "https://github.com/hezhujun/CSU-Thesis-LaTeX"
+    },
+    {
+      "repo": "ChaoYan/CSUThesis",
+      "stars": 7,
+      "desc": "中南大学 XeLaTeX 学位论文及课程论文模板 Central South University XeLaTeX Thesis Template",
+      "size_kb": 2948,
+      "html": "https://github.com/ChaoYan/CSUThesis"
+    },
+    {
+      "repo": "burst-bao/LaTex-Template-for-CSU",
+      "stars": 7,
+      "desc": "1.LaTex Template for CSUBachelor         在武汉大学本科毕业论文模板的基础上，根据中南大学本科毕业论文的格式要求，进行修改，删除中南要求中没有的部分，并添加更为详细的新的内容与格式，较为完美地实现了中",
+      "size_kb": 21443,
+      "html": "https://github.com/burst-bao/LaTex-Template-for-CSU"
+    },
+    {
+      "repo": "gisliuliang/New_CSU_Thesis_Proposal",
+      "stars": 1,
+      "desc": "【2022年11月更新】中南大学研究生学位论文开题报告LaTex模板",
+      "size_kb": 274,
+      "html": "https://github.com/gisliuliang/New_CSU_Thesis_Proposal"
+    }
+  ],
+  "cqu": [
+    {
+      "repo": "nanmu42/CQUThesis",
+      "stars": 342,
+      "desc": ":pencil: 重庆大学毕业论文LaTeX模板---LaTeX Thesis Template for Chongqing University",
+      "size_kb": 13080,
+      "html": "https://github.com/nanmu42/CQUThesis"
+    },
+    {
+      "repo": "yinguoweiOvO/CQU_Thesis2024",
+      "stars": 40,
+      "desc": "重庆大学毕业论文Latex模板（修改版）",
+      "size_kb": 22070,
+      "html": "https://github.com/yinguoweiOvO/CQU_Thesis2024"
+    },
+    {
+      "repo": "Thesoul20/cquthesis",
+      "stars": 10,
+      "desc": "重庆大学研究生（博士&硕士）毕业论文，Latex模板，支持最新2023年格式要求。",
+      "size_kb": 172910,
+      "html": "https://github.com/Thesoul20/cquthesis"
+    },
+    {
+      "repo": "XeriChen/CQU-Course-Paper-Latex-Templete",
+      "stars": 1,
+      "desc": "重庆大学课程论文latex模板（自用存档）",
+      "size_kb": 10247,
+      "html": "https://github.com/XeriChen/CQU-Course-Paper-Latex-Templete"
+    }
+  ],
+  "neu": [
+    {
+      "repo": "tzaiyang/NEUBachelorThesis",
+      "stars": 82,
+      "desc": "东北大学本科生毕业论文LaTeX模板",
+      "size_kb": 22018,
+      "html": "https://github.com/tzaiyang/NEUBachelorThesis"
+    },
+    {
+      "repo": "Acytoo/neu_bachelor_thesis_template",
+      "stars": 67,
+      "desc": "东北大学本科毕业设计 论文latex模板 2019",
+      "size_kb": 7427,
+      "html": "https://github.com/Acytoo/neu_bachelor_thesis_template"
+    },
+    {
+      "repo": "mervin0502/neuthesis",
+      "stars": 44,
+      "desc": "The Latex template of Ph.D. thesis for Northeastern University.（东北大学博士学位论文Latex模板）",
+      "size_kb": 1950,
+      "html": "https://github.com/mervin0502/neuthesis"
+    },
+    {
+      "repo": "AIR-hl/neu-master-thesis-template",
+      "stars": 17,
+      "desc": "东北大学硕士研究生毕业论文LaTex模板",
+      "size_kb": 24917,
+      "html": "https://github.com/AIR-hl/neu-master-thesis-template"
+    },
+    {
+      "repo": "onsimplet/NEUQPaperLaTeXTemplateUpdate",
+      "stars": 12,
+      "desc": "东北大学秦皇岛分校2020年本科毕业论文 LaTex 模板更新修改",
+      "size_kb": 991,
+      "html": "https://github.com/onsimplet/NEUQPaperLaTeXTemplateUpdate"
+    },
+    {
+      "repo": "SchrodingerBlume/NEUCLHSBachelorThesis",
+      "stars": 6,
+      "desc": "基于2026届毕业生要求开发的东北大学生命科学与健康学院本科生毕业设计（论文）LaTeX模板",
+      "size_kb": 23319,
+      "html": "https://github.com/SchrodingerBlume/NEUCLHSBachelorThesis"
+    },
+    {
+      "repo": "w-mj/neu_cse_bachelor_thesis",
+      "stars": 5,
+      "desc": "东北大学计算机学院本科毕业论文Latex模板",
+      "size_kb": 2040,
+      "html": "https://github.com/w-mj/neu_cse_bachelor_thesis"
+    },
+    {
+      "repo": "liuskywalkerjskd/neu-bachelor-thesis-latex",
+      "stars": 3,
+      "desc": "东北大学本科毕业论文LaTeX格式模板V5",
+      "size_kb": 560,
+      "html": "https://github.com/liuskywalkerjskd/neu-bachelor-thesis-latex"
+    }
+  ],
+  "uestc": [
+    {
+      "repo": "note286/xdupgthesis",
+      "stars": 342,
+      "desc": "[停止维护 请使用note286/xduts]西安电子科技大学研究生学位论文XeLaTeX模板",
+      "size_kb": 697,
+      "html": "https://github.com/note286/xdupgthesis"
+    },
+    {
+      "repo": "YanMing-lxb/GUET_Thesis_LaTeX",
+      "stars": 126,
+      "desc": "桂林电子科技大学硕博学位论文LATEX模板",
+      "size_kb": 45825,
+      "html": "https://github.com/YanMing-lxb/GUET_Thesis_LaTeX"
+    },
+    {
+      "repo": "note286/xdupgtp",
+      "stars": 124,
+      "desc": "西安电子科技大学研究生学位论文开题报告表XeLaTeX模板",
+      "size_kb": 433,
+      "html": "https://github.com/note286/xdupgtp"
+    },
+    {
+      "repo": "lyh543/UESTC_LaTeX_Template",
+      "stars": 76,
+      "desc": "电子科技大学的论文、实验报告的LaTeX模板（第三方）",
+      "size_kb": 4833,
+      "html": "https://github.com/lyh543/UESTC_LaTeX_Template"
+    },
+    {
+      "repo": "wrm244/GUEThesis",
+      "stars": 71,
+      "desc": "桂林电子科技大学本科毕业论文(毕业设计)LaTex模板",
+      "size_kb": 45383,
+      "html": "https://github.com/wrm244/GUEThesis"
+    },
+    {
+      "repo": "myhsia/hduthesis",
+      "stars": 64,
+      "desc": "杭州电子科技大学学位论文 LaTeX 模板 / LaTeX class for bachelor and MPhil theses in Hangzhou Dianzi University. Also available on Gitee",
+      "size_kb": 34134,
+      "html": "https://github.com/myhsia/hduthesis"
+    },
+    {
+      "repo": "note286/xduugtp",
+      "stars": 51,
+      "desc": "西安电子科技大学本科生毕业论文（设计）开题报告LaTeX模板",
+      "size_kb": 294,
+      "html": "https://github.com/note286/xduugtp"
+    },
+    {
+      "repo": "Linxius/XDUBachelorThesis",
+      "stars": 26,
+      "desc": "西电 西安电子科技大学 本科 毕业设计 毕设 学士学位 论文 latex模板",
+      "size_kb": 36544,
+      "html": "https://github.com/Linxius/XDUBachelorThesis"
+    },
+    {
+      "repo": "JosephChenHub/UESTC_thesis_XeLaTeX",
+      "stars": 25,
+      "desc": "电子科技大学毕业论文LaTeX模板，xelatex版本",
+      "size_kb": 733,
+      "html": "https://github.com/JosephChenHub/UESTC_thesis_XeLaTeX"
+    },
+    {
+      "repo": "hduffddybz/HDU-thesis",
+      "stars": 21,
+      "desc": "杭州电子科技大学硕士论文 LaTeX 模板 ",
+      "size_kb": 561,
+      "html": "https://github.com/hduffddybz/HDU-thesis"
+    },
+    {
+      "repo": "wennboo/HDU-latex-template-for-master",
+      "stars": 21,
+      "desc": "旨在帮助杭州电子科技大学硕博生使用 Latex完成学位论文撰写，非官方模板，如若使用，后果自负！",
+      "size_kb": 3717,
+      "html": "https://github.com/wennboo/HDU-latex-template-for-master"
+    },
+    {
+      "repo": "oopsno/XDUThesis",
+      "stars": 11,
+      "desc": "西安电子科技大学本科生毕业设计（论文）LaTeX模板",
+      "size_kb": 22,
+      "html": "https://github.com/oopsno/XDUThesis"
+    },
+    {
+      "repo": "zZacharyz/xdu-postgraduate-thesis-template",
+      "stars": 2,
+      "desc": "西安电子科技大学研究生学位论文 LaTeX 模板",
+      "size_kb": 1209,
+      "html": "https://github.com/zZacharyz/xdu-postgraduate-thesis-template"
+    },
+    {
+      "repo": "wennboo/HDU-Automation-School-latex-template-for-bachelor",
+      "stars": 1,
+      "desc": "旨在帮助杭州电子科技大学自动化学院本科生使用latex完成开题报告及毕业论文，非官方模板，如若使用，后果自负！",
+      "size_kb": 3712,
+      "html": "https://github.com/wennboo/HDU-Automation-School-latex-template-for-bachelor"
+    },
+    {
+      "repo": "gtg2619/HDU-THESIS-TEMPLATE-TEX",
+      "stars": 0,
+      "desc": "杭州电子科技大学本科毕业论文 LaTeX 模板",
+      "size_kb": 1140,
+      "html": "https://github.com/gtg2619/HDU-THESIS-TEMPLATE-TEX"
+    }
+  ],
+  "nankai": [
+    {
+      "repo": "NewFuture/NKThesis",
+      "stars": 206,
+      "desc": "南开大学硕士毕业论文/博士论文模板 (Latex Template for Nankai University)",
+      "size_kb": 1864,
+      "html": "https://github.com/NewFuture/NKThesis"
+    },
+    {
+      "repo": "kongxiao0532/NKU_Bachelor_Thesis_Template",
+      "stars": 67,
+      "desc": "南开大学本科生毕业论文模板  LaTeX template for bachelor thesis in Nankai University (NKU)",
+      "size_kb": 918,
+      "html": "https://github.com/kongxiao0532/NKU_Bachelor_Thesis_Template"
+    },
+    {
+      "repo": "MaZhengg/NKUthesis",
+      "stars": 13,
+      "desc": "南开大学毕业论文LaTeX模板",
+      "size_kb": 2462,
+      "html": "https://github.com/MaZhengg/NKUthesis"
+    },
+    {
+      "repo": "bianbian1234/NKU_latex_template",
+      "stars": 4,
+      "desc": "南开大学硕博论文LATEX模板/答辩用beamer模板",
+      "size_kb": 2122,
+      "html": "https://github.com/bianbian1234/NKU_latex_template"
+    },
+    {
+      "repo": "benhaotang/NKThesis",
+      "stars": 1,
+      "desc": "南开大学本科硕博毕业论文模板LaTeX",
+      "size_kb": 6800,
+      "html": "https://github.com/benhaotang/NKThesis"
+    },
+    {
+      "repo": "guangpintao/nku_thesis",
+      "stars": 0,
+      "desc": "南开大学本科毕设论文latex基础模板，直接xelatex编译即可，简单易用",
+      "size_kb": 737,
+      "html": "https://github.com/guangpintao/nku_thesis"
+    }
+  ],
+  "bnuj": [],
+  "ruc": [
+    {
+      "repo": "ZebinWang/ructhesis",
+      "stars": 132,
+      "desc": "中国人民大学LaTeX论文模板",
+      "size_kb": 13391,
+      "html": "https://github.com/ZebinWang/ructhesis"
+    },
+    {
+      "repo": "Gua927/Latex_Template",
+      "stars": 32,
+      "desc": "这是我的个人Latex模板，将会收录自己整理的关于作业、笔记、比赛、以及各种论文的Latex模板。同时会基于中国人民大学统计学院的学术规范，给出学校的论文和beamer模板。",
+      "size_kb": 55613,
+      "html": "https://github.com/Gua927/Latex_Template"
+    },
+    {
+      "repo": "HughYau/RUCthesis-for-Bachelor",
+      "stars": 18,
+      "desc": "中国人民大学本科生毕业论文（2021年修订版）latex模板",
+      "size_kb": 17318,
+      "html": "https://github.com/HughYau/RUCthesis-for-Bachelor"
+    },
+    {
+      "repo": "liuqi6777/ructhesis",
+      "stars": 11,
+      "desc": "中国人民大学本科毕业论文（设计）LaTeX模板",
+      "size_kb": 15065,
+      "html": "https://github.com/liuqi6777/ructhesis"
+    },
+    {
+      "repo": "sy-melody/ructhesis-math-master-template",
+      "stars": 1,
+      "desc": "中国人民大学数学学院硕士论文LaTeX模板",
+      "size_kb": 1134,
+      "html": "https://github.com/sy-melody/ructhesis-math-master-template"
+    }
+  ],
+  "buaa2": [],
+  "harbin": [
+    {
+      "repo": "dustincys/PlutoThesis",
+      "stars": 58,
+      "desc": "XeLaTeX 版本的哈工大硕博毕业论文模版(此版本废弃，不再维护，新模板hithesis https://github.com/dustincys/hithesis  括本硕博，对老版本的缺陷进行了彻底的修改)",
+      "size_kb": 2050,
+      "html": "https://github.com/dustincys/PlutoThesis"
+    },
+    {
+      "repo": "magic282/PlutoThesis",
+      "stars": 42,
+      "desc": "哈工大本、硕、博学位论文LaTeX模板",
+      "size_kb": 5574,
+      "html": "https://github.com/magic282/PlutoThesis"
+    },
+    {
+      "repo": "dustincys/PlutoThesisProposal",
+      "stars": 20,
+      "desc": "哈工大博士学位开题报告XeLaTeX模板(废弃，hithesis重写了这个模板)",
+      "size_kb": 1816,
+      "html": "https://github.com/dustincys/PlutoThesisProposal"
+    }
+  ],
+  "njust": [
+    {
+      "repo": "pasteller/njusttt",
+      "stars": 41,
+      "desc": "南京理工大学学位论文LaTeX模板。A LaTeX thesis template for Nanjing University of Science & Technology (NJUST). ",
+      "size_kb": 27216,
+      "html": "https://github.com/pasteller/njusttt"
+    },
+    {
+      "repo": "packyan/NJUST_Master_Thesis_Latex_Template",
+      "stars": 31,
+      "desc": "南京理工大学 硕士 学位论文 LATEX 模版",
+      "size_kb": 1022,
+      "html": "https://github.com/packyan/NJUST_Master_Thesis_Latex_Template"
+    },
+    {
+      "repo": "OwlNjust/2026-LaTex-",
+      "stars": 6,
+      "desc": "南京理工大学本科毕业设计（论文）报告 LaTeX 模板（2026年格式）",
+      "size_kb": 26226,
+      "html": "https://github.com/OwlNjust/2026-LaTex-"
+    },
+    {
+      "repo": "ffalsk/NJUST-Thesis-Template-For-Bachelor",
+      "stars": 4,
+      "desc": "南京理工大学本科生毕业设计（论文）LaTeX模板",
+      "size_kb": 703,
+      "html": "https://github.com/ffalsk/NJUST-Thesis-Template-For-Bachelor"
+    },
+    {
+      "repo": "Poooony/Latex-Thesis-for-NJUST",
+      "stars": 2,
+      "desc": "南京理工大学学士学位论文LaTeX模板",
+      "size_kb": 5442,
+      "html": "https://github.com/Poooony/Latex-Thesis-for-NJUST"
+    },
+    {
+      "repo": "shuxue-q/NJUSTThesis",
+      "stars": 1,
+      "desc": "南京理工大学论文模板",
+      "size_kb": 11610,
+      "html": "https://github.com/shuxue-q/NJUSTThesis"
+    }
+  ],
+  "nuaa": [
+    {
+      "repo": "happyADD/EssayModel",
+      "stars": 1,
+      "desc": "南京航空航天大学论文模板",
+      "size_kb": 120,
+      "html": "https://github.com/happyADD/EssayModel"
+    }
+  ],
+  "bit": [
+    {
+      "repo": "jiandahao/BIT-thesis-LaTex",
+      "stars": 71,
+      "desc": "北京理工大学学硕士/博士学位毕业论文LaTeX模板（LaTeX Template for BIT thesis）",
+      "size_kb": 2033,
+      "html": "https://github.com/jiandahao/BIT-thesis-LaTex"
+    },
+    {
+      "repo": "zhang-datou/BIT_Thesis",
+      "stars": 14,
+      "desc": "北京理工大学硕士毕业论文word和latex模板",
+      "size_kb": 587,
+      "html": "https://github.com/zhang-datou/BIT_Thesis"
+    },
+    {
+      "repo": "FDUZS/BIThesis",
+      "stars": 8,
+      "desc": "北京理工大学硕士博士研究生学位论文 LaTeX 模板 — 非官方",
+      "size_kb": 12960,
+      "html": "https://github.com/FDUZS/BIThesis"
+    }
+  ],
+  "ecnu": [
+    {
+      "repo": "YijunYuan/ECNU-Undergraduate-LaTeX",
+      "stars": 106,
+      "desc": "华东师范大学本科毕业论文模板（不再维护）",
+      "size_kb": 1324,
+      "html": "https://github.com/YijunYuan/ECNU-Undergraduate-LaTeX"
+    },
+    {
+      "repo": "ECNU-ICA/ECNU_graduation_thesis_template",
+      "stars": 100,
+      "desc": "华东师范大学研究生毕业论文 Latex 模板",
+      "size_kb": 13507,
+      "html": "https://github.com/ECNU-ICA/ECNU_graduation_thesis_template"
+    },
+    {
+      "repo": "DeepTrial/ECNU-Dissertations-Latex-Template",
+      "stars": 45,
+      "desc": "华东师范大学硕（博）士论文LaTex模板",
+      "size_kb": 1415,
+      "html": "https://github.com/DeepTrial/ECNU-Dissertations-Latex-Template"
+    },
+    {
+      "repo": "c834606877/ECNU-Paper-Template",
+      "stars": 39,
+      "desc": "华东师范大学(ECNU)  硕士 研究生 毕业论文 LaTeX模板",
+      "size_kb": 468,
+      "html": "https://github.com/c834606877/ECNU-Paper-Template"
+    },
+    {
+      "repo": "programokey/ECNUUndergraduateDissertationTemplate",
+      "stars": 20,
+      "desc": "华东师范大学2018级本科生Latex毕业论文模板",
+      "size_kb": 1815,
+      "html": "https://github.com/programokey/ECNUUndergraduateDissertationTemplate"
+    },
+    {
+      "repo": "Zephon-H/ECNU_Latex_overleaf",
+      "stars": 5,
+      "desc": "华东师范大学 硕博研究生 毕业论文LaTex模板，根据Github上另一个LaTex模板改的，用于在overleaf上进行编辑，使用前请务必自己再检查一遍字体等格式是否正确！",
+      "size_kb": 9566,
+      "html": "https://github.com/Zephon-H/ECNU_Latex_overleaf"
+    },
+    {
+      "repo": "chguw/ecnuphd",
+      "stars": 1,
+      "desc": "华东师范大学博士学位论文 LaTeX 模板",
+      "size_kb": 261,
+      "html": "https://github.com/chguw/ecnuphd"
+    },
+    {
+      "repo": "kaiyee0011/East-China-Normal-University_Master-Thesis_LaTeX_2025",
+      "stars": 1,
+      "desc": "APA引用格式的中文毕业论文，修改自华东师范大学硕博论文2024届模版（https://www.overleaf.com/latex/templates/hua-dong-shi-fan-da-xue-shuo-bo-shi-lun-wen",
+      "size_kb": 12463,
+      "html": "https://github.com/kaiyee0011/East-China-Normal-University_Master-Thesis_LaTeX_2025"
+    },
+    {
+      "repo": "SmartPangzi/ECNU-Graduation-Thesis-Template",
+      "stars": 0,
+      "desc": "华东师范大学研究生毕业论文Latex模板",
+      "size_kb": 397,
+      "html": "https://github.com/SmartPangzi/ECNU-Graduation-Thesis-Template"
+    },
+    {
+      "repo": "Haskely/ECNUMasterThesisLatexTemplate",
+      "stars": 0,
+      "desc": "华东师范大学硕士学位论文 Latex 模板（Latex template for Master thesis of East China normal University）",
+      "size_kb": 33736,
+      "html": "https://github.com/Haskely/ECNUMasterThesisLatexTemplate"
+    },
+    {
+      "repo": "Mr-Zhao-cloud/ECNU-Undergraduate-LaTeX-2021",
+      "stars": 0,
+      "desc": "本模板是在袁轶君大佬制作的<华东师范大学本科生毕业论文模板>的基础上修改的，删掉了一些学年论文中不需要的比如致谢，英文摘要等和一些文科生用不到的定理环境、复杂的公式，也适合用作课堂作业",
+      "size_kb": 323,
+      "html": "https://github.com/Mr-Zhao-cloud/ECNU-Undergraduate-LaTeX-2021"
+    }
+  ],
+  "scut": [
+    {
+      "repo": "ShevonKuan/SCUT-thesis",
+      "stars": 152,
+      "desc": "(更新于2024年) 华南理工大学 LaTeX 论文模板项目，star一下嘛~(☆▽☆)，应该是最完善也是最容易使用的华工本科生论文模板了",
+      "size_kb": 55931,
+      "html": "https://github.com/ShevonKuan/SCUT-thesis"
+    },
+    {
+      "repo": "OChicken/SCUT-Bachelor-Thesis-Template",
+      "stars": 54,
+      "desc": "Latex template for the bachelor graduation thesis of South China University of Technology (SCUT)  华南理工大学 本科毕业论文LaTeX模板",
+      "size_kb": 5062,
+      "html": "https://github.com/OChicken/SCUT-Bachelor-Thesis-Template"
+    },
+    {
+      "repo": "FeatherRed/scut-latex-2026",
+      "stars": 34,
+      "desc": "2026届华南理工大学SCUT本科生学士学位论文Latex模板",
+      "size_kb": 61922,
+      "html": "https://github.com/FeatherRed/scut-latex-2026"
+    },
+    {
+      "repo": "mengchaoheng/SCUT_Report_Latex",
+      "stars": 31,
+      "desc": "可用于撰写华南理工大学研究生学位（毕业）论文开题报告、中期考核",
+      "size_kb": 7967,
+      "html": "https://github.com/mengchaoheng/SCUT_Report_Latex"
+    },
+    {
+      "repo": "yecfly/scut-thesis",
+      "stars": 28,
+      "desc": "华南理工大学学位论文 Latex/Lyx 模板----latex for SCUT thesis",
+      "size_kb": 10794,
+      "html": "https://github.com/yecfly/scut-thesis"
+    },
+    {
+      "repo": "h-hg/latex-scut-bachelor-thesis",
+      "stars": 19,
+      "desc": "华南理工大学本科毕业论文模板",
+      "size_kb": 2290,
+      "html": "https://github.com/h-hg/latex-scut-bachelor-thesis"
+    },
+    {
+      "repo": "sherrycattt/ScutThesis",
+      "stars": 14,
+      "desc": "华南理工大学博士学位论文Latex模板（修改自ThuThesis https://github.com/tuna/thuthesis）",
+      "size_kb": 562,
+      "html": "https://github.com/sherrycattt/ScutThesis"
+    },
+    {
+      "repo": "mengchaoheng/SCUT_Review_Latex",
+      "stars": 7,
+      "desc": "可用于撰写华南理工大学研究生学位（毕业）论文文献综述",
+      "size_kb": 6938,
+      "html": "https://github.com/mengchaoheng/SCUT_Review_Latex"
+    },
+    {
+      "repo": "VicoZhang/SCUT_Latex_template",
+      "stars": 5,
+      "desc": "华南理工大学论文模板",
+      "size_kb": 1305,
+      "html": "https://github.com/VicoZhang/SCUT_Latex_template"
+    },
+    {
+      "repo": "zhaoxi-scut/scut_thesis_template",
+      "stars": 5,
+      "desc": "2026 版华南理工大学硕士（博士）论文 LaTeX 模板",
+      "size_kb": 27003,
+      "html": "https://github.com/zhaoxi-scut/scut_thesis_template"
+    }
+  ],
+  "lzu": [
+    {
+      "repo": "yuhldr/LZUThesis2020",
+      "stars": 203,
+      "desc": "兰州大学2025毕业论文LaTex模板：本科生、研究生两个模板",
+      "size_kb": 35173,
+      "html": "https://github.com/yuhldr/LZUThesis2020"
+    },
+    {
+      "repo": "mosesnow/LZUthesis",
+      "stars": 37,
+      "desc": "兰州大学学位论文LyX模板及LaTeX模板",
+      "size_kb": 3882,
+      "html": "https://github.com/mosesnow/LZUthesis"
+    },
+    {
+      "repo": "xubios/lzu_latex_undergraduate-thesis-template",
+      "stars": 7,
+      "desc": "新手最友好、适配最完美的兰州大学本科毕业论文（设计）XeLaTeX 模板，适配 2025/2026 届写作规范，开箱即用，所有配置文件都给你了，零 LaTeX 基础也能快速上手。内置 LZUThesis_xb.cls、示例论文、GB/T 7",
+      "size_kb": 1765,
+      "html": "https://github.com/xubios/lzu_latex_undergraduate-thesis-template"
+    },
+    {
+      "repo": "CosmosLiang/LZUthesis",
+      "stars": 2,
+      "desc": "兰州大学本科生毕业论文LaTeX模板",
+      "size_kb": 1099,
+      "html": "https://github.com/CosmosLiang/LZUthesis"
+    },
+    {
+      "repo": "iftaken/overleaf-lzu-thesis",
+      "stars": 0,
+      "desc": "兰州大学本科毕业论文（设计）LaTeX模板 - Docker编译支持 (LZU Undergraduate Thesis Template)",
+      "size_kb": 1884,
+      "html": "https://github.com/iftaken/overleaf-lzu-thesis"
+    }
+  ],
+  "cau": [
+    {
+      "repo": "maxchang3/YaCAUThesisUG",
+      "stars": 3,
+      "desc": "Yet Another China Agricultural University LaTeX Thesis Template for Undergraduate / 又一个中国农业大学本科生毕业论文 LaTeX 模板",
+      "size_kb": 28294,
+      "html": "https://github.com/maxchang3/YaCAUThesisUG"
+    },
+    {
+      "repo": "Flemyng1999/cau-thesis",
+      "stars": 2,
+      "desc": "中国农业大学毕业论文 LaTeX 模版 2026",
+      "size_kb": 12284,
+      "html": "https://github.com/Flemyng1999/cau-thesis"
+    },
+    {
+      "repo": "Zhuoy3/cau-thesis-doctor",
+      "stars": 0,
+      "desc": "中国农业大学研究生学位论文LaTeX模板",
+      "size_kb": 463,
+      "html": "https://github.com/Zhuoy3/cau-thesis-doctor"
+    }
+  ],
+  "muc": [
+    {
+      "repo": "KardeniaPoyu/muc-thesis",
+      "stars": 37,
+      "desc": "中央民族大学本科生毕业论文 LaTeX 模板",
+      "size_kb": 7243,
+      "html": "https://github.com/KardeniaPoyu/muc-thesis"
+    }
+  ],
+  "ouc": [
+    {
+      "repo": "summitgao/OUC-LaTex-bachelor",
+      "stars": 115,
+      "desc": "中国海洋大学本科生毕业论文LaTeX模板（Overleaf版）",
+      "size_kb": 3469,
+      "html": "https://github.com/summitgao/OUC-LaTex-bachelor"
+    },
+    {
+      "repo": "oucailab/OUC-LaTex-master",
+      "stars": 91,
+      "desc": "中国海洋大学硕士博士学位论文 LaTeX 模板（2025版）",
+      "size_kb": 1111,
+      "html": "https://github.com/oucailab/OUC-LaTex-master"
+    },
+    {
+      "repo": "summitgao/OUC-LaTex-master",
+      "stars": 87,
+      "desc": "中国海洋大学硕士博士学位论文 LaTeX 模板（Overleaf版）",
+      "size_kb": 302,
+      "html": "https://github.com/summitgao/OUC-LaTex-master"
+    },
+    {
+      "repo": "OSOUC/UndergraduateThesisLaTeXTemplate",
+      "stars": 49,
+      "desc": "中国海洋大学本科毕业论文LaTeX模版 OUC Undergraduate Thesis LaTeX Template",
+      "size_kb": 1121,
+      "html": "https://github.com/OSOUC/UndergraduateThesisLaTeXTemplate"
+    },
+    {
+      "repo": "ouc-ocean-group/oucthesis",
+      "stars": 40,
+      "desc": "中国海洋大学硕士博士学位论文 LaTeX 模板 Latex template for OUC graduate thesis.",
+      "size_kb": 2669,
+      "html": "https://github.com/ouc-ocean-group/oucthesis"
+    },
+    {
+      "repo": "oucZone/OUC-Thesis-LaTeX-Template",
+      "stars": 18,
+      "desc": "中国海洋大学学位论文latex模板（硕博通用）—2026年06月06更新",
+      "size_kb": 1904,
+      "html": "https://github.com/oucZone/OUC-Thesis-LaTeX-Template"
+    },
+    {
+      "repo": "Nan-ltl/OUC-LaTeX-undergraduate-thesis-2026",
+      "stars": 7,
+      "desc": "2026年中国海洋大学本科毕业论文LaTeX模版",
+      "size_kb": 21399,
+      "html": "https://github.com/Nan-ltl/OUC-LaTeX-undergraduate-thesis-2026"
+    },
+    {
+      "repo": "oucailab/OUC-LaTex-bachelor",
+      "stars": 6,
+      "desc": "中国海洋大学本科生毕业论文LaTeX模板（Overleaf & TexPage 版）",
+      "size_kb": 1370,
+      "html": "https://github.com/oucailab/OUC-LaTex-bachelor"
+    },
+    {
+      "repo": "NaviaX/oucthesis",
+      "stars": 3,
+      "desc": "中国海洋大学硕博学位论文 LaTeX 模板",
+      "size_kb": 2002,
+      "html": "https://github.com/NaviaX/oucthesis"
+    },
+    {
+      "repo": "Duola-li/OUC-Latex-Thesis-master",
+      "stars": 3,
+      "desc": "中国海洋大学研究生毕业论文模版（硕博通用）",
+      "size_kb": 564,
+      "html": "https://github.com/Duola-li/OUC-Latex-Thesis-master"
+    },
+    {
+      "repo": "FlorenceZh/XingYuanReport",
+      "stars": 1,
+      "desc": "中国海洋大学行远书院课程论文的LaTeX模版",
+      "size_kb": 4774,
+      "html": "https://github.com/FlorenceZh/XingYuanReport"
+    },
+    {
+      "repo": "yuanjuju/OUC-Thesis-Template",
+      "stars": 0,
+      "desc": "中国海洋大学本科生毕业论文 LaTeX 模板",
+      "size_kb": 276,
+      "html": "https://github.com/yuanjuju/OUC-Thesis-Template"
+    }
+  ],
+  "nwafu": [
+    {
+      "repo": "latexstudio/nwafuthesis",
+      "stars": 15,
+      "desc": "西北农林科技大学学位论文LaTeX文档类(模板)，计划支持本科、硕士、博士学位论文。",
+      "size_kb": 64728,
+      "html": "https://github.com/latexstudio/nwafuthesis"
+    },
+    {
+      "repo": "zhangMelanie/2026_NWAFU_undergraduate_latex_template",
+      "stars": 0,
+      "desc": "2026届西北农林科技大学本科生毕业论文latex模板",
+      "size_kb": 6098,
+      "html": "https://github.com/zhangMelanie/2026_NWAFU_undergraduate_latex_template"
+    },
+    {
+      "repo": "latexstudio/nwsuaf_thesis_template",
+      "stars": 0,
+      "desc": "西北农林科技大学博士学位论文LaTeX模板（个人用）",
+      "size_kb": 1618,
+      "html": "https://github.com/latexstudio/nwsuaf_thesis_template"
+    }
+  ],
+  "hdu": [
+    {
+      "repo": "dcpnonstop/HDUthesis",
+      "stars": 27,
+      "desc": "杭州电子科技大学硕士论文模板",
+      "size_kb": 2450,
+      "html": "https://github.com/dcpnonstop/HDUthesis"
+    },
+    {
+      "repo": "xmlu/hduthesis",
+      "stars": 12,
+      "desc": "杭州电子科技大学硕士学位论文LaTeX模版",
+      "size_kb": 211,
+      "html": "https://github.com/xmlu/hduthesis"
+    },
+    {
+      "repo": "ydar95/HDU-Master-Thesis-Latex",
+      "stars": 3,
+      "desc": "（2022年）基于Latex的杭州电子科技大学硕士大论文模版",
+      "size_kb": 79684,
+      "html": "https://github.com/ydar95/HDU-Master-Thesis-Latex"
+    },
+    {
+      "repo": "EpsIotaPi/HDU_Latex",
+      "stars": 2,
+      "desc": "杭州电子科技大学硕士学位论文的Latex模版",
+      "size_kb": 59025,
+      "html": "https://github.com/EpsIotaPi/HDU_Latex"
+    }
+  ],
+  "gzhu": [
+    {
+      "repo": "swq123459/GZHU-Report-Latex-Version",
+      "stars": 324,
+      "desc": "我自己制作的广州大学Latex报告模板，有毕业设计，课程设计，毕业论文，等等🎈",
+      "size_kb": 18414,
+      "html": "https://github.com/swq123459/GZHU-Report-Latex-Version"
+    },
+    {
+      "repo": "Ian-Jhon/GZHU_Thesis_Latex_Template",
+      "stars": 27,
+      "desc": "广州大学学位论文模板",
+      "size_kb": 3925,
+      "html": "https://github.com/Ian-Jhon/GZHU_Thesis_Latex_Template"
+    },
+    {
+      "repo": "Tangent-90C/Tangent-90C-GZHU_Thesis_Latex_Template",
+      "stars": 21,
+      "desc": "广州大学毕业论文Latex模板（自制的）",
+      "size_kb": 28349,
+      "html": "https://github.com/Tangent-90C/Tangent-90C-GZHU_Thesis_Latex_Template"
+    },
+    {
+      "repo": "whitelok/GZHU_Latex_Template",
+      "stars": 13,
+      "desc": "Guangzhou University bachelor 's degree thesis Latex template 广州大学学士毕业论文模板",
+      "size_kb": 1423,
+      "html": "https://github.com/whitelok/GZHU_Latex_Template"
+    },
+    {
+      "repo": "zentialEdwardSu/GZHU-Undergraduate-LaTeX-Template",
+      "stars": 3,
+      "desc": "广州大学本科生毕业论文（设计）模板",
+      "size_kb": 131,
+      "html": "https://github.com/zentialEdwardSu/GZHU-Undergraduate-LaTeX-Template"
+    }
+  ],
+  "ouc2": [],
+  "cambridge-thesis": [
+    {
+      "repo": "kks32/phd-thesis-template",
+      "stars": 897,
+      "desc": "A LaTeX / XeLaTeX / LuaLaTeX PhD thesis template for Cambridge University Engineering Department (CUED)",
+      "size_kb": 30150,
+      "html": "https://github.com/kks32/phd-thesis-template"
+    },
+    {
+      "repo": "GR8DAN/coventry-thesis",
+      "stars": 12,
+      "desc": "A LaTeX template for a Coventry University Thesis, based on a Cambridge University Engineering Department template.",
+      "size_kb": 1310,
+      "html": "https://github.com/GR8DAN/coventry-thesis"
+    },
+    {
+      "repo": "allydunham/cambridge_thesis_template",
+      "stars": 1,
+      "desc": "LaTeX PhD Thesis Template for the University of Cambridge.",
+      "size_kb": 251,
+      "html": "https://github.com/allydunham/cambridge_thesis_template"
+    },
+    {
+      "repo": "Zhonglu/my-first-year-report-latex",
+      "stars": 0,
+      "desc": "I wrote this report based on \"PhD thesis template for Cambridge University Engineering Department (CUED) v2.1\" (https://",
+      "size_kb": 31529,
+      "html": "https://github.com/Zhonglu/my-first-year-report-latex"
+    }
+  ],
+  "oxford-thesis": [
+    {
+      "repo": "ulyngs/oxforddown",
+      "stars": 224,
+      "desc": "Template for writing an Oxford University thesis in R Markdown; uses the OxThesis LaTeX template and was inspired by the",
+      "size_kb": 37024,
+      "html": "https://github.com/ulyngs/oxforddown"
+    },
+    {
+      "repo": "mcmanigle/OxThesis",
+      "stars": 214,
+      "desc": "LaTeX template for an Oxford University thesis",
+      "size_kb": 1748,
+      "html": "https://github.com/mcmanigle/OxThesis"
+    },
+    {
+      "repo": "maurovm/thesis_template",
+      "stars": 30,
+      "desc": "LaTeX class for an undergraduate 4th year project (4YP) report or a DPhil / PhD doctoral thesis for a student of the Dep",
+      "size_kb": 14812,
+      "html": "https://github.com/maurovm/thesis_template"
+    },
+    {
+      "repo": "zhiyhu/thesis-template-Oxford",
+      "stars": 10,
+      "desc": "A LaTeX temple for the DPhil thesis at University of Oxford, Medical Sciences Division",
+      "size_kb": 380,
+      "html": "https://github.com/zhiyhu/thesis-template-Oxford"
+    },
+    {
+      "repo": "m-sgstyb/thesisTemplate-uniOfOxford",
+      "stars": 2,
+      "desc": "A University of Oxford LaTeX thesis template based on ociamthesis class, ready for use in Overleaf and with local compil",
+      "size_kb": 466,
+      "html": "https://github.com/m-sgstyb/thesisTemplate-uniOfOxford"
+    },
+    {
+      "repo": "SebFar/thesis_template",
+      "stars": 1,
+      "desc": "Latex template for DPhil thesis at the University of Oxford",
+      "size_kb": 8,
+      "html": "https://github.com/SebFar/thesis_template"
+    },
+    {
+      "repo": "Qboidal/OxfordTeXThesis",
+      "stars": 1,
+      "desc": "An updated LaTeX template for a thesis, tailored towards candidates for degrees at the University of Oxford, previously ",
+      "size_kb": 2330,
+      "html": "https://github.com/Qboidal/OxfordTeXThesis"
+    },
+    {
+      "repo": "rjw57/oxhumanitiesthesis",
+      "stars": 0,
+      "desc": "A LyX example file and LaTeX style files for a Oxford University humanities or social sciences thesis.",
+      "size_kb": 216,
+      "html": "https://github.com/rjw57/oxhumanitiesthesis"
+    }
+  ],
+  "mit-thesis": [
+    {
+      "repo": "ttseng/tufte-latex-mit",
+      "stars": 19,
+      "desc": "A tufte-latex version of the MIT thesis template",
+      "size_kb": 19007,
+      "html": "https://github.com/ttseng/tufte-latex-mit"
+    },
+    {
+      "repo": "theno/haw-inf-thesis-template",
+      "stars": 5,
+      "desc": "HAW Informatik: Ausarbeitungen in Markdown schreiben, PDF mit LaTeX erzeugen",
+      "size_kb": 156,
+      "html": "https://github.com/theno/haw-inf-thesis-template"
+    },
+    {
+      "repo": "mrsunny0-dump/template-mit-be-thesis-proposal",
+      "stars": 2,
+      "desc": "MIT Communication Lab - LaTeX thesis proposal template",
+      "size_kb": 2650,
+      "html": "https://github.com/mrsunny0-dump/template-mit-be-thesis-proposal"
+    },
+    {
+      "repo": "mrsunny0-dump/template-mit-be-thesis-defense",
+      "stars": 2,
+      "desc": "MIT Communication Lab - LaTeX thesis defense template",
+      "size_kb": 1754,
+      "html": "https://github.com/mrsunny0-dump/template-mit-be-thesis-defense"
+    },
+    {
+      "repo": "KingsukMajumdar/NITDGP-Thesis-Template-Unofficial",
+      "stars": 2,
+      "desc": "Professional LaTeX template [Unofficial] for NIT Durgapur thesis (UG/PG/PhD). Features: automated formatting, multi-stud",
+      "size_kb": 7691,
+      "html": "https://github.com/KingsukMajumdar/NITDGP-Thesis-Template-Unofficial"
+    },
+    {
+      "repo": "mitchellmcm27/mitchell-thesis-latex",
+      "stars": 0,
+      "desc": "",
+      "size_kb": 23851,
+      "html": "https://github.com/mitchellmcm27/mitchell-thesis-latex"
+    },
+    {
+      "repo": "victor-explore/iisc-thesis-latex-template",
+      "stars": 0,
+      "desc": "A modern LaTeX template for IISc academic reports, theses and dissertations. MIT licensed.",
+      "size_kb": 856,
+      "html": "https://github.com/victor-explore/iisc-thesis-latex-template"
+    },
+    {
+      "repo": "ohanes/calpoly-thesis-template",
+      "stars": 0,
+      "desc": "LaTeX template for Cal Poly's Masters Thesis Format. Based on MIT template.",
+      "size_kb": 72,
+      "html": "https://github.com/ohanes/calpoly-thesis-template"
+    },
+    {
+      "repo": "dkramnik/mit-thesis-memoir",
+      "stars": 0,
+      "desc": "An MIT thesis template built around the LaTeX memoir class, for improved formatting options.",
+      "size_kb": 732,
+      "html": "https://github.com/dkramnik/mit-thesis-memoir"
+    },
+    {
+      "repo": "JustA3DObject/DIAT_MTech_Thesis_Template_LaTeX",
+      "stars": 0,
+      "desc": "A template for writing M.Tech thesis. Made for Defense Institute of Advanced Technology. Inspired from MIT's Thesis Temp",
+      "size_kb": 126,
+      "html": "https://github.com/JustA3DObject/DIAT_MTech_Thesis_Template_LaTeX"
+    },
+    {
+      "repo": "l-uuz/Modern-German-Thesis",
+      "stars": 0,
+      "desc": "LaTeX-Template für deutschsprachige Abschlussarbeiten mit der Libertinus-Schriftart, optimierten Verzeichnissen und Quel",
+      "size_kb": 4443,
+      "html": "https://github.com/l-uuz/Modern-German-Thesis"
+    },
+    {
+      "repo": "MicahGale/MIT-NSE-thesis-Title-Page",
+      "stars": 0,
+      "desc": "The Latex template for the undergraduate thesis title page the MIT department of Nuclear Science and Engineering.",
+      "size_kb": 68,
+      "html": "https://github.com/MicahGale/MIT-NSE-thesis-Title-Page"
+    }
+  ],
+  "stanford-thesis": [],
+  "berkeley-thesis": [
+    {
+      "repo": "saraemoore/ucbthesisrmd",
+      "stars": 22,
+      "desc": "UC Berkeley thesis/dissertation LaTeX Template (ucbthesis) for R Markdown",
+      "size_kb": 29,
+      "html": "https://github.com/saraemoore/ucbthesisrmd"
+    },
+    {
+      "repo": "stevenpollack/ucbthesis",
+      "stars": 11,
+      "desc": "Latex, Knitr, and RMarkdown templates for UC Berkeley's graduate thesis.",
+      "size_kb": 296,
+      "html": "https://github.com/stevenpollack/ucbthesis"
+    },
+    {
+      "repo": "kevinlin1/latex-ms-tech-report",
+      "stars": 3,
+      "desc": "A technical report template for the UC Berkeley EECS Master of Science, Plan II.",
+      "size_kb": 463,
+      "html": "https://github.com/kevinlin1/latex-ms-tech-report"
+    },
+    {
+      "repo": "akar43/ak_thesis",
+      "stars": 0,
+      "desc": "Latex repository for UC Berkeley PhD thesis",
+      "size_kb": 62631,
+      "html": "https://github.com/akar43/ak_thesis"
+    },
+    {
+      "repo": "scalice/pasyon",
+      "stars": 0,
+      "desc": "LaTeX source files for UC Berkeley Master's Thesis -- Pasyon, Awit, Legend: Reynaldo Ileto's Pasyon and Revolution revis",
+      "size_kb": 12002,
+      "html": "https://github.com/scalice/pasyon"
+    }
+  ],
+  "harvard-thesis": [],
+  "princeton-thesis": [],
+  "caltech-thesis": [
+    {
+      "repo": "cgevans/caltech_thesis",
+      "stars": 1,
+      "desc": "A modern LaTeX document class for Caltech Ph.D. theses.",
+      "size_kb": 880,
+      "html": "https://github.com/cgevans/caltech_thesis"
+    },
+    {
+      "repo": "sinhagaurav/CaltechPhDThesisLateX",
+      "stars": 0,
+      "desc": "PhD Thesis source directory - contains latex files,images e.t.c.",
+      "size_kb": 1180,
+      "html": "https://github.com/sinhagaurav/CaltechPhDThesisLateX"
+    },
+    {
+      "repo": "vanessaheckman/thesis_template_Caltech_LaTeX",
+      "stars": 0,
+      "desc": "LaTeX template used for Caltech thesis - Adapted from template created by Juhwan Yoo",
+      "size_kb": 1288,
+      "html": "https://github.com/vanessaheckman/thesis_template_Caltech_LaTeX"
+    }
+  ],
+  "eth-thesis": [
+    {
+      "repo": "tuxu/ethz-thesis",
+      "stars": 118,
+      "desc": "LaTeX template for a PhD thesis at ETH Zurich",
+      "size_kb": 304,
+      "html": "https://github.com/tuxu/ethz-thesis"
+    },
+    {
+      "repo": "ssinhaleite/thesis-template",
+      "stars": 3,
+      "desc": "LaTeX Thesis Template for the Institute of Neuroinformatics, UZH and ETH Zurich",
+      "size_kb": 10109,
+      "html": "https://github.com/ssinhaleite/thesis-template"
+    },
+    {
+      "repo": "mbgh/ethz-thesis-title-page",
+      "stars": 3,
+      "desc": "A LaTeX title page template for a Ph.D. thesis at ETH Zurich.",
+      "size_kb": 143,
+      "html": "https://github.com/mbgh/ethz-thesis-title-page"
+    },
+    {
+      "repo": "KalinNonchev/eth_thesis_template",
+      "stars": 3,
+      "desc": "LaTeX thesis template for Department of Computer Science, ETH Zurich",
+      "size_kb": 879,
+      "html": "https://github.com/KalinNonchev/eth_thesis_template"
+    },
+    {
+      "repo": "jbinas/ethesis-template",
+      "stars": 1,
+      "desc": "The latex template for my PhD thesis at ETH Zurich.",
+      "size_kb": 507,
+      "html": "https://github.com/jbinas/ethesis-template"
+    }
+  ],
+  "imperial-thesis": [
+    {
+      "repo": "fmilthaler/Thesis-LaTeX-Template",
+      "stars": 15,
+      "desc": "This is a generic LaTeX template for dissertations (layout according to Imperial College London).",
+      "size_kb": 313,
+      "html": "https://github.com/fmilthaler/Thesis-LaTeX-Template"
+    },
+    {
+      "repo": "bardsoftware/template-thes-icl",
+      "stars": 7,
+      "desc": "LaTeX template for Imperial College London PhD Thesis",
+      "size_kb": 7,
+      "html": "https://github.com/bardsoftware/template-thes-icl"
+    },
+    {
+      "repo": "thbtppl/latex-thesis-imperial",
+      "stars": 5,
+      "desc": "LaTeX template for PhD thesis compliant with Imperial College London regulations",
+      "size_kb": 180,
+      "html": "https://github.com/thbtppl/latex-thesis-imperial"
+    },
+    {
+      "repo": "heyzbw/ICL_Thesis_Template",
+      "stars": 3,
+      "desc": "Imperial College London LaTex Template",
+      "size_kb": 3928,
+      "html": "https://github.com/heyzbw/ICL_Thesis_Template"
+    },
+    {
+      "repo": "jdranczewski/phd-thesis-template",
+      "stars": 0,
+      "desc": "Complete and well-designed LaTeX template for PhD theses, for Imperial College London and beyond.",
+      "size_kb": 948,
+      "html": "https://github.com/jdranczewski/phd-thesis-template"
+    }
+  ],
+  "ucl-thesis": [
+    {
+      "repo": "UCL/ucl-latex-thesis-templates",
+      "stars": 194,
+      "desc": "UCL LaTeX thesis templates.",
+      "size_kb": 99,
+      "html": "https://github.com/UCL/ucl-latex-thesis-templates"
+    },
+    {
+      "repo": "cai4cai/XCLThesisTemplate",
+      "stars": 19,
+      "desc": "A thesis template compliant with King's College London and UCL rules",
+      "size_kb": 1853,
+      "html": "https://github.com/cai4cai/XCLThesisTemplate"
+    },
+    {
+      "repo": "jolohaga/uclathes",
+      "stars": 16,
+      "desc": "UCLA LaTeX Thesis Template",
+      "size_kb": 611,
+      "html": "https://github.com/jolohaga/uclathes"
+    },
+    {
+      "repo": "Julie-Fabre/LaTeX_PhD_template_UCL",
+      "stars": 6,
+      "desc": "LaTeX template for a PhD thesis compliant with UCL's rules",
+      "size_kb": 1692,
+      "html": "https://github.com/Julie-Fabre/LaTeX_PhD_template_UCL"
+    },
+    {
+      "repo": "wittawatj/ucl-lyx-thesis",
+      "stars": 4,
+      "desc": "PhD thesis template in Lyx for UCL students",
+      "size_kb": 510,
+      "html": "https://github.com/wittawatj/ucl-lyx-thesis"
+    },
+    {
+      "repo": "pimmesselinkucl/UCL-thesis-template",
+      "stars": 2,
+      "desc": "A LaTeX template for a University College London thesis",
+      "size_kb": 5708,
+      "html": "https://github.com/pimmesselinkucl/UCL-thesis-template"
+    },
+    {
+      "repo": "ACRMGroup/UCLThesisTemplate",
+      "stars": 1,
+      "desc": "LaTeX template for UCL thesis",
+      "size_kb": 197,
+      "html": "https://github.com/ACRMGroup/UCLThesisTemplate"
+    },
+    {
+      "repo": "joerowelll/UCL-Masters-Thesis-Template",
+      "stars": 1,
+      "desc": "Latex Thesis template for UCL students",
+      "size_kb": 32861,
+      "html": "https://github.com/joerowelll/UCL-Masters-Thesis-Template"
+    },
+    {
+      "repo": "jeromepaul/thesis-ucl",
+      "stars": 1,
+      "desc": "A simple LateX template for UCL theses",
+      "size_kb": 257,
+      "html": "https://github.com/jeromepaul/thesis-ucl"
+    },
+    {
+      "repo": "TomGeorge1234/ucl-thesis-template",
+      "stars": 1,
+      "desc": "A clean, modular LaTeX template for UCL theses",
+      "size_kb": 458,
+      "html": "https://github.com/TomGeorge1234/ucl-thesis-template"
+    },
+    {
+      "repo": "MattiaCinelli/UCL_PhD_Latex_template",
+      "stars": 1,
+      "desc": "A template for a Thesis in Latex using UCL standards",
+      "size_kb": 5796,
+      "html": "https://github.com/MattiaCinelli/UCL_PhD_Latex_template"
+    },
+    {
+      "repo": "Am1noas/uclthesis",
+      "stars": 1,
+      "desc": "A UCL LaTeX thesis template. Easy to use for report, courseworks and dissertation.",
+      "size_kb": 128,
+      "html": "https://github.com/Am1noas/uclthesis"
+    },
+    {
+      "repo": "changruizhu96/ucl-phd-thesis-template",
+      "stars": 0,
+      "desc": "UCL PhD thesis LaTeX template",
+      "size_kb": 2583,
+      "html": "https://github.com/changruizhu96/ucl-phd-thesis-template"
+    },
+    {
+      "repo": "bardsoftware/template-ucl-thesis",
+      "stars": 0,
+      "desc": "PhD thesis class for LaTeX ",
+      "size_kb": 38,
+      "html": "https://github.com/bardsoftware/template-ucl-thesis"
+    },
+    {
+      "repo": "bruceyy/thesis_template",
+      "stars": 0,
+      "desc": "A latex template for UCL CS PhD",
+      "size_kb": 102,
+      "html": "https://github.com/bruceyy/thesis_template"
+    },
+    {
+      "repo": "muhrin/thesis-template",
+      "stars": 0,
+      "desc": "A latex template for writing a UCL PhD thesis",
+      "size_kb": 420,
+      "html": "https://github.com/muhrin/thesis-template"
+    },
+    {
+      "repo": "jdosec/Master-in-CyberSecurity-BE-Thesis-Template-ULB-UNamur-UCL-HE2B-ESI-HELB-ERM-",
+      "stars": 0,
+      "desc": "A LateX Overleaf master thesis template for the Belgian Master in CyberSecurity (M-SECU)",
+      "size_kb": 1993,
+      "html": "https://github.com/jdosec/Master-in-CyberSecurity-BE-Thesis-Template-ULB-UNamur-UCL-HE2B-ESI-HELB-ERM-"
+    }
+  ],
+  "edinburgh-thesis": [
+    {
+      "repo": "dhil/inf-thesis-latex-cls",
+      "stars": 35,
+      "desc": "A LaTeX Class for Informatics theses at The University of Edinburgh",
+      "size_kb": 239,
+      "html": "https://github.com/dhil/inf-thesis-latex-cls"
+    },
+    {
+      "repo": "av-maramzin/MSc-by-Research-Thesis",
+      "stars": 1,
+      "desc": "The University of Edinburgh, School of Informatics, Centre for Doctoral Training in Pervasive Parallelism, MSc by Resear",
+      "size_kb": 16862,
+      "html": "https://github.com/av-maramzin/MSc-by-Research-Thesis"
+    },
+    {
+      "repo": "compor/uoe-inf-thesis-skeleton",
+      "stars": 0,
+      "desc": "University of Edinburgh Informatics thesis skeleton using markdown, pandoc and cmake",
+      "size_kb": 21859,
+      "html": "https://github.com/compor/uoe-inf-thesis-skeleton"
+    }
+  ],
+  "manchester-thesis": [
+    {
+      "repo": "diegoferigo/phd-thesis",
+      "stars": 13,
+      "desc": "Simulation Architectures for Reinforcement Learning applied to Robotics",
+      "size_kb": 3286,
+      "html": "https://github.com/diegoferigo/phd-thesis"
+    },
+    {
+      "repo": "UoMResearchIT/latex-thesis-template",
+      "stars": 8,
+      "desc": "The files for the course in LaTeX for Theses at the University of Manchester.",
+      "size_kb": 901,
+      "html": "https://github.com/UoMResearchIT/latex-thesis-template"
+    },
+    {
+      "repo": "KathrynFowler91/Thesis-Template-University-of-Manchester",
+      "stars": 6,
+      "desc": "Journal Format Thesis Template | The University of Manchester | LaTeX Template | Version 1 (24/08/2018) | This template ",
+      "size_kb": 291,
+      "html": "https://github.com/KathrynFowler91/Thesis-Template-University-of-Manchester"
+    },
+    {
+      "repo": "gulaftab/thesis-template",
+      "stars": 3,
+      "desc": "This is the latex template for a PhD thesis based on the University of Manchester thesis Style class",
+      "size_kb": 448,
+      "html": "https://github.com/gulaftab/thesis-template"
+    },
+    {
+      "repo": "mcsweeney90/manchester-thesis-template",
+      "stars": 1,
+      "desc": "University of Manchester PhD thesis LaTeX template.",
+      "size_kb": 304,
+      "html": "https://github.com/mcsweeney90/manchester-thesis-template"
+    },
+    {
+      "repo": "diegoferigo/classicthesis-uom",
+      "stars": 1,
+      "desc": "Unofficial Ph.D. thesis template for the University of Manchester",
+      "size_kb": 229,
+      "html": "https://github.com/diegoferigo/classicthesis-uom"
+    },
+    {
+      "repo": "Non-Invasive-Bioelectronics-Lab/uom_thesis_template",
+      "stars": 0,
+      "desc": "LaTeX template for PhD thesis (and first/second year progress reports) at the University of Manchester",
+      "size_kb": 398,
+      "html": "https://github.com/Non-Invasive-Bioelectronics-Lab/uom_thesis_template"
+    }
+  ],
+  "toronto-thesis": [
+    {
+      "repo": "jessexknight/ut-thesis",
+      "stars": 87,
+      "desc": "University of Toronto thesis class for LaTeX",
+      "size_kb": 5607,
+      "html": "https://github.com/jessexknight/ut-thesis"
+    },
+    {
+      "repo": "aobertas/ut-astro-thesis",
+      "stars": 3,
+      "desc": "Latex template for a PhD dissertation in the Department of Astronomy & Astrophysics at the University of Toronto",
+      "size_kb": 53,
+      "html": "https://github.com/aobertas/ut-astro-thesis"
+    },
+    {
+      "repo": "WilliamPourmajidi/TMU-LaTeX-Thesis-Template",
+      "stars": 1,
+      "desc": "This repository provides a LaTeX template for MSc and PhD theses at Toronto Metropolitan University’s Department of Comp",
+      "size_kb": 37,
+      "html": "https://github.com/WilliamPourmajidi/TMU-LaTeX-Thesis-Template"
+    },
+    {
+      "repo": "KarthikGanesan88/uoft-phd-thesis-template",
+      "stars": 0,
+      "desc": "LaTeX template for PhD theses at the University of Toronto. ",
+      "size_kb": 24,
+      "html": "https://github.com/KarthikGanesan88/uoft-phd-thesis-template"
+    },
+    {
+      "repo": "raeidsaqur/ut-cs-thesis",
+      "stars": 0,
+      "desc": "[Forked off Jesse Knight] The ut-thesis document class for LaTeX implements the formatting requirements of the Universit",
+      "size_kb": 667,
+      "html": "https://github.com/raeidsaqur/ut-cs-thesis"
+    }
+  ],
+  "mcgill-thesis": [
+    {
+      "repo": "santhiachan/mcgill_thesis_template",
+      "stars": 1,
+      "desc": "McGill phd thesis template in LaTeX",
+      "size_kb": 17949,
+      "html": "https://github.com/santhiachan/mcgill_thesis_template"
+    },
+    {
+      "repo": "seanstappas/ecse-498",
+      "stars": 0,
+      "desc": "Reports for ECSE-498: Honours Thesis I at McGill University.",
+      "size_kb": 23496,
+      "html": "https://github.com/seanstappas/ecse-498"
+    },
+    {
+      "repo": "seanstappas/ecse-499",
+      "stars": 0,
+      "desc": "Reports and poster for ECSE-499: Honours Thesis II at McGill University.",
+      "size_kb": 17564,
+      "html": "https://github.com/seanstappas/ecse-499"
+    }
+  ],
+  "ubc-thesis": [
+    {
+      "repo": "troniak/thesis",
+      "stars": 0,
+      "desc": "latex and bibtex source of my UBC thesis",
+      "size_kb": 11080,
+      "html": "https://github.com/troniak/thesis"
+    },
+    {
+      "repo": "snhobbs/Thesis",
+      "stars": 0,
+      "desc": "DEAP-3600 Honours Thesis",
+      "size_kb": 201689,
+      "html": "https://github.com/snhobbs/Thesis"
+    }
+  ],
+  "melbourne-thesis": [
+    {
+      "repo": "xingbod/Monash-Thesis-Template-Latex",
+      "stars": 27,
+      "desc": "A thesis latex template for Monash University. It can be used directly on overleaf. It is modified from University of Me",
+      "size_kb": 1676,
+      "html": "https://github.com/xingbod/Monash-Thesis-Template-Latex"
+    },
+    {
+      "repo": "jpap/phd-thesis-template",
+      "stars": 6,
+      "desc": "Ph.D Thesis Template -- LaTeX -- University of Melbourne",
+      "size_kb": 78,
+      "html": "https://github.com/jpap/phd-thesis-template"
+    },
+    {
+      "repo": "mao-liu/uom_latex_thesis",
+      "stars": 6,
+      "desc": "LaTeX template for a PhD Thesis, prefilled with requirements by the Graduate School of Research at the University of Mel",
+      "size_kb": 715,
+      "html": "https://github.com/mao-liu/uom_latex_thesis"
+    },
+    {
+      "repo": "edithatogo/unimelb-thesis-template-latex",
+      "stars": 0,
+      "desc": "University of Melbourne Thesis Template",
+      "size_kb": 1033,
+      "html": "https://github.com/edithatogo/unimelb-thesis-template-latex"
+    },
+    {
+      "repo": "eosg/EOSG-Thesis-LaTex-Template",
+      "stars": 0,
+      "desc": "PhD thesis LaTex Template, for University of Melbourne",
+      "size_kb": 286,
+      "html": "https://github.com/eosg/EOSG-Thesis-LaTex-Template"
+    }
+  ],
+  "sydney-thesis": [
+    {
+      "repo": "danhey/thesis",
+      "stars": 19,
+      "desc": "Latex thesis template for the University of Sydney honours/masters/PhD",
+      "size_kb": 251,
+      "html": "https://github.com/danhey/thesis"
+    },
+    {
+      "repo": "digitalpoetry/honours-thesis-template",
+      "stars": 3,
+      "desc": "The recommended LaTeX style for an honours thesis in the School of Computer Science, The University of Sydney, Australia",
+      "size_kb": 537,
+      "html": "https://github.com/digitalpoetry/honours-thesis-template"
+    }
+  ],
+  "unsw-thesis": [
+    {
+      "repo": "CoveyZhang/UNSW-EE-thesis-LaTeX-template",
+      "stars": 2,
+      "desc": "This repository is an edited edition of the school official LaTeX template. It is for all EE coursework master students.",
+      "size_kb": 731,
+      "html": "https://github.com/CoveyZhang/UNSW-EE-thesis-LaTeX-template"
+    },
+    {
+      "repo": "yanxiang-wang/UNSW-Thesis-Template",
+      "stars": 1,
+      "desc": "UNSW Thesis Template 2020 based on: https://ctan.org/tex-archive/macros/latex/contrib/unswthesis",
+      "size_kb": 954,
+      "html": "https://github.com/yanxiang-wang/UNSW-Thesis-Template"
+    }
+  ],
+  "nus-thesis": [
+    {
+      "repo": "streamjoin/nusthesis",
+      "stars": 134,
+      "desc": "A LaTeX template for thesis of the National University of Singapore (NUS)",
+      "size_kb": 315,
+      "html": "https://github.com/streamjoin/nusthesis"
+    },
+    {
+      "repo": "saurabhg17/SPhdThesis",
+      "stars": 30,
+      "desc": "A Latex template for writing PhD Thesis",
+      "size_kb": 3452,
+      "html": "https://github.com/saurabhg17/SPhdThesis"
+    },
+    {
+      "repo": "ramananbalakrishnan/nus-thesis-latex-template",
+      "stars": 11,
+      "desc": "A LaTeX template for NUS Masters/PhD theses",
+      "size_kb": 1240,
+      "html": "https://github.com/ramananbalakrishnan/nus-thesis-latex-template"
+    },
+    {
+      "repo": "usmanayubsh/nust-thesis-template",
+      "stars": 10,
+      "desc": "A LaTeX thesis template for National University of Sciences and Technology (NUST)",
+      "size_kb": 873,
+      "html": "https://github.com/usmanayubsh/nust-thesis-template"
+    },
+    {
+      "repo": "tsiendragon/NUS-PhD-Thesis-LaTeX-Template",
+      "stars": 8,
+      "desc": "LaTeX template for Ph.D theis of NUS, mainly for Faculty of Science",
+      "size_kb": 4148,
+      "html": "https://github.com/tsiendragon/NUS-PhD-Thesis-LaTeX-Template"
+    },
+    {
+      "repo": "bowenli37/unofficial-NUS-thesis-org-latex-template",
+      "stars": 7,
+      "desc": "Unofficial orgmode latex template for NUS thesis",
+      "size_kb": 165,
+      "html": "https://github.com/bowenli37/unofficial-NUS-thesis-org-latex-template"
+    },
+    {
+      "repo": "klatifch/nust-thesis",
+      "stars": 2,
+      "desc": "Latex style for Masters thesis",
+      "size_kb": 417,
+      "html": "https://github.com/klatifch/nust-thesis"
+    },
+    {
+      "repo": "yanwenwang24/NUS-Thesis-Latex-Template",
+      "stars": 0,
+      "desc": "A LaTeX template for thesis at National University of Singapore (NUS).",
+      "size_kb": 817,
+      "html": "https://github.com/yanwenwang24/NUS-Thesis-Latex-Template"
+    },
+    {
+      "repo": "duthedd/NUS-thesis-latex-temple",
+      "stars": 0,
+      "desc": "",
+      "size_kb": 1008,
+      "html": "https://github.com/duthedd/NUS-thesis-latex-temple"
+    },
+    {
+      "repo": "gtuckerkellogg/nus-thesis-latex-class",
+      "stars": 0,
+      "desc": "",
+      "size_kb": 187,
+      "html": "https://github.com/gtuckerkellogg/nus-thesis-latex-class"
+    },
+    {
+      "repo": "balajimohan87/Unofficial-NUS-Latex-Thesis-Template",
+      "stars": 0,
+      "desc": "",
+      "size_kb": 295,
+      "html": "https://github.com/balajimohan87/Unofficial-NUS-Latex-Thesis-Template"
+    },
+    {
+      "repo": "zst123/nus_fyp_thesis",
+      "stars": 0,
+      "desc": "LaTeX source code for my NUS FYP Thesis (EE4002R AY22/23)",
+      "size_kb": 7877,
+      "html": "https://github.com/zst123/nus_fyp_thesis"
+    },
+    {
+      "repo": "khemanta/iSSNUSMTechThesis",
+      "stars": 0,
+      "desc": "The Unofficial LaTeX template and source code for Master/PhD Thesis or Dissertation for National University of Singapore",
+      "size_kb": 764,
+      "html": "https://github.com/khemanta/iSSNUSMTechThesis"
+    }
+  ],
+  "ntu-thesis": [
+    {
+      "repo": "alxiong/ntu-thesis-latex",
+      "stars": 3,
+      "desc": "Undergraduate thesis template in Latex for NTU Singapore",
+      "size_kb": 167,
+      "html": "https://github.com/alxiong/ntu-thesis-latex"
+    }
+  ],
+  "hku-thesis": [
+    {
+      "repo": "fcyu/HKUST_PhD_MPhil_thesis_Latex",
+      "stars": 61,
+      "desc": "The Hong Kong University of Science and Technology PhD/MPhil thesis latex template based on the latest official sample (",
+      "size_kb": 192,
+      "html": "https://github.com/fcyu/HKUST_PhD_MPhil_thesis_Latex"
+    },
+    {
+      "repo": "onlytailei/HKUST_latex_thesis_2019",
+      "stars": 51,
+      "desc": "HKUST thesis latex template for PhD and MPhil, especially for ECE, 2019",
+      "size_kb": 8594,
+      "html": "https://github.com/onlytailei/HKUST_latex_thesis_2019"
+    },
+    {
+      "repo": "MacroYau/HKU-Thesis-LaTeX-Template",
+      "stars": 48,
+      "desc": "LaTeX Template for HKU MPhil and PhD Thesis",
+      "size_kb": 3658,
+      "html": "https://github.com/MacroYau/HKU-Thesis-LaTeX-Template"
+    },
+    {
+      "repo": "guanyingc/HKU-PhD-Thesis-LaTex",
+      "stars": 30,
+      "desc": "Sample LaTex file for HKU PhD thesis.",
+      "size_kb": 28622,
+      "html": "https://github.com/guanyingc/HKU-PhD-Thesis-LaTex"
+    },
+    {
+      "repo": "wenbinf/hkust-mphil-thesis",
+      "stars": 18,
+      "desc": "LaTex source and slides of my HKUST Mphil Thesis on \"Mars: accelerating MapReduce with graphics processors\"",
+      "size_kb": 3954,
+      "html": "https://github.com/wenbinf/hkust-mphil-thesis"
+    },
+    {
+      "repo": "crimson-and-clover/hkustgz-thesis-template",
+      "stars": 14,
+      "desc": "香港科技大学（广州）硕士和博士学位论文的现代化 LaTeX 模板。",
+      "size_kb": 36,
+      "html": "https://github.com/crimson-and-clover/hkustgz-thesis-template"
+    },
+    {
+      "repo": "RWLinno/HKUST-GZ-MPhil-Thesis-Template-2026",
+      "stars": 5,
+      "desc": "HKUST(GZ) MPhil Thesis LaTeX Template. Based on @luckyfan-cs's project, reviewed and updated to the latest 2026 version.",
+      "size_kb": 1453,
+      "html": "https://github.com/RWLinno/HKUST-GZ-MPhil-Thesis-Template-2026"
+    },
+    {
+      "repo": "AI-Huang/HKUST_PhD_MPhil_Thesis_LaTeX",
+      "stars": 3,
+      "desc": "LaTeX template for HKUST PhD/MPhil. thesis, based on my own MPhil. thesis.",
+      "size_kb": 20600,
+      "html": "https://github.com/AI-Huang/HKUST_PhD_MPhil_Thesis_LaTeX"
+    },
+    {
+      "repo": "devicu-awsl/hku-thesis-template",
+      "stars": 2,
+      "desc": "Unofficial HKU MSc Thesis LateX Template",
+      "size_kb": 589,
+      "html": "https://github.com/devicu-awsl/hku-thesis-template"
+    },
+    {
+      "repo": "hou-dao/HKUSTthesis",
+      "stars": 1,
+      "desc": "LaTeX template, Thesis, Hong Kong University of Science and Technology, HKUST",
+      "size_kb": 120,
+      "html": "https://github.com/hou-dao/HKUSTthesis"
+    },
+    {
+      "repo": "UsmanMaqbool/hkust-phd-mphil-thesis",
+      "stars": 1,
+      "desc": "HKUST PhD / MPhil Thesis Latex Template 2021 (ECE) with Signature Page",
+      "size_kb": 389,
+      "html": "https://github.com/UsmanMaqbool/hkust-phd-mphil-thesis"
+    },
+    {
+      "repo": "xuaoxiqi/hkustthesis",
+      "stars": 0,
+      "desc": "HKUST latex thesis template",
+      "size_kb": 436,
+      "html": "https://github.com/xuaoxiqi/hkustthesis"
+    },
+    {
+      "repo": "hz-qian/hkust_latex_thesis",
+      "stars": 0,
+      "desc": "",
+      "size_kb": 4869,
+      "html": "https://github.com/hz-qian/hkust_latex_thesis"
+    }
+  ],
+  "cuhk-thesis": [
+    {
+      "repo": "zfengg/CUHKthesis",
+      "stars": 17,
+      "desc": "A simple LaTeX template for CUHK thesis.",
+      "size_kb": 14906,
+      "html": "https://github.com/zfengg/CUHKthesis"
+    },
+    {
+      "repo": "JinchaoLove/CUHK-PhD-Thesis-Template",
+      "stars": 14,
+      "desc": "Latex template for CUHK PhD Thesis",
+      "size_kb": 223,
+      "html": "https://github.com/JinchaoLove/CUHK-PhD-Thesis-Template"
+    },
+    {
+      "repo": "cuhk-ri/cuhk-thesis",
+      "stars": 9,
+      "desc": "A LaTeX Template for CUHK Thesis",
+      "size_kb": 57,
+      "html": "https://github.com/cuhk-ri/cuhk-thesis"
+    },
+    {
+      "repo": "jincheng9/cuhkthesis",
+      "stars": 5,
+      "desc": "Latex thesis template for CUHK graduate students",
+      "size_kb": 140,
+      "html": "https://github.com/jincheng9/cuhkthesis"
+    },
+    {
+      "repo": "GuangyaoCHENG/LaTeX_Template_CUHK_Thesis",
+      "stars": 2,
+      "desc": "A LaTeX Template for PhD thesis in The Chinese University of Hong Kong",
+      "size_kb": 363,
+      "html": "https://github.com/GuangyaoCHENG/LaTeX_Template_CUHK_Thesis"
+    },
+    {
+      "repo": "JacobZuo/CUHKThesisTemplate",
+      "stars": 1,
+      "desc": "This is a Latex template for thesis of CUHK (The Chinese University of Hong Kong).",
+      "size_kb": 178,
+      "html": "https://github.com/JacobZuo/CUHKThesisTemplate"
+    }
+  ],
+  "hkust-thesis": [],
+  "kaist-thesis": [],
+  "kth-thesis": [
+    {
+      "repo": "eX-Mech/mechthesis",
+      "stars": 10,
+      "desc": "Class and template for Licentiate and PhD LaTeX thesis at KTH Mechanics",
+      "size_kb": 4150,
+      "html": "https://github.com/eX-Mech/mechthesis"
+    },
+    {
+      "repo": "harsha5500/KTH-PhD-Thesis-Template",
+      "stars": 2,
+      "desc": "PhD thesis template for KTH based on word template for CBH, Flemingsberg.",
+      "size_kb": 1267,
+      "html": "https://github.com/harsha5500/KTH-PhD-Thesis-Template"
+    },
+    {
+      "repo": "cescalara/kth_phd_thesis",
+      "stars": 1,
+      "desc": "LaTeX template for PhD theses at KTH.",
+      "size_kb": 703,
+      "html": "https://github.com/cescalara/kth_phd_thesis"
+    },
+    {
+      "repo": "tjelviz/kth-ict-latex-thesis-template",
+      "stars": 1,
+      "desc": "",
+      "size_kb": 1798,
+      "html": "https://github.com/tjelviz/kth-ict-latex-thesis-template"
+    },
+    {
+      "repo": "hygerth/KTHFrontpage",
+      "stars": 1,
+      "desc": "LaTeX package for generating title and abstract pages for thesis projects at KTH",
+      "size_kb": 2436,
+      "html": "https://github.com/hygerth/KTHFrontpage"
+    },
+    {
+      "repo": "Fy45/KTH-Thesis-report",
+      "stars": 0,
+      "desc": "My master thesis report, latex version",
+      "size_kb": 44169,
+      "html": "https://github.com/Fy45/KTH-Thesis-report"
+    },
+    {
+      "repo": "gqmaguirejr/KTH-new-cover-experiment-with-configuration-with-Arial",
+      "stars": 0,
+      "desc": "1st and 2nd cycle thesis LaTeX template",
+      "size_kb": 6604,
+      "html": "https://github.com/gqmaguirejr/KTH-new-cover-experiment-with-configuration-with-Arial"
+    },
+    {
+      "repo": "KaffeLatte/Master_Thesis_Report",
+      "stars": 0,
+      "desc": "Latex report of Master Thesis at KTH Royal Institute of Technology",
+      "size_kb": 19376,
+      "html": "https://github.com/KaffeLatte/Master_Thesis_Report"
+    },
+    {
+      "repo": "ChiefGuti/msc-photonics-thesis",
+      "stars": 0,
+      "desc": "Machine learning enabled nonlinear phase noise mitigation for coherent optical systems — MSc thesis, Lund University / K",
+      "size_kb": 24980,
+      "html": "https://github.com/ChiefGuti/msc-photonics-thesis"
+    },
+    {
+      "repo": "akerfel/Tor-video-latency-thesis",
+      "stars": 0,
+      "desc": "LaTeX files for a KTH bachelor thesis. Title: Measuring latency for live video calls routed via vanilla and modified Tor",
+      "size_kb": 1655,
+      "html": "https://github.com/akerfel/Tor-video-latency-thesis"
+    }
+  ],
+  "tudelft-thesis": [
+    {
+      "repo": "dzwaneveld/tudelft-report-thesis-template",
+      "stars": 75,
+      "desc": "A LaTeX report/thesis template that aims to simplify and improve the (Xe)LaTeX template provided by the TU Delft. Ready-",
+      "size_kb": 7981,
+      "html": "https://github.com/dzwaneveld/tudelft-report-thesis-template"
+    },
+    {
+      "repo": "basnijholt/thesis",
+      "stars": 16,
+      "desc": "🎓 Ph.D. thesis: Towards realistic numerical simulations of Majorana devices",
+      "size_kb": 26368,
+      "html": "https://github.com/basnijholt/thesis"
+    },
+    {
+      "repo": "nkpanda97/latex_tudelft",
+      "stars": 0,
+      "desc": "Customised thesis format based on https://github.com/nkpanda97/tudelft-report-thesis-template",
+      "size_kb": 2347,
+      "html": "https://github.com/nkpanda97/latex_tudelft"
+    },
+    {
+      "repo": "jorisperrenet/BachelorThesis",
+      "stars": 0,
+      "desc": "The uncompiled version of my Bachelor Thesis at the TUDelft",
+      "size_kb": 3403,
+      "html": "https://github.com/jorisperrenet/BachelorThesis"
+    },
+    {
+      "repo": "AhmedAlyElGhannam/Elysium_Book_Template",
+      "stars": 0,
+      "desc": "LaTeX book template combining elements of Ricardo Langner's Clean Thesis, Daan Zwaneveld's tudelft-report-thesis-templat",
+      "size_kb": 15275,
+      "html": "https://github.com/AhmedAlyElGhannam/Elysium_Book_Template"
+    }
+  ],
+  "tum-thesis": [
+    {
+      "repo": "fwalch/tum-thesis-latex",
+      "stars": 464,
+      "desc": ":notebook_with_decorative_cover: A LaTeX template for TUM Bachelor/Master theses.",
+      "size_kb": 1433,
+      "html": "https://github.com/fwalch/tum-thesis-latex"
+    },
+    {
+      "repo": "TUM-LIS/tum-dissertation-latex",
+      "stars": 125,
+      "desc": "Latex template for a TUM dissertation/PhD thesis",
+      "size_kb": 936,
+      "html": "https://github.com/TUM-LIS/tum-dissertation-latex"
+    },
+    {
+      "repo": "waltsims/TUM_Thesis_Template_CSE",
+      "stars": 53,
+      "desc": "A Latex template for the TUM graduate program Computational Science and Engineering (CSE).",
+      "size_kb": 813,
+      "html": "https://github.com/waltsims/TUM_Thesis_Template_CSE"
+    },
+    {
+      "repo": "MichaelGrupp/TTT",
+      "stars": 27,
+      "desc": "TUM Thesis Template - LaTeX template in the new corporate design of TU München (inofficial)",
+      "size_kb": 5453,
+      "html": "https://github.com/MichaelGrupp/TTT"
+    },
+    {
+      "repo": "BarisYazici/tum_masters_thesis",
+      "stars": 26,
+      "desc": "Master's thesis in Computer Science at Technical University of Munich. Written in latex.",
+      "size_kb": 88572,
+      "html": "https://github.com/BarisYazici/tum_masters_thesis"
+    },
+    {
+      "repo": "nnedkov/tum-thesis-latex",
+      "stars": 16,
+      "desc": "",
+      "size_kb": 981,
+      "html": "https://github.com/nnedkov/tum-thesis-latex"
+    },
+    {
+      "repo": "labenbmic1/git-BachelorThesis",
+      "stars": 5,
+      "desc": ":notebook_with_decorative_cover: TUM (BSc) LaTeX Thesis Template (inofficial): The template I started with for my Bachel",
+      "size_kb": 11860,
+      "html": "https://github.com/labenbmic1/git-BachelorThesis"
+    },
+    {
+      "repo": "NikolausDemmel/tum-in-thesis-template",
+      "stars": 1,
+      "desc": "LaTeX template for TUM computer science theses. Adapted for my need from http://www.in.tum.de/fileadmin/user_upload/Test",
+      "size_kb": 185,
+      "html": "https://github.com/NikolausDemmel/tum-in-thesis-template"
+    },
+    {
+      "repo": "nilsreichardt/tum-thesis-template",
+      "stars": 0,
+      "desc": "TUM Thesis LaTeX Template",
+      "size_kb": 230,
+      "html": "https://github.com/nilsreichardt/tum-thesis-template"
+    },
+    {
+      "repo": "RollingIsland/TUM-Thesis-Latex-Template",
+      "stars": 0,
+      "desc": "A latex theis template for Technical University of Munich (TUM), extracted from my own master thesis.",
+      "size_kb": 617,
+      "html": "https://github.com/RollingIsland/TUM-Thesis-Latex-Template"
+    },
+    {
+      "repo": "Gautam8387/capstone-report",
+      "stars": 0,
+      "desc": "Latex template for a TUM dissertation/PhD thesis",
+      "size_kb": 118702,
+      "html": "https://github.com/Gautam8387/capstone-report"
+    },
+    {
+      "repo": "rautenrieb/tum-master-thesis-latex-template",
+      "stars": 0,
+      "desc": "Unofficial TUM CIT master's thesis LaTeX template for VS Code, macOS, Windows, and coding agents",
+      "size_kb": 14,
+      "html": "https://github.com/rautenrieb/tum-master-thesis-latex-template"
+    },
+    {
+      "repo": "pylipp/yatttt",
+      "stars": 0,
+      "desc": "Yet Another Tum Tex Thesis Template",
+      "size_kb": 441,
+      "html": "https://github.com/pylipp/yatttt"
+    },
+    {
+      "repo": "josephbirkner/providentia-thesis",
+      "stars": 0,
+      "desc": "Repo for all Latex code related to my thesis at the TUM I6 chair.",
+      "size_kb": 151929,
+      "html": "https://github.com/josephbirkner/providentia-thesis"
+    },
+    {
+      "repo": "lukas2510/bachelor-thesis",
+      "stars": 0,
+      "desc": "Bachelor's thesis \"Admission Control for Industrial Edge\" (TUM & Siemens): runtime container admission control for Sieme",
+      "size_kb": 1075,
+      "html": "https://github.com/lukas2510/bachelor-thesis"
+    }
+  ],
+  "paris-thesis": [
+    {
+      "repo": "alephpi/ip-paris-thesis-template",
+      "stars": 1,
+      "desc": "A LaTeX thesis template for doctoral students at Institut Polytechnique de Paris (IP Paris), compatible with the officia",
+      "size_kb": 1992,
+      "html": "https://github.com/alephpi/ip-paris-thesis-template"
+    },
+    {
+      "repo": "Nicolivain/mines-paris-thesis-template",
+      "stars": 0,
+      "desc": "An unofficial latex thesis template for Mines Paris",
+      "size_kb": 623,
+      "html": "https://github.com/Nicolivain/mines-paris-thesis-template"
+    },
+    {
+      "repo": "AntoineLav/ipparis-thesis-template",
+      "stars": 0,
+      "desc": "LaTeX template for thesis and HDR manuscripts at Institut Polytechnique de Paris",
+      "size_kb": 66,
+      "html": "https://github.com/AntoineLav/ipparis-thesis-template"
+    }
+  ],
+  "epfl-thesis": [
+    {
+      "repo": "Rayjine/epfl-lse-master-thesis-template",
+      "stars": 10,
+      "desc": "LaTeX template for Master’s theses in Life Sciences Engineering at EPFL: structure, styles, and guidelines to get starte",
+      "size_kb": 4020,
+      "html": "https://github.com/Rayjine/epfl-lse-master-thesis-template"
+    },
+    {
+      "repo": "Neclow/MasterThesisTemplate",
+      "stars": 9,
+      "desc": "EPFL Master Thesis LaTeX template for SV students",
+      "size_kb": 10,
+      "html": "https://github.com/Neclow/MasterThesisTemplate"
+    },
+    {
+      "repo": "antonindanalet/EPFL-CV-template",
+      "stars": 1,
+      "desc": "CV for EPFL Thesis template in LaTeX",
+      "size_kb": 10,
+      "html": "https://github.com/antonindanalet/EPFL-CV-template"
+    },
+    {
+      "repo": "marcaureledivernois/PhD_thesis",
+      "stars": 1,
+      "desc": "LaTeX codes for my PhD thesis at EPFL",
+      "size_kb": 42524,
+      "html": "https://github.com/marcaureledivernois/PhD_thesis"
+    },
+    {
+      "repo": "eceo-epfl/phd_thesis_template",
+      "stars": 0,
+      "desc": "EPFL phd thesis template in latex  (from Li Mi)",
+      "size_kb": 230,
+      "html": "https://github.com/eceo-epfl/phd_thesis_template"
+    },
+    {
+      "repo": "davidsandoz/master-thesis",
+      "stars": 0,
+      "desc": "Report of my Master Thesis Project",
+      "size_kb": 80687,
+      "html": "https://github.com/davidsandoz/master-thesis"
+    },
+    {
+      "repo": "VINX89/PhD-thesis",
+      "stars": 0,
+      "desc": "LaTeX source of the PhD thesis in Physics that I defended on July 13th, 2018, at EPFL (Lausanne, Switzerland)",
+      "size_kb": 223674,
+      "html": "https://github.com/VINX89/PhD-thesis"
+    },
+    {
+      "repo": "aimi-lab/PhD-thesis-template",
+      "stars": 0,
+      "desc": "This is a LaTeX template for the PhD thesis document. It uses EPFL's template for the chapters, and formats the front an",
+      "size_kb": 128,
+      "html": "https://github.com/aimi-lab/PhD-thesis-template"
+    }
+  ],
+  "cambridge2": [
+    {
+      "repo": "jonastjoms/CambridgeThesis",
+      "stars": 0,
+      "desc": "Latex files for Cambridge  thesis",
+      "size_kb": 1489,
+      "html": "https://github.com/jonastjoms/CambridgeThesis"
+    }
+  ],
+  "ieee-paper": [
+    {
+      "repo": "Larry955/Latex-Paper-Templates",
+      "stars": 308,
+      "desc": "Latex-format paper templates, including Elsevier, arXiv and IEEE Access.",
+      "size_kb": 2419,
+      "html": "https://github.com/Larry955/Latex-Paper-Templates"
+    },
+    {
+      "repo": "sylvainhalle/PaperShell",
+      "stars": 161,
+      "desc": "Nice and flexible template environment for papers written in LaTeX",
+      "size_kb": 1369,
+      "html": "https://github.com/sylvainhalle/PaperShell"
+    },
+    {
+      "repo": "monetjoe/latex_paper_templates",
+      "stars": 57,
+      "desc": "This repository provides LaTeX templates for academic papers, you can select the appropriate template for your target co",
+      "size_kb": 1586,
+      "html": "https://github.com/monetjoe/latex_paper_templates"
+    },
+    {
+      "repo": "b201lab/template-paper-ieee",
+      "stars": 9,
+      "desc": "Template paper Institute of Electrical and Electronics Engineers (IEEE)",
+      "size_kb": 205,
+      "html": "https://github.com/b201lab/template-paper-ieee"
+    },
+    {
+      "repo": "Cirice/SRSTemplate",
+      "stars": 9,
+      "desc": "Software Requirement Specification(IEEE Standard No. 830) Template in Farsi. It's good to have a technical paper around ",
+      "size_kb": 5073,
+      "html": "https://github.com/Cirice/SRSTemplate"
+    },
+    {
+      "repo": "MaxwelsDonc/responseLetterLatexTemplate",
+      "stars": 8,
+      "desc": "A LaTeX template for academic paper response letters, providing common structures and expressions for replying to journa",
+      "size_kb": 107,
+      "html": "https://github.com/MaxwelsDonc/responseLetterLatexTemplate"
+    },
+    {
+      "repo": "alvinwilta/ieee-conference-latex",
+      "stars": 7,
+      "desc": "VSCode LaTeX Template for IEEE Conference Paper format",
+      "size_kb": 224,
+      "html": "https://github.com/alvinwilta/ieee-conference-latex"
+    },
+    {
+      "repo": "IloveNooodles/ta-paper-latex-itb",
+      "stars": 7,
+      "desc": "Template Tugas Akhir IF ITB dengan LaTeX",
+      "size_kb": 2285,
+      "html": "https://github.com/IloveNooodles/ta-paper-latex-itb"
+    },
+    {
+      "repo": "CheeryLeeyy/IEEE-Journal-Paper-Review-Comments-Response-Template",
+      "stars": 4,
+      "desc": "This repository provides a LaTeX template designed to facilitate the preparation of response letters to reviewers' comme",
+      "size_kb": 3476,
+      "html": "https://github.com/CheeryLeeyy/IEEE-Journal-Paper-Review-Comments-Response-Template"
+    },
+    {
+      "repo": "sheldon123z/academic-paper-templates",
+      "stars": 4,
+      "desc": "学术论文模板集合 - 包含IEEE、中文期刊等各类学术论文LaTeX和Word模板",
+      "size_kb": 41919,
+      "html": "https://github.com/sheldon123z/academic-paper-templates"
+    },
+    {
+      "repo": "joyeecheung/IEEE-LaTeX-template",
+      "stars": 2,
+      "desc": "A sample LaTeX template for IEEE style paper",
+      "size_kb": 129,
+      "html": "https://github.com/joyeecheung/IEEE-LaTeX-template"
+    },
+    {
+      "repo": "klb2/ieee-paper-template",
+      "stars": 2,
+      "desc": "LaTeX template for IEEE papers (including Bash script for easy setup)",
+      "size_kb": 59,
+      "html": "https://github.com/klb2/ieee-paper-template"
+    },
+    {
+      "repo": "DanySK/Template-LaTeX-IEEE-Conference-Proceedings",
+      "stars": 2,
+      "desc": "A template repository for quickly generating a paper template for IEEE conferences",
+      "size_kb": 280,
+      "html": "https://github.com/DanySK/Template-LaTeX-IEEE-Conference-Proceedings"
+    },
+    {
+      "repo": "HauLiang/Rebuttal-to-Reviewer",
+      "stars": 2,
+      "desc": "LaTex Template for Author Rebuttal to Paper Reviewers -- 2022 IEEE International Conference on Acoustics, Speech and Sig",
+      "size_kb": 1884,
+      "html": "https://github.com/HauLiang/Rebuttal-to-Reviewer"
+    },
+    {
+      "repo": "kouheisatou/ieee_template",
+      "stars": 1,
+      "desc": "Latex template for IEEE journal paper.",
+      "size_kb": 275,
+      "html": "https://github.com/kouheisatou/ieee_template"
+    },
+    {
+      "repo": "MohamedMesto/IEEE-Conference-Latex-paper-Template",
+      "stars": 1,
+      "desc": "IEEE Conference Latex paper Template",
+      "size_kb": 900,
+      "html": "https://github.com/MohamedMesto/IEEE-Conference-Latex-paper-Template"
+    },
+    {
+      "repo": "emareg/paper-template",
+      "stars": 1,
+      "desc": "Universal latex paper template for IEEE, ACM, LNCS",
+      "size_kb": 212,
+      "html": "https://github.com/emareg/paper-template"
+    }
+  ],
+  "acm-paper": [
+    {
+      "repo": "chili-epfl/paper-poster-presentation-template",
+      "stars": 20,
+      "desc": "A LaTeX template pack for ieeetran, sigchi, acm-sig-alternate, llncs2e, baposter, nccr-poster and beamer",
+      "size_kb": 3672,
+      "html": "https://github.com/chili-epfl/paper-poster-presentation-template"
+    },
+    {
+      "repo": "oduwsdl/acm-paper-template",
+      "stars": 6,
+      "desc": "A starter LaTeX template for ACM conferences such as JCDL",
+      "size_kb": 49,
+      "html": "https://github.com/oduwsdl/acm-paper-template"
+    },
+    {
+      "repo": "arcatdmz/acm2024-primary-article-template",
+      "stars": 2,
+      "desc": "A simple GitHub repo that automatically builds a paper PDF in ACM Primary Article Template from LaTeX code and publishes",
+      "size_kb": 994,
+      "html": "https://github.com/arcatdmz/acm2024-primary-article-template"
+    },
+    {
+      "repo": "fzaiser/faithful-acmart",
+      "stars": 2,
+      "desc": "Typst template for every ACM paper format, matching the LaTeX acmart class as closely as possible.",
+      "size_kb": 12540,
+      "html": "https://github.com/fzaiser/faithful-acmart"
+    },
+    {
+      "repo": "rotaki/paper-template",
+      "stars": 0,
+      "desc": "LaTeX paper template (ACM)",
+      "size_kb": 46,
+      "html": "https://github.com/rotaki/paper-template"
+    },
+    {
+      "repo": "frenchy64/paper-template",
+      "stars": 0,
+      "desc": "Template for LaTeX ACM SIGPLAN",
+      "size_kb": 196,
+      "html": "https://github.com/frenchy64/paper-template"
+    },
+    {
+      "repo": "appblue/acmsmall-latex",
+      "stars": 0,
+      "desc": "Template for ACM paper in LaTeX",
+      "size_kb": 3220,
+      "html": "https://github.com/appblue/acmsmall-latex"
+    },
+    {
+      "repo": "samhsu-dev/latex-paper",
+      "stars": 0,
+      "desc": "LaTeX paper template with ACM sigconf structure, section layout, and package configs",
+      "size_kb": 1070,
+      "html": "https://github.com/samhsu-dev/latex-paper"
+    },
+    {
+      "repo": "01134K/ACM-TALLIP-Paper-Format",
+      "stars": 0,
+      "desc": "LaTeX Template for ACM TALLIP (or papers of the same format) supporting both Thai and English with XeLaTeX compilation a",
+      "size_kb": 356,
+      "html": "https://github.com/01134K/ACM-TALLIP-Paper-Format"
+    },
+    {
+      "repo": "AlanSynn/paper-template",
+      "stars": 0,
+      "desc": "Academic LaTeX templates for top-tier conferences. Verified formats (ACM, IEEE, USENIX) with streamlined build scripts a",
+      "size_kb": 346,
+      "html": "https://github.com/AlanSynn/paper-template"
+    }
+  ],
+  "nature-paper": [
+    {
+      "repo": "AmirAlavi/nature-tex",
+      "stars": 27,
+      "desc": "LaTeX template and build code for a Nature style research article submission",
+      "size_kb": 295,
+      "html": "https://github.com/AmirAlavi/nature-tex"
+    },
+    {
+      "repo": "jdmonaco/natneuro-latex-template",
+      "stars": 24,
+      "desc": "LaTeX manuscript template based on a Nature Neuroscience submission",
+      "size_kb": 415,
+      "html": "https://github.com/jdmonaco/natneuro-latex-template"
+    },
+    {
+      "repo": "godkingjay/springer-nature-latex-template",
+      "stars": 10,
+      "desc": "",
+      "size_kb": 1378,
+      "html": "https://github.com/godkingjay/springer-nature-latex-template"
+    },
+    {
+      "repo": "episanty/AuNaturel",
+      "stars": 10,
+      "desc": "Au Naturel is a LaTeX template built on top of the standard article class, roughly emulating some characteristics of the",
+      "size_kb": 519,
+      "html": "https://github.com/episanty/AuNaturel"
+    },
+    {
+      "repo": "Koorye/dialectics-of-nature-latex-template-cn",
+      "stars": 3,
+      "desc": "《自然辩证法研究》中文期刊LaTeX模板",
+      "size_kb": 1029,
+      "html": "https://github.com/Koorye/dialectics-of-nature-latex-template-cn"
+    },
+    {
+      "repo": "granttremblay/Nature_Letter_LaTeX_template",
+      "stars": 2,
+      "desc": "A LaTeX classfile to emulate the look of a Nature Letter",
+      "size_kb": 4,
+      "html": "https://github.com/granttremblay/Nature_Letter_LaTeX_template"
+    },
+    {
+      "repo": "tundeakins/Nature_latex",
+      "stars": 2,
+      "desc": "Nature latex template",
+      "size_kb": 14,
+      "html": "https://github.com/tundeakins/Nature_latex"
+    },
+    {
+      "repo": "rsnemmen/nature-news-views-template",
+      "stars": 2,
+      "desc": "LaTeX template for Nature News & Views article",
+      "size_kb": 102,
+      "html": "https://github.com/rsnemmen/nature-news-views-template"
+    },
+    {
+      "repo": "DanySK/template-latex-springer-nature-sn-jnl",
+      "stars": 2,
+      "desc": "",
+      "size_kb": 954,
+      "html": "https://github.com/DanySK/template-latex-springer-nature-sn-jnl"
+    },
+    {
+      "repo": "sajraparicio/manuscript-template-nature",
+      "stars": 1,
+      "desc": "directory structure and latex templates for Nature family manuscripts",
+      "size_kb": 36,
+      "html": "https://github.com/sajraparicio/manuscript-template-nature"
+    },
+    {
+      "repo": "KalinNonchev/springer_nature_latex_template",
+      "stars": 0,
+      "desc": "Springer Nature Latex Template",
+      "size_kb": 617,
+      "html": "https://github.com/KalinNonchev/springer_nature_latex_template"
+    },
+    {
+      "repo": "nickhnelsen/springer-nature-latex-template-improved",
+      "stars": 0,
+      "desc": "Improved Springer Nature Latex Template",
+      "size_kb": 2849,
+      "html": "https://github.com/nickhnelsen/springer-nature-latex-template-improved"
+    },
+    {
+      "repo": "yunyunfanfan/Nature_LaTeX_template",
+      "stars": 0,
+      "desc": "自然子刊论文的LaTeX模板复现",
+      "size_kb": 3524,
+      "html": "https://github.com/yunyunfanfan/Nature_LaTeX_template"
+    },
+    {
+      "repo": "iftaken/anor-template",
+      "stars": 0,
+      "desc": "Annals of Operations Research (ANOR) Springer Nature LaTeX template",
+      "size_kb": 152,
+      "html": "https://github.com/iftaken/anor-template"
+    }
+  ],
+  "elsevier-paper": [
+    {
+      "repo": "oyoycr/els-cas-templates",
+      "stars": 143,
+      "desc": "Elsevier latex template 'els-cas-templates'（爱思唯尔期刊-latex双栏版本）",
+      "size_kb": 338,
+      "html": "https://github.com/oyoycr/els-cas-templates"
+    },
+    {
+      "repo": "DanySK/Template-LaTeX-Elsevier-CAS-DC",
+      "stars": 43,
+      "desc": "A template repository for quickly setting up papers to be submitted to Elsevier Journals",
+      "size_kb": 1934,
+      "html": "https://github.com/DanySK/Template-LaTeX-Elsevier-CAS-DC"
+    },
+    {
+      "repo": "iagoac/elsevier",
+      "stars": 34,
+      "desc": "LaTeX template for Elsevier journals",
+      "size_kb": 64,
+      "html": "https://github.com/iagoac/elsevier"
+    },
+    {
+      "repo": "dmafanasyev/elsevier_latex_template",
+      "stars": 21,
+      "desc": "Common template of the research article using elsarticle class. It also contains elsarticle-ru class file and elsarticle",
+      "size_kb": 469,
+      "html": "https://github.com/dmafanasyev/elsevier_latex_template"
+    },
+    {
+      "repo": "vtex-soft/texsupport.elsevier-book",
+      "stars": 8,
+      "desc": "Elsevier book class and template",
+      "size_kb": 3749,
+      "html": "https://github.com/vtex-soft/texsupport.elsevier-book"
+    },
+    {
+      "repo": "EmpyreanHYR/Self-made-els-latex-template",
+      "stars": 7,
+      "desc": "Self-made general Elsevier elsarticle LaTeX template. The pre-built standardized academic paper layout module supports f",
+      "size_kb": 20475,
+      "html": "https://github.com/EmpyreanHYR/Self-made-els-latex-template"
+    },
+    {
+      "repo": "Aqshalikhsan/elsarticle-modular-template",
+      "stars": 6,
+      "desc": "Modular Elsevier (elsarticle) LaTeX template with single-column and two-column variants",
+      "size_kb": 102,
+      "html": "https://github.com/Aqshalikhsan/elsarticle-modular-template"
+    },
+    {
+      "repo": "mashaan14/ElsevierLatexTemplate",
+      "stars": 4,
+      "desc": "A LaTeX Template with double column for Elsevier journals",
+      "size_kb": 2294,
+      "html": "https://github.com/mashaan14/ElsevierLatexTemplate"
+    },
+    {
+      "repo": "schnorr/elsevierorg",
+      "stars": 3,
+      "desc": "The Elsevier Latex Template in Org-Mode, just type make.",
+      "size_kb": 27,
+      "html": "https://github.com/schnorr/elsevierorg"
+    },
+    {
+      "repo": "cahitkome/elsarticle",
+      "stars": 3,
+      "desc": "Elsevier Latex Template",
+      "size_kb": 29,
+      "html": "https://github.com/cahitkome/elsarticle"
+    },
+    {
+      "repo": "janheinrichmerker/latex-els-cas-templates",
+      "stars": 3,
+      "desc": "📄 Copy of Elsevier updated LATEX templates.",
+      "size_kb": 1265,
+      "html": "https://github.com/janheinrichmerker/latex-els-cas-templates"
+    },
+    {
+      "repo": "DanySK/Template-LaTeX-Elsevier-Article",
+      "stars": 3,
+      "desc": "A template repository for quickly setting up papers to be submitted to Elsevier Journals",
+      "size_kb": 327,
+      "html": "https://github.com/DanySK/Template-LaTeX-Elsevier-Article"
+    },
+    {
+      "repo": "carlosmccosta/latex-template-elsevier",
+      "stars": 1,
+      "desc": "Latex template layout for Elsevier papers",
+      "size_kb": 4,
+      "html": "https://github.com/carlosmccosta/latex-template-elsevier"
+    },
+    {
+      "repo": "LuoXubo/Elsevier-Latex-Template",
+      "stars": 1,
+      "desc": "The latex template for elsevier journals",
+      "size_kb": 1048,
+      "html": "https://github.com/LuoXubo/Elsevier-Latex-Template"
+    },
+    {
+      "repo": "eurunuela/elsevier_paper_template",
+      "stars": 1,
+      "desc": "Latex template for Elsevier papers.",
+      "size_kb": 987,
+      "html": "https://github.com/eurunuela/elsevier_paper_template"
+    }
+  ],
+  "prl-paper": [
+    {
+      "repo": "wzxxjr/prl-wordcount",
+      "stars": 1,
+      "desc": "Automated word-count analysis for Physical Review Letters (PRL) LaTeX manuscripts — runs texcount, parses equations & fi",
+      "size_kb": 16,
+      "html": "https://github.com/wzxxjr/prl-wordcount"
+    }
+  ],
+  "beamer-theme": [
+    {
+      "repo": "thwfhk/PKU-Beamer-Theme",
+      "stars": 29,
+      "desc": "基于Metropolis修改的北大风格Beamer主题",
+      "size_kb": 363,
+      "html": "https://github.com/thwfhk/PKU-Beamer-Theme"
+    },
+    {
+      "repo": "oyamay/beamertheme-titech",
+      "stars": 20,
+      "desc": "Tokyo Tech-flavored Metropolis Theme",
+      "size_kb": 2461,
+      "html": "https://github.com/oyamay/beamertheme-titech"
+    },
+    {
+      "repo": "aaronbaggett/youngmetro",
+      "stars": 16,
+      "desc": "R Markdown Beamer Theme Based on sthlm, HSRM, and Metropolis themes",
+      "size_kb": 567,
+      "html": "https://github.com/aaronbaggett/youngmetro"
+    },
+    {
+      "repo": "JoeyEremondi/UBC-Metropolis-Beamer",
+      "stars": 12,
+      "desc": "Metropolis Beamer theme with UBC Colors and Logo",
+      "size_kb": 4103,
+      "html": "https://github.com/JoeyEremondi/UBC-Metropolis-Beamer"
+    },
+    {
+      "repo": "vskbellala/metropolis-brown",
+      "stars": 9,
+      "desc": "Brown University color scheme for Metropolis beamer theme.",
+      "size_kb": 110,
+      "html": "https://github.com/vskbellala/metropolis-brown"
+    },
+    {
+      "repo": "Zoher15/IU-Metropolis-Beamer-Theme",
+      "stars": 8,
+      "desc": "A modern Beamer presentation theme combining Metropolis with Indiana University branding",
+      "size_kb": 24449,
+      "html": "https://github.com/Zoher15/IU-Metropolis-Beamer-Theme"
+    },
+    {
+      "repo": "eddelbuettel/pkg-latex-metropolis",
+      "stars": 7,
+      "desc": "[deprecated as Metropolis is now in TeXLive and hence Debian] (Unofficial) Debian packaging for Metropolis theme for Bea",
+      "size_kb": 23,
+      "html": "https://github.com/eddelbuettel/pkg-latex-metropolis"
+    },
+    {
+      "repo": "AllenYolk/metropolis-pku",
+      "stars": 6,
+      "desc": "A delicate beamer theme for PKU students, modified from Metropolis.",
+      "size_kb": 400,
+      "html": "https://github.com/AllenYolk/metropolis-pku"
+    },
+    {
+      "repo": "longr/lancaster_theme",
+      "stars": 5,
+      "desc": "Lancaster University beamer theme based off of the metropolis theme",
+      "size_kb": 140,
+      "html": "https://github.com/longr/lancaster_theme"
+    },
+    {
+      "repo": "javiergarea/pug",
+      "stars": 4,
+      "desc": ":bar_chart: A metropolis-based LaTeX theme for beamer.",
+      "size_kb": 514,
+      "html": "https://github.com/javiergarea/pug"
+    },
+    {
+      "repo": "Giuseppe499/Metropolis-Uninsubria",
+      "stars": 4,
+      "desc": "An unofficial beamer theme for the University of Insubria (Università degli Studi dell'Insubria). This is an adaptation ",
+      "size_kb": 753,
+      "html": "https://github.com/Giuseppe499/Metropolis-Uninsubria"
+    },
+    {
+      "repo": "Dakostu/MyDarkMetropolis",
+      "stars": 3,
+      "desc": "A dark-color custom theme for the LaTeX Metropolis beamer package using LuaLaTeX",
+      "size_kb": 130,
+      "html": "https://github.com/Dakostu/MyDarkMetropolis"
+    },
+    {
+      "repo": "spindro/beamer_theme",
+      "stars": 3,
+      "desc": "Cool metropolis theme for presenting \"stuff\" at Sapienza University of Rome",
+      "size_kb": 299,
+      "html": "https://github.com/spindro/beamer_theme"
+    },
+    {
+      "repo": "RyanAPhys/Cardiff-University-Metropolis-Beamer-LaTeX-Template",
+      "stars": 3,
+      "desc": "A template for Cardiff University Beamer LaTeX presentations, based on the Metropolis theme.",
+      "size_kb": 169,
+      "html": "https://github.com/RyanAPhys/Cardiff-University-Metropolis-Beamer-LaTeX-Template"
+    },
+    {
+      "repo": "BioData-PT/LateX-presentation-template",
+      "stars": 2,
+      "desc": "LateX Presentation Template based on Metropolis Beamer theme",
+      "size_kb": 172,
+      "html": "https://github.com/BioData-PT/LateX-presentation-template"
+    }
+  ],
+  "beamer-tsinghua": [
+    {
+      "repo": "luoyt14/presentationTemplete",
+      "stars": 8,
+      "desc": "清华大学beamer模板",
+      "size_kb": 4484,
+      "html": "https://github.com/luoyt14/presentationTemplete"
+    }
+  ],
+  "poster": [
+    {
+      "repo": "ynblmstrvll/kth-vertical-poster-template-unofficial",
+      "stars": 1,
+      "desc": "An unofficial portrait academic poster template inspired by the KTH visual identity. Designed for 700 × 1000 mm conferen",
+      "size_kb": 740,
+      "html": "https://github.com/ynblmstrvll/kth-vertical-poster-template-unofficial"
+    }
+  ],
+  "cv": [
+    {
+      "repo": "mliu7/latex-moderncv",
+      "stars": 274,
+      "desc": "My latex resume using the moderncv template",
+      "size_kb": 1958,
+      "html": "https://github.com/mliu7/latex-moderncv"
+    },
+    {
+      "repo": "oschrenk/moderncv-template",
+      "stars": 40,
+      "desc": "A resume/curriculum vitae template in Latex based on the moderncv package",
+      "size_kb": 172,
+      "html": "https://github.com/oschrenk/moderncv-template"
+    },
+    {
+      "repo": "krishnr/Texume",
+      "stars": 4,
+      "desc": "A Latex resumé template based on moderncv.",
+      "size_kb": 1020,
+      "html": "https://github.com/krishnr/Texume"
+    },
+    {
+      "repo": "zandi/Resume-Template",
+      "stars": 1,
+      "desc": "A simple but nice resume template in LaTeX using ModernCV.",
+      "size_kb": 594,
+      "html": "https://github.com/zandi/Resume-Template"
+    },
+    {
+      "repo": "bgentry/moderncvbg",
+      "stars": 1,
+      "desc": "LaTeX CV/Resume templates",
+      "size_kb": 632,
+      "html": "https://github.com/bgentry/moderncvbg"
+    },
+    {
+      "repo": "willb/resume-template",
+      "stars": 1,
+      "desc": "LaTeX resume template, based on moderncv class",
+      "size_kb": 302,
+      "html": "https://github.com/willb/resume-template"
+    },
+    {
+      "repo": "nbzubekhin/resume-latex-moderncv",
+      "stars": 1,
+      "desc": "Latex resume using the moderncv template and using cmake for build it",
+      "size_kb": 90,
+      "html": "https://github.com/nbzubekhin/resume-latex-moderncv"
+    },
+    {
+      "repo": "ozankiratli/Resume-ATS-Friendly",
+      "stars": 1,
+      "desc": "ATS Friendly LaTeX Resume Template ",
+      "size_kb": 1323,
+      "html": "https://github.com/ozankiratli/Resume-ATS-Friendly"
+    },
+    {
+      "repo": "jasedit/resume",
+      "stars": 0,
+      "desc": "Scriptorium template for resumes",
+      "size_kb": 6,
+      "html": "https://github.com/jasedit/resume"
+    },
+    {
+      "repo": "asphaltbuffet/tex-resume-template",
+      "stars": 0,
+      "desc": "a template for latex resumes using the moderncv style",
+      "size_kb": 19,
+      "html": "https://github.com/asphaltbuffet/tex-resume-template"
+    },
+    {
+      "repo": "acprimer/resume",
+      "stars": 0,
+      "desc": "My own resume written by Latex using moderncv template.",
+      "size_kb": 340,
+      "html": "https://github.com/acprimer/resume"
+    },
+    {
+      "repo": "Tumlinh/moderncv-template",
+      "stars": 0,
+      "desc": "A LaTeX resume template for those who like it elegant and stripped down",
+      "size_kb": 108,
+      "html": "https://github.com/Tumlinh/moderncv-template"
+    },
+    {
+      "repo": "OAkyildiz/OAkyildiz_Resume",
+      "stars": 0,
+      "desc": "My resume using a highly-customized moderncv template in LaTeX",
+      "size_kb": 1832,
+      "html": "https://github.com/OAkyildiz/OAkyildiz_Resume"
+    },
+    {
+      "repo": "rohwid/curriculum-vitae",
+      "stars": 0,
+      "desc": "My curriculum vitae with ModernCV templates in LaTeX",
+      "size_kb": 16187,
+      "html": "https://github.com/rohwid/curriculum-vitae"
+    },
+    {
+      "repo": "bmgandre/multilingual-resume-template",
+      "stars": 0,
+      "desc": "A template for writing a multilingual résumé",
+      "size_kb": 709,
+      "html": "https://github.com/bmgandre/multilingual-resume-template"
+    }
+  ],
+  "awesome-cv": [
+    {
+      "repo": "posquit0/Awesome-CV",
+      "stars": 28251,
+      "desc": ":page_facing_up: Awesome CV is LaTeX template for your outstanding job application",
+      "size_kb": 17065,
+      "html": "https://github.com/posquit0/Awesome-CV"
+    },
+    {
+      "repo": "darwiin/yaac-another-awesome-cv",
+      "stars": 1039,
+      "desc": "YAAC: Another Awesome CV is a template using Font Awesome and Adobe Source Font.",
+      "size_kb": 3672,
+      "html": "https://github.com/darwiin/yaac-another-awesome-cv"
+    },
+    {
+      "repo": "Slyces/awesome-cv-timeline",
+      "stars": 168,
+      "desc": "Latex one page resume based on posquit0/Awesome-CV",
+      "size_kb": 2798,
+      "html": "https://github.com/Slyces/awesome-cv-timeline"
+    },
+    {
+      "repo": "KnlnKS/resume",
+      "stars": 25,
+      "desc": "Kunalan Kevin Subagaran's Resume",
+      "size_kb": 2793,
+      "html": "https://github.com/KnlnKS/resume"
+    },
+    {
+      "repo": "olivierodo/Awesome-CV",
+      "stars": 14,
+      "desc": "Awesome CV is LaTeX template for your outstanding job application",
+      "size_kb": 708,
+      "html": "https://github.com/olivierodo/Awesome-CV"
+    },
+    {
+      "repo": "kh4nh12/khanhtq_cv",
+      "stars": 10,
+      "desc": "Awesome CV LaTeX Template for CV/Resume",
+      "size_kb": 7306,
+      "html": "https://github.com/kh4nh12/khanhtq_cv"
+    },
+    {
+      "repo": "daniel-rojsanch/Luffy-awesome-cv",
+      "stars": 10,
+      "desc": ":monkey:  template CV",
+      "size_kb": 2779,
+      "html": "https://github.com/daniel-rojsanch/Luffy-awesome-cv"
+    },
+    {
+      "repo": "jacobgarcia/cv-latex",
+      "stars": 9,
+      "desc": "Jacob Garcia's CV as a full stack developer. Written in LaTex using Awesome CV ShareLatex template",
+      "size_kb": 5644,
+      "html": "https://github.com/jacobgarcia/cv-latex"
+    },
+    {
+      "repo": "weilueluo/cv",
+      "stars": 9,
+      "desc": "My simple CV based on Awesome-CV",
+      "size_kb": 196954,
+      "html": "https://github.com/weilueluo/cv"
+    },
+    {
+      "repo": "jacobgarcia/coverletter-latex",
+      "stars": 8,
+      "desc": "Jacob Garcia's cover letter as a full stack developer. Written in LaTex using Awesome CV Cover Letter ShareLatex templat",
+      "size_kb": 1597,
+      "html": "https://github.com/jacobgarcia/coverletter-latex"
+    },
+    {
+      "repo": "xenithorb/resume",
+      "stars": 5,
+      "desc": "Resume fork of Awesome-CV, done in LaTeX, with Gitlab CI/CD Integration and automatic updating",
+      "size_kb": 2852,
+      "html": "https://github.com/xenithorb/resume"
+    },
+    {
+      "repo": "afbat/CV-Template",
+      "stars": 5,
+      "desc": "Adapted from Awesome CV LaTeX template for community-engaged information, media, and communication PhD student. For use ",
+      "size_kb": 1285,
+      "html": "https://github.com/afbat/CV-Template"
+    },
+    {
+      "repo": "nikolaydubina/mini-awesome-cv",
+      "stars": 4,
+      "desc": "📝 LaTeX Awesome-CV under 200LOC",
+      "size_kb": 903,
+      "html": "https://github.com/nikolaydubina/mini-awesome-cv"
+    },
+    {
+      "repo": "swhasans/Resume",
+      "stars": 4,
+      "desc": "Syed W. Hasan's Résumé in LaTeX",
+      "size_kb": 2137,
+      "html": "https://github.com/swhasans/Resume"
+    },
+    {
+      "repo": "mlabouardy/resume",
+      "stars": 3,
+      "desc": "Mohamed Labouardy resume",
+      "size_kb": 1908,
+      "html": "https://github.com/mlabouardy/resume"
+    },
+    {
+      "repo": "zodiacfireworks/resume",
+      "stars": 3,
+      "desc": "Mi currículo en LaTeX con Awesome CV",
+      "size_kb": 2106,
+      "html": "https://github.com/zodiacfireworks/resume"
+    }
+  ],
+  "letter": [
+    {
+      "repo": "thehale/expressive-resume",
+      "stars": 436,
+      "desc": "A beautiful resume/cover letter LaTeX template pair that are extraordinarily easy to use.",
+      "size_kb": 2300,
+      "html": "https://github.com/thehale/expressive-resume"
+    },
+    {
+      "repo": "shellywhen/Journal-Response-Letter-Template-LaTeX",
+      "stars": 348,
+      "desc": "A LaTeX template for journal review response (initially designed for IEEE TVCG)",
+      "size_kb": 566,
+      "html": "https://github.com/shellywhen/Journal-Response-Letter-Template-LaTeX"
+    },
+    {
+      "repo": "mschroen/review_response_letter",
+      "stars": 201,
+      "desc": "Template for Latex and/or Pandoc to quickly write reviews and (author) response letters",
+      "size_kb": 830,
+      "html": "https://github.com/mschroen/review_response_letter"
+    },
+    {
+      "repo": "antkr10/tex-cvbuilder",
+      "stars": 165,
+      "desc": "Collection of customizable CV & cover letter LaTeX templates",
+      "size_kb": 10204,
+      "html": "https://github.com/antkr10/tex-cvbuilder"
+    },
+    {
+      "repo": "eddelbuettel/linl",
+      "stars": 116,
+      "desc": "Linl Is Not Letter -- Markdown-based LaTeX Letter Template",
+      "size_kb": 1559,
+      "html": "https://github.com/eddelbuettel/linl"
+    },
+    {
+      "repo": "cdc08x/letter-2-reviewers-LaTeX-template",
+      "stars": 76,
+      "desc": "A LaTeX template to write response letters for journal revisions",
+      "size_kb": 1192,
+      "html": "https://github.com/cdc08x/letter-2-reviewers-LaTeX-template"
+    },
+    {
+      "repo": "mdavis-xyz/friggeri-letter",
+      "stars": 73,
+      "desc": "A LaTeX template for a cover letter to go with the Friggeri Resume",
+      "size_kb": 1173,
+      "html": "https://github.com/mdavis-xyz/friggeri-letter"
+    },
+    {
+      "repo": "jgehrcke/latex-briefvorlage",
+      "stars": 44,
+      "desc": "LaTeX letter template / Briefvorlage (optimiert für deutschsprachigen Raum)",
+      "size_kb": 37,
+      "html": "https://github.com/jgehrcke/latex-briefvorlage"
+    },
+    {
+      "repo": "stevegeek/latex-templates",
+      "stars": 34,
+      "desc": "A collection of my LaTeX templates: CV (resume), letter head and PhD Thesis",
+      "size_kb": 353,
+      "html": "https://github.com/stevegeek/latex-templates"
+    },
+    {
+      "repo": "firefly-cpp/cover-letter-latex",
+      "stars": 32,
+      "desc": "A cover letter template for a journal paper submission in Latex",
+      "size_kb": 575,
+      "html": "https://github.com/firefly-cpp/cover-letter-latex"
+    },
+    {
+      "repo": "ustctug/ustcletter",
+      "stars": 30,
+      "desc": "中国科学技术大学信纸模板. USTC Letter Template for LaTeX users, with ease of using different themes and colors.",
+      "size_kb": 434,
+      "html": "https://github.com/ustctug/ustcletter"
+    },
+    {
+      "repo": "ArthurBernard/Arthur-CV-LaTeX",
+      "stars": 29,
+      "desc": "Template of customized Curriculum Vitae and cover letter in LaTeX with respect to english or/and french conventions.",
+      "size_kb": 6724,
+      "html": "https://github.com/ArthurBernard/Arthur-CV-LaTeX"
+    },
+    {
+      "repo": "BUPTLdy/A_LaTeX_Template_For_Response_Letter",
+      "stars": 27,
+      "desc": "",
+      "size_kb": 78,
+      "html": "https://github.com/BUPTLdy/A_LaTeX_Template_For_Response_Letter"
+    },
+    {
+      "repo": "JohannaXie/Response-Letter-Template",
+      "stars": 24,
+      "desc": "Latex Template for  Academic Paper Response Letter. ",
+      "size_kb": 202,
+      "html": "https://github.com/JohannaXie/Response-Letter-Template"
+    },
+    {
+      "repo": "lorenzosaino/simpletexcv",
+      "stars": 23,
+      "desc": "Simple yet tasteful CV and cover letter LaTeX templates",
+      "size_kb": 527,
+      "html": "https://github.com/lorenzosaino/simpletexcv"
+    },
+    {
+      "repo": "h-hg/latex-response-template",
+      "stars": 20,
+      "desc": "A simple Latex template for response letter",
+      "size_kb": 504,
+      "html": "https://github.com/h-hg/latex-response-template"
+    },
+    {
+      "repo": "mavam/quarto-brief",
+      "stars": 18,
+      "desc": "A Quarto template for a DIN 5008 letter",
+      "size_kb": 45,
+      "html": "https://github.com/mavam/quarto-brief"
+    },
+    {
+      "repo": "leungll/ByteDance-Letter-Template",
+      "stars": 18,
+      "desc": "Made with LaTex. ByteDance's recommendation letter template. In addition, you can adapt it into a recommendation letter ",
+      "size_kb": 2014,
+      "html": "https://github.com/leungll/ByteDance-Letter-Template"
+    },
+    {
+      "repo": "ckuenzle/din5008-letter",
+      "stars": 16,
+      "desc": "Basic template for German letters according to the DIN 5008 standard",
+      "size_kb": 240,
+      "html": "https://github.com/ckuenzle/din5008-letter"
+    }
+  ],
+  "report-cn": [
+    {
+      "repo": "ZajacMo/SCUT-LaTeX-Template",
+      "stars": 12,
+      "desc": "本项目收录了多篇华南理工大学及计算机科学与工程学院常用的实验报告、课程设计等文档模板，采用中文 LaTeX 排版，格式规范，开箱即用。",
+      "size_kb": 803,
+      "html": "https://github.com/ZajacMo/SCUT-LaTeX-Template"
+    }
+  ],
+  "coursework": [
+    {
+      "repo": "Orianti/bmstu-latex-class",
+      "stars": 122,
+      "desc": "LaTeX-класс для создания отчетов и расчетно-пояснительных записок в МГТУ им. Н. Э. Баумана",
+      "size_kb": 3044,
+      "html": "https://github.com/Orianti/bmstu-latex-class"
+    },
+    {
+      "repo": "angusev/coursework_template",
+      "stars": 23,
+      "desc": "LaTeX template for HSE coursework",
+      "size_kb": 1173,
+      "html": "https://github.com/angusev/coursework_template"
+    },
+    {
+      "repo": "SiriusAhu/XJTLU-TC_Latex_Coursework_Template",
+      "stars": 10,
+      "desc": "",
+      "size_kb": 12460,
+      "html": "https://github.com/SiriusAhu/XJTLU-TC_Latex_Coursework_Template"
+    },
+    {
+      "repo": "ruiyangzhou01/Lightweight-LaTeX",
+      "stars": 10,
+      "desc": "Modern LaTeX theme suite for theses, posters, and slides.",
+      "size_kb": 43934,
+      "html": "https://github.com/ruiyangzhou01/Lightweight-LaTeX"
+    },
+    {
+      "repo": "edinburgh-napier/aux_latex_cw_template",
+      "stars": 8,
+      "desc": "Napier Coursework Article Latex Template",
+      "size_kb": 1020,
+      "html": "https://github.com/edinburgh-napier/aux_latex_cw_template"
+    },
+    {
+      "repo": "qyxf/personal-report",
+      "stars": 8,
+      "desc": "XJTU LaTeX template for coursework and experiment report",
+      "size_kb": 5750,
+      "html": "https://github.com/qyxf/personal-report"
+    },
+    {
+      "repo": "hnuLaTeX/Hunan-University-Coursework-LaTeX-Template",
+      "stars": 5,
+      "desc": "HNU LaTeX project",
+      "size_kb": 392,
+      "html": "https://github.com/hnuLaTeX/Hunan-University-Coursework-LaTeX-Template"
+    },
+    {
+      "repo": "jsdhwfmax/USYD-LaTeX-Report-Template",
+      "stars": 2,
+      "desc": "A clean, pdfLaTeX-optimized report template for The University of Sydney.",
+      "size_kb": 12,
+      "html": "https://github.com/jsdhwfmax/USYD-LaTeX-Report-Template"
+    },
+    {
+      "repo": "ecyht2/Nottingham-Report-Template",
+      "stars": 2,
+      "desc": "Template for Coursework Reports for University of Nottingham Malaysia",
+      "size_kb": 132,
+      "html": "https://github.com/ecyht2/Nottingham-Report-Template"
+    },
+    {
+      "repo": "fuodorov/coursework-latex-template",
+      "stars": 1,
+      "desc": "LaTeX-template for russian coursework",
+      "size_kb": 35,
+      "html": "https://github.com/fuodorov/coursework-latex-template"
+    },
+    {
+      "repo": "YangtaoGe518/latex-coursework-template",
+      "stars": 1,
+      "desc": "",
+      "size_kb": 100,
+      "html": "https://github.com/YangtaoGe518/latex-coursework-template"
+    },
+    {
+      "repo": "acm-utv/latex",
+      "stars": 1,
+      "desc": "Official LateX templates for Computer Science papers, theses and courseworks",
+      "size_kb": 805,
+      "html": "https://github.com/acm-utv/latex"
+    },
+    {
+      "repo": "abdqavsf31/uos-coursework-template",
+      "stars": 1,
+      "desc": "University of Southampton coursework LaTeX templates",
+      "size_kb": 326,
+      "html": "https://github.com/abdqavsf31/uos-coursework-template"
+    },
+    {
+      "repo": "fceek/DSA_LaTeX_Template",
+      "stars": 1,
+      "desc": "self-use LaTeX template for some coursework reports",
+      "size_kb": 2,
+      "html": "https://github.com/fceek/DSA_LaTeX_Template"
+    },
+    {
+      "repo": "ddunnock/uccs-latex-templates",
+      "stars": 1,
+      "desc": "Professional LaTeX templates & automation for UCCS coursework. Homework, reports, projects with consistent branding, XeL",
+      "size_kb": 6340,
+      "html": "https://github.com/ddunnock/uccs-latex-templates"
+    },
+    {
+      "repo": "nikosavola/HomeworkTemplateLatex",
+      "stars": 1,
+      "desc": "LaTeX template (with chktex and latexmk) for course work",
+      "size_kb": 304,
+      "html": "https://github.com/nikosavola/HomeworkTemplateLatex"
+    },
+    {
+      "repo": "a1lock/coursework_latex_template",
+      "stars": 0,
+      "desc": "",
+      "size_kb": 31,
+      "html": "https://github.com/a1lock/coursework_latex_template"
+    },
+    {
+      "repo": "CAMT-Plymouth/Coursework-Latex-Template",
+      "stars": 0,
+      "desc": "This is a latex template for coursework on the BSc Computing, Audio and Music Technology programme at University of Plym",
+      "size_kb": 452,
+      "html": "https://github.com/CAMT-Plymouth/Coursework-Latex-Template"
+    }
+  ]
+}

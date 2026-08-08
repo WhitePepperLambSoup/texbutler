@@ -122,7 +122,7 @@ impl Project {
     /// All `.tex` files relative to the root (recursive).
     pub fn tex_files(&self) -> Vec<String> {
         let mut out = Vec::new();
-        collect_tex(&self.root, &mut out);
+        collect_tex(&self.root, &self.root, &mut out);
         out
     }
 
@@ -708,7 +708,7 @@ Write your LaTeX document here.
 \end{document}
 "#;
 
-fn collect_tex(dir: &Path, out: &mut Vec<String>) {
+fn collect_tex(root: &Path, dir: &Path, out: &mut Vec<String>) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     for entry in entries.flatten() {
         let p = entry.path();
@@ -717,9 +717,13 @@ fn collect_tex(dir: &Path, out: &mut Vec<String>) {
             continue;
         }
         if p.is_dir() {
-            collect_tex(&p, out);
+            collect_tex(root, &p, out);
         } else if name.to_ascii_lowercase().ends_with(".tex") {
-            out.push(p.to_string_lossy().replace('\\', "/"));
+            if let Ok(rel) = p.strip_prefix(root) {
+                // relative path, forward slashes — detect_main's
+                // `contains(&"main.tex")` and document_roots rely on this
+                out.push(rel.to_string_lossy().replace('\\', "/"));
+            }
         }
     }
 }
@@ -799,6 +803,27 @@ pub type FileCache = HashMap<String, String>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tex_files_are_relative_and_detect_main_picks_main_tex() {
+        // regression (user report): a multi-file project compiled the wrong
+        // file — collect_tex returned ABSOLUTE paths, so detect_main's
+        // `contains(&"main.tex")` never matched and the alphabetically first
+        // file won (chapter2.tex → "Undefined control sequence")
+        let dir = std::env::temp_dir().join(format!("tb-relmain-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("main.tex"), "\\documentclass{article}\n\\begin{document}\n\\input{chapter2}\n\\end{document}\n").unwrap();
+        std::fs::write(dir.join("chapter2.tex"), "\\section{Chapter Two}\n").unwrap();
+        let proj = Project::open(&dir).unwrap();
+        let files = proj.tex_files();
+        assert!(
+            files.iter().all(|f| !f.contains(':') && !f.starts_with('/') && !f.starts_with('\\')),
+            "tex_files must be relative: {files:?}"
+        );
+        assert_eq!(proj.main_file, "main.tex", "main.tex must win detect_main: {files:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn find_by_basename_matches_unique_file_anywhere() {
