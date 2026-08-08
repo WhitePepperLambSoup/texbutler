@@ -717,6 +717,10 @@ fn collect_tex(root: &Path, dir: &Path, out: &mut Vec<String>) {
             continue;
         }
         if p.is_dir() {
+            let n = entry.file_name().to_string_lossy().to_string();
+            if n.starts_with('.') || n == "target" || n == "node_modules" {
+                continue;
+            }
             collect_tex(root, &p, out);
         } else if name.to_ascii_lowercase().ends_with(".tex") {
             if let Ok(rel) = p.strip_prefix(root) {

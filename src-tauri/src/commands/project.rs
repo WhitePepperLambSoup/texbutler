@@ -727,10 +727,9 @@ pub fn tb_new_file(
         Some(t) if t == "minimal" => TEMPLATE_MINIMAL.to_string(),
         _ => String::new(),
     };
-    if let Some(parent) = full.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&full, content).map_err(|e| e.to_string())?;
+    // use write_file so symlink escape is canonical-guarded (a project
+    // symlink dir pointing outside must not make the write land outside)
+    proj.write_file(&rel, &content)?;
     emit_project_changed(&app);
     Ok(())
 }

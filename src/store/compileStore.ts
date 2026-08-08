@@ -36,6 +36,9 @@ export const useCompileStore = create<CompileState>((set, get) => ({
     const ps = useProjectStore.getState();
     const dirty = ps.tabs.filter((t) => t.dirty);
     if (dirty.length > 0) {
+      // claim the slot before the async save so a double-click cannot
+      // start two concurrent saves + compiles
+      set({ running: true });
       try {
         await Promise.all(dirty.map((t) => ps.saveFile(t.path)));
       } catch (e) {

@@ -364,13 +364,25 @@ export const useAiStore = create<AiState>((set, get) => ({
   deleteSession(id) {
     const next = get().sessions.filter((s) => s.id !== id);
     const isCurrent = get().sessionId === id;
+    // drop every file binding that pointed at the deleted session so
+    // switching back to that file cannot resurrect a dead session id
+    const fs = { ...get().fileSessions };
+    let changed = false;
+    for (const [f, sid] of Object.entries(fs)) {
+      if (sid === id) {
+        delete fs[f];
+        changed = true;
+      }
+    }
     set({
       sessions: next,
       sessionId: isCurrent ? null : get().sessionId,
       messages: isCurrent ? [] : get().messages,
       diffPending: isCurrent ? null : get().diffPending,
+      fileSessions: fs,
     });
     persistSessions(next);
+    if (changed) persistFileSessions(fs);
   },
 
   async diagnoseIssue(issue, index) {
