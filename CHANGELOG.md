@@ -2,6 +2,33 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 语义化版本约定。
 
+## [0.7.0] - 2026-08-08
+
+### 模板市场 / Template Marketplace
+
+- **41 个高校与科研模板**：覆盖国内 985/211、双一流、科研院所、海外 QS 前 100 与通用分类（山东大学、ANU、北京大学、中科院等），GitHub 来源逐一验证，支持分类筛选与关键词搜索。 / **41 university & research templates**: covering domestic 985/211, Double First-Class, research institutes, overseas QS top 100 and general categories (Shandong University, ANU, Peking University, CAS and more), each GitHub-sourced and verified, with category filters and keyword search.
+- **7 个内置模板**：经典 article/ctexart/report/beamer 之外预装北大 pkuthss、国科大 ucasthesis、山大 sdu-thesis、ANU 论文模板，开箱即用。 / **7 built-in templates**: classic article/ctexart/report/beamer plus pre-installed Peking University pkuthss, UCAS ucasthesis, SDU sdu-thesis and ANU thesis templates.
+- **按需下载**：大体积模板在模板市场一键下载并安全解压（路径穿越与 zip 炸弹防护），下载后立即可创建项目。 / **Download on demand**: large templates are one-click downloaded in the marketplace and safely extracted (traversal and zip-bomb guards), ready to create projects immediately.
+
+### 写作助手 / Writing Assistants
+
+- **中文排版规则**：自动检测中英文之间缺失空格（跳过数字与数学模式），一键批量修复。 / **CJK spacing rule**: detects missing spaces between CJK and ASCII letters (skipping numbers and math mode), one-click batch fix.
+- **全文中英互译**：整篇翻译保持 LaTeX 结构，翻译期间新输入不会被覆盖，翻译后自动保存并编译验证。 / **Full-document translation**: whole-document AI translation preserves LaTeX structure, never overwrites input typed during translation, auto-saves and recompiles to verify.
+- **术语与引用安全**：AI 修复上下文自动注入 `\input/\include` 依赖链，索引防幻觉。 / **Citation safety**: AI fix context injects the `\input/\include` dependency chain, hallucination-guarded indexes.
+
+### 编辑器与界面 / Editor & UI
+
+- **Enter 发送 / Shift+Enter 换行**：AI 对话快捷键对齐主流聊天应用，中文输入法候选词确认不会误发送。 / **Enter to send / Shift+Enter for newline**: AI chat shortcuts match mainstream chat apps; IME candidate confirmation never misfires.
+- **公式悬浮预览**：鼠标悬停公式源码（`$...$`/`$$...$$`/`\[...\]`/`\(...\)`）即时渲染 KaTeX。 / **Formula hover preview**: hover any formula source to render it instantly with KaTeX.
+- **环境自动补全**：输入 `\begin{...}` 自动补 `\end{...}`（逐字输入与整串粘贴双路径均生效）。 / **Environment auto-close**: typing `\begin{...}` auto-inserts `\end{...}` (works for both character-by-character and pasted input).
+- **多标签拆分视图**：编辑器一键并排分屏，两个文件独立编辑与保存。 / **Split view**: one-click side-by-side editor panes, each with independent editing and saving.
+- **崩溃恢复草稿**：未保存的编辑自动写入草稿，崩溃后重启自动恢复，按项目隔离。 / **Crash-recovery drafts**: unsaved edits are drafted automatically and restored after a crash, isolated per project.
+- **自定义快捷键**：编译等常用动作可重新绑定（至少一个修饰键）。 / **Custom shortcuts**: common actions like compile are rebindable (requires a modifier key).
+- **项目仪表盘**：状态栏显示累计编译次数与字数历史。 / **Project dashboard**: the status bar shows cumulative compile count and word history.
+- **欢迎页与最近项目**：启动无项目时显示最近打开列表，一键恢复（失败打开自动清理）。 / **Welcome screen & recent projects**: shows recently opened projects for one-click restore (failed opens are cleaned up automatically).
+- **图片拖放导入**：PNG/JPG/PDF 直接拖入编辑器自动压缩导入并打开插图对话框。 / **Drag-and-drop image import**: drop PNG/JPG/PDF onto the editor to auto-compress, import and open the figure dialog.
+- **液态玻璃竖条移除**：主题切换后左侧残留装饰竖条已移除。 / **Liquid-glass polish**: the leftover decorative bar on the left of the liquid glass theme is removed.
+
 ## [0.6.1] - 2026-08-07
 
 ### 安全加固 / Security Hardening
