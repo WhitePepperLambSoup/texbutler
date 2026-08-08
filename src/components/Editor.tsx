@@ -734,6 +734,33 @@ export default function EditorPane() {
           </button>
           <button
             className="btn-mini"
+            title={t("editor.translateAllTitle")}
+            disabled={!active}
+            onClick={async () => {
+              const ed = editorRef.current;
+              if (!ed || !active) return;
+              if (!window.confirm(t("editor.translateAllConfirm"))) return;
+              const model = ed.getModel();
+              if (!model) return;
+              const whole = model.getValue();
+              try {
+                const translated = await api.aiTranslate(whole, t("editor.translateTarget"));
+                if (translated.trim() && translated !== whole) {
+                  const full = model.getFullModelRange();
+                  ed.executeEdits("translate-all", [{ range: full, text: translated }]);
+                  // verify the translated document still compiles
+                  const { useCompileStore } = await import("../store/compileStore");
+                  void useCompileStore.getState().compile("main");
+                }
+              } catch (e) {
+                window.alert(String(e));
+              }
+            }}
+          >
+            {t("editor.translateAll")}
+          </button>
+          <button
+            className="btn-mini"
             title={t("editor.polishTitle")}
             disabled={!active}
             onClick={async () => {

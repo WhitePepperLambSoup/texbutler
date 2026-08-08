@@ -13,6 +13,7 @@ import SettingsModal from "./components/SettingsModal";
 import { api } from "./api";
 import { useProjectStore } from "./store/projectStore";
 import { keyCombo, loadKeymap } from "./store/keymap";
+import { loadStats, recordCompile, recordWords } from "./store/stats";
 import { useCompileStore } from "./store/compileStore";
 import { useAiStore } from "./store/aiStore";
 import { useT } from "./i18n";
@@ -56,6 +57,20 @@ export default function App() {
   const { root, mainFile, activeTab, pdfPath, toast } = useProjectStore();
   const { running, progress, compile, lastResult, elapsedSec, compileIssues, ruleIssues } =
     useCompileStore();
+  const [compileCount, setCompileCount] = useState(() => {
+    const s = loadStats(useProjectStore.getState().root);
+    return s?.compiles ?? 0;
+  });
+  // dashboard: bump the per-project compile counter when a build finishes
+  useEffect(() => {
+    const unsub = useCompileStore.subscribe((s, prev) => {
+      if (!s.running && prev.running && s.lastResult) {
+        const root = useProjectStore.getState().root;
+        if (root) setCompileCount(recordCompile(root).compiles);
+      }
+    });
+    return () => unsub();
+  }, []);
   const busy = useAiStore((s) => s.busy);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pdfRev, setPdfRev] = useState(0);
@@ -150,6 +165,8 @@ export default function App() {
     try {
       const w = await api.countWords(st.activeTab);
       setWordCount({ chars: w.chars, cjk: w.cjk_chars, words: w.words });
+      // dashboard: append the word sample to the project's history
+      recordWords(st.root, w.chars, w.cjk_chars, w.words);
     } catch {
       setWordCount(null);
     }
@@ -497,6 +514,11 @@ export default function App() {
           </span>
         )}
         <span className="status-item">{t("status.issues", { n: totalIssues })}</span>
+        {compileCount > 0 && (
+          <span className="status-item" title={t("status.compilesTitle")}>
+            {t("status.compiles", { n: compileCount })}
+          </span>
+        )}
         {wordCount && (
           <span className="status-item" title={t("status.wordsTitle")}>
             {t("status.words", { chars: wordCount.chars, cjk: wordCount.cjk, words: wordCount.words })}
