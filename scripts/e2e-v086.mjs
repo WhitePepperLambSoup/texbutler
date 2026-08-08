@@ -210,7 +210,7 @@ async function main() {
     };
 
     const runEditor = async () => {
-      await loadCase(1280, 800, 300, true, false, { treeWidth: 220, pdfWidth: 520, bottomHeight: 400 });
+      await loadCase(1280, 800, 300, true, false, { treeWidth: 284, pdfWidth: 520, bottomHeight: 400 });
       const primary = JSON.parse(await exec(`(() => {
         const editor = document.querySelector('.col-editor');
         const header = document.querySelector('.editor-header') ?? editor?.querySelector('.panel-header');
@@ -228,6 +228,7 @@ async function main() {
           }),
           pdfVisible: !!pdfRect && pdfRect.width >= 500,
           narrowEditor: !!editorRect && editorRect.width <= 220,
+          targetEditorWidth: !!editorRect && editorRect.width >= 150 && editorRect.width <= 200,
           editorWidth: editorRect ? Math.round(editorRect.width) : -1,
           pdfWidth: pdfRect ? Math.round(pdfRect.width) : -1,
           headerClientWidth: header?.clientWidth ?? -1,
@@ -272,6 +273,7 @@ async function main() {
         && primary.primaryVisible
         && primary.pdfVisible
         && primary.narrowEditor
+        && primary.targetEditorWidth
         && menu.exists
         && menu.insideEditor
         && menu.scrollCapacity
