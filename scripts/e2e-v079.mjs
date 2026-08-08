@@ -105,7 +105,9 @@ async function main() {
   const st = await stat(docxPath).catch(() => null);
   const docxOk = docxPath.includes("main.docx") && !!st && st.size > 1000;
 
-  // 3) drag-drop wiring: the drop handler must exist and import+open dialog
+  // 3) image import pipeline (used by the drag-drop handler, which is
+  //    window-level and can't be synthesized via CDP — covered by review):
+  //    import auto-compresses images over 2048px
   const wiring = JSON.parse(await exec(`(async () => {
     const { api } = await import('/src/api/index.ts');
     const name = await api.importImage(${JSON.stringify("D:/reasonix program/idea/tex/assets/e2e/big-test.png")});
