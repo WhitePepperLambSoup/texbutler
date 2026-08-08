@@ -5,6 +5,8 @@ import { writeFile, rm, mkdir } from "node:fs/promises";
 const CDP_PORT = 9336;
 const PROJ = "D:/reasonix program/idea/tex/.worktrees/codex-fix-ui-ai-layout/assets/e2e/v086-check";
 const FILE = `${PROJ}/main.tex`;
+const PDF_DIR = `${PROJ}/.texbutler/build`;
+const PDF = `${PDF_DIR}/main.pdf`;
 const suite = process.argv[2] ?? "all";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -88,33 +90,43 @@ async function main() {
       return result.result.value;
     };
 
-    const loadCase = async (width, height, aiWidth, withPdf, withSuggestion) => {
+    const loadCase = async (width, height, aiWidth, withPdf, withSuggestion, layout = {}) => {
+      if (withPdf) {
+        await mkdir(PDF_DIR, { recursive: true });
+        await writeFile(PDF, "%PDF-1.4\n%%EOF\n", "utf8");
+      } else {
+        await rm(PDF, { force: true });
+      }
+      const treeWidth = layout.treeWidth ?? 220;
+      const pdfStorage = withPdf
+        ? `localStorage.setItem('tb-pdf-w', ${layout.pdfWidth ?? 520});`
+        : "localStorage.removeItem('tb-pdf-w');";
+      const bottomStorage = layout.bottomHeight != null
+        ? `localStorage.setItem('tb-bottom-h', ${layout.bottomHeight});`
+        : "localStorage.removeItem('tb-bottom-h');";
       await client.send("Emulation.setDeviceMetricsOverride", {
         width,
         height,
         deviceScaleFactor: 1,
         mobile: false,
       });
-      await exec(`(async () => {
+      await exec(`(() => {
         localStorage.setItem('tb-ai-rail', '1');
         localStorage.setItem('tb-ai-w', ${aiWidth});
         localStorage.setItem('tb-ai-sessions', '[]');
         localStorage.setItem('tb-ai-file-sessions', '{}');
-        localStorage.removeItem('tb-tree-w');
-        localStorage.removeItem('tb-pdf-w');
-        localStorage.removeItem('tb-bottom-h');
-        location.reload();
+        localStorage.setItem('tb-tree-w', ${treeWidth});
+        ${pdfStorage}
+        ${bottomStorage}
         return true;
       })()`);
+      await client.send("Page.reload", { ignoreCache: true });
       await sleep(2200);
       await exec(`(async () => {
         const { useProjectStore } = await import('/src/store/projectStore.ts');
         const { useAiStore } = await import('/src/store/aiStore.ts');
         await useProjectStore.getState().openProject(${JSON.stringify(PROJ)});
         await useProjectStore.getState().openFile('main.tex');
-        if (${withPdf}) {
-          useProjectStore.setState({ pdfPath: ${JSON.stringify(`${PROJ}/build/main.pdf`)} });
-        }
         const messages = [
           { id: 8601, role: 'user', kind: 'plain', text: '请检查当前论证结构并给出修改建议。' },
           { id: 8602, role: 'assistant', kind: 'plain', text: '先明确研究问题，再说明方法与证据，最后收束结论。\\n术语需要保持一致。' },
@@ -198,11 +210,13 @@ async function main() {
     };
 
     const runEditor = async () => {
-      await loadCase(1280, 800, 300, true, false);
+      await loadCase(1280, 800, 300, true, false, { treeWidth: 220, pdfWidth: 520, bottomHeight: 400 });
       const primary = JSON.parse(await exec(`(() => {
         const editor = document.querySelector('.col-editor');
         const header = document.querySelector('.editor-header') ?? editor?.querySelector('.panel-header');
+        const pdf = document.querySelector('.col-pdf');
         const editorRect = editor?.getBoundingClientRect();
+        const pdfRect = pdf?.getBoundingClientRect();
         const actions = ['.editor-save-action', '.editor-ask-ai-action', '.editor-more-action']
           .map((selector) => document.querySelector(selector));
         return JSON.stringify({
@@ -212,7 +226,10 @@ async function main() {
             const rect = element.getBoundingClientRect();
             return rect.left >= editorRect.left && rect.right <= editorRect.right;
           }),
+          pdfVisible: !!pdfRect && pdfRect.width >= 500,
+          narrowEditor: !!editorRect && editorRect.width <= 220,
           editorWidth: editorRect ? Math.round(editorRect.width) : -1,
+          pdfWidth: pdfRect ? Math.round(pdfRect.width) : -1,
           headerClientWidth: header?.clientWidth ?? -1,
           headerScrollWidth: header?.scrollWidth ?? -1,
         });
@@ -228,10 +245,23 @@ async function main() {
         if (!editor || !menu) return JSON.stringify({ exists: false });
         const editorRect = editor.getBoundingClientRect();
         const menuRect = menu.getBoundingClientRect();
+        const menuClientHeight = menu.clientHeight;
+        const menuScrollHeight = menu.scrollHeight;
+        const symbolTrigger = menu.querySelector('.format-buttons > .btn-mini:last-child');
+        symbolTrigger?.click();
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        const symbolOpened = !!document.querySelector('.symbol-panel');
+        button.click();
+        await new Promise((resolve) => setTimeout(resolve, 30));
         return JSON.stringify({
           exists: true,
           insideEditor: menuRect.left >= editorRect.left && menuRect.right <= editorRect.right && menuRect.bottom <= editorRect.bottom,
-          scrollCapacity: menu.scrollHeight >= menu.clientHeight,
+          scrollCapacity: menuScrollHeight >= menuClientHeight,
+          scrollOverflow: menuScrollHeight > menuClientHeight,
+          menuClientHeight,
+          menuScrollHeight,
+          symbolOpened,
+          symbolClearedOnClose: !document.querySelector('.editor-tools-menu') && !document.querySelector('.symbol-panel'),
           controlCount: menu.querySelectorAll('button, select').length,
         });
       })()`));
@@ -240,9 +270,14 @@ async function main() {
       console.log("EDITOR menu:", JSON.stringify(menu));
       return primary.headerFits
         && primary.primaryVisible
+        && primary.pdfVisible
+        && primary.narrowEditor
         && menu.exists
         && menu.insideEditor
         && menu.scrollCapacity
+        && menu.scrollOverflow
+        && menu.symbolOpened
+        && menu.symbolClearedOnClose
         && menu.controlCount >= 12;
     };
 

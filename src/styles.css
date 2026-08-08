@@ -1009,6 +1009,7 @@ body {
   top: 38px;
   left: 8px;
   right: 8px;
+  margin-left: auto;
   width: auto;
   max-width: 420px;
   max-height: calc(100% - 54px);

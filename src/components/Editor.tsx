@@ -505,6 +505,19 @@ export default function EditorPane() {
     window.dispatchEvent(new CustomEvent("tb:focus-ai-panel"));
   }, [active]);
 
+  const closeToolsMenu = useCallback(() => {
+    setToolsOpen(false);
+    setSymbolOpen(false);
+  }, []);
+
+  const toggleToolsMenu = useCallback(() => {
+    if (toolsOpen) {
+      closeToolsMenu();
+    } else {
+      setToolsOpen(true);
+    }
+  }, [closeToolsMenu, toolsOpen]);
+
   useEffect(() => {
     if (!toolsOpen) return;
     const closeIfOutside = (event: MouseEvent) => {
@@ -513,11 +526,11 @@ export default function EditorPane() {
         !toolsMenuRef.current?.contains(target) &&
         !(target instanceof Element && target.closest(".editor-more-action"))
       ) {
-        setToolsOpen(false);
+        closeToolsMenu();
       }
     };
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setToolsOpen(false);
+      if (event.key === "Escape") closeToolsMenu();
     };
     window.addEventListener("mousedown", closeIfOutside);
     window.addEventListener("keydown", closeOnEscape);
@@ -525,7 +538,7 @@ export default function EditorPane() {
       window.removeEventListener("mousedown", closeIfOutside);
       window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [toolsOpen]);
+  }, [closeToolsMenu, toolsOpen]);
 
   const insertSnippet = (snippet: string) => {
     const ed = editorRef.current;
@@ -733,7 +746,7 @@ export default function EditorPane() {
             title={t("editor.moreTools")}
             aria-label={t("editor.moreTools")}
             aria-expanded={toolsOpen}
-            onClick={() => setToolsOpen((open) => !open)}
+            onClick={toggleToolsMenu}
           >
             <MoreHorizontal size={16} aria-hidden="true" />
           </button>
