@@ -745,10 +745,18 @@ export default function EditorPane() {
               const whole = model.getValue();
               try {
                 const translated = await api.aiTranslate(whole, t("editor.translateTarget"));
+                // guard: the user may have kept typing while the AI worked —
+                // never overwrite their newer input with the T0 snapshot
+                if (model.getValue() !== whole) {
+                  window.alert(t("editor.translateStale"));
+                  return;
+                }
                 if (translated.trim() && translated !== whole) {
                   const full = model.getFullModelRange();
                   ed.executeEdits("translate-all", [{ range: full, text: translated }]);
-                  // verify the translated document still compiles
+                  // save first, then verify the translated document compiles
+                  const { useProjectStore: ps } = await import("../store/projectStore");
+                  await ps.getState().saveFile();
                   const { useCompileStore } = await import("../store/compileStore");
                   void useCompileStore.getState().compile("main");
                 }

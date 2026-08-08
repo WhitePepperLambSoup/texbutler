@@ -64,9 +64,19 @@ export default function App() {
   // dashboard: bump the per-project compile counter when a build finishes
   useEffect(() => {
     const unsub = useCompileStore.subscribe((s, prev) => {
-      if (!s.running && prev.running && s.lastResult) {
+      if (!s.running && prev.running && s.lastResult && s.lastResult !== prev.lastResult) {
         const root = useProjectStore.getState().root;
         if (root) setCompileCount(recordCompile(root).compiles);
+      }
+    });
+    return () => unsub();
+  }, []);
+  // reload the counter when the project changes (open/switch)
+  useEffect(() => {
+    const unsub = useProjectStore.subscribe((s, prev) => {
+      if (s.root !== prev.root) {
+        const st = loadStats(s.root ?? "");
+        setCompileCount(st?.compiles ?? 0);
       }
     });
     return () => unsub();
