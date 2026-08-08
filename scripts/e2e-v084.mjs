@@ -67,6 +67,13 @@ async function main() {
     if (r.exceptionDetails) throw new Error("JS: " + JSON.stringify(r.exceptionDetails));
     return r.result.value;
   };
+  let projectStoreUrl = '/src/store/projectStore.ts';
+  const resolveProjectStoreUrl = async () => {
+    projectStoreUrl = await exec(`(() => performance.getEntriesByType('resource')
+      .map((entry) => entry.name)
+      .find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+      ?? '/src/store/projectStore.ts')()`);
+  };
 
   await exec(`(async () => {
     localStorage.setItem('tb-ai-rail', '1');
@@ -78,31 +85,37 @@ async function main() {
     return true;
   })()`);
   await sleep(2500);
+  await resolveProjectStoreUrl();
   await exec(`(async () => {
-    const { useProjectStore } = await import('/src/store/projectStore.ts');
+    const { useProjectStore } = await import(${JSON.stringify(projectStoreUrl)});
     await useProjectStore.getState().openProject(${JSON.stringify(PROJ)});
     await useProjectStore.getState().openFile('main.tex');
     return true;
   })()`);
   await sleep(800);
 
-  // 1) no PDF: col-pdf width 0, editor + AI rail fully visible inside window
+  // 1) no PDF: the persistent PDF pane shows its empty state; editor + AI rail fit.
   const step1 = JSON.parse(await exec(`(() => {
     const q = (s) => document.querySelector(s);
     const r = (el) => el ? el.getBoundingClientRect() : null;
     const pdf = r(q('.col-pdf'));
+    const empty = r(q('.col-pdf .pdf-empty'));
+    const divider = r(q('.col-editor + .splitter-v'));
     const editor = r(q('.col-editor'));
     const ai = r(q('.ai-rail'));
     const w = window.innerWidth;
     return JSON.stringify({
       pdfW: pdf && Math.round(pdf.width),
-      editorVisible: editor && editor.width > 200 && editor.right <= w + 1,
+      emptyVisible: !!empty && empty.width > 0 && empty.height > 0,
+      dividerVisible: !!divider && divider.width >= 6 && getComputedStyle(q('.col-editor + .splitter-v')).visibility !== 'hidden',
+      editorVisible: editor && editor.width >= 150 && editor.right <= w + 1,
       aiRight: ai ? Math.round(ai.right) : -1,
       w,
     });
   })()`));
   console.log("STEP1 (no-pdf layout):", JSON.stringify(step1));
-  const step1Ok = step1.pdfW <= 2 && step1.editorVisible === true && step1.aiRight <= step1.w + 1 && step1.aiRight > 0;
+  const step1Ok = step1.pdfW >= 240 && step1.emptyVisible === true && step1.dividerVisible === true
+    && step1.editorVisible === true && step1.aiRight <= step1.w + 1 && step1.aiRight > 0;
 
   // 2) overlap assertion: toolbar vs editor-tabs vs monaco must not
   //    intersect; AI input visible
@@ -153,7 +166,7 @@ async function main() {
     return JSON.stringify({ collapsed: ai.classList.contains('collapsed'), aiW: Math.round(aiR.width), edW: Math.round(edR.width) });
   })()`));
   console.log("STEP4 (narrow auto-collapse):", JSON.stringify(step4));
-  const step4Ok = step4.collapsed === true && step4.edW > 150;
+  const step4Ok = step4.collapsed === true && step4.edW >= 150;
   await c.send("Emulation.clearDeviceMetricsOverride").catch(() => {});
 
   c.close();

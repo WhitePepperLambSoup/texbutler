@@ -57,6 +57,7 @@ async function main() {
   let exec;
   let files = true;
   let theme = true;
+  let pdf = true;
   let failed = false;
   let inspectLocale;
   let setLocale;
@@ -129,8 +130,7 @@ async function main() {
       await sleep(100);
       return true;
     };
-
-    await exec(`(async () => {
+    const openFixtureProject = async () => exec(`(async () => {
       const storeUrl = performance.getEntriesByType('resource')
         .map((entry) => entry.name)
         .find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
@@ -140,6 +140,8 @@ async function main() {
       await useProjectStore.getState().openFile('main.tex');
       return true;
     })()`);
+
+    await openFixtureProject();
     await sleep(350);
     if (suite !== "theme" && suite !== "pdf") {
       localeBefore = await inspectLocale();
@@ -328,8 +330,100 @@ async function main() {
       return result;
     };
 
+    const runPdf = async () => {
+      const result = { viewports: {} };
+      const setViewport = async (width, height) => {
+        await client.send("Emulation.setDeviceMetricsOverride", {
+          width,
+          height,
+          deviceScaleFactor: 1,
+          mobile: false,
+        });
+        await sleep(100);
+      };
+      const inspectPdf = async () => JSON.parse(await exec(`(() => {
+        const pane = document.querySelector('.col-pdf');
+        const divider = document.querySelector('.col-editor + .splitter-v');
+        const rect = pane?.getBoundingClientRect();
+        const dividerRect = divider?.getBoundingClientRect();
+        const visible = (selector) => {
+          const node = document.querySelector(selector);
+          if (!node) return false;
+          const nodeRect = node.getBoundingClientRect();
+          const style = getComputedStyle(node);
+          return nodeRect.width > 0 && nodeRect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+        };
+        return JSON.stringify({
+          paneWidth: rect?.width ?? 0,
+          paneVisible: (rect?.width ?? 0) >= 240,
+          titleVisible: document.querySelectorAll('.col-pdf .panel-title').length > 0,
+          emptyVisible: visible('.col-pdf .pdf-empty'),
+          dividerWidth: dividerRect?.width ?? 0,
+          dividerVisible: (dividerRect?.width ?? 0) >= 6 && getComputedStyle(divider).visibility !== 'hidden',
+          iframeAbsent: !document.querySelector('.col-pdf iframe'),
+          frameVisible: visible('.col-pdf .pdf-frame'),
+          savedWidth: Number(localStorage.getItem('tb-pdf-w')),
+        });
+      })()`));
+      const dragPdfDivider = async (distance) => {
+        const point = JSON.parse(await exec(`(() => {
+          const rect = document.querySelector('.col-editor + .splitter-v')?.getBoundingClientRect();
+          return JSON.stringify(rect ? { x: rect.left + rect.width / 2, y: rect.top + Math.min(60, rect.height / 2) } : null);
+        })()`));
+        if (!point) return false;
+        await client.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y });
+        await client.send("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button: "left", clickCount: 1 });
+        await client.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x + distance, y: point.y, button: "left", buttons: 1 });
+        await client.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x + distance, y: point.y, button: "left", clickCount: 1 });
+        await sleep(180);
+        return true;
+      };
+
+      for (const [width, height] of [[940, 700], [1280, 800]]) {
+        await rm(`${PROJ}/.texbutler`, { recursive: true, force: true });
+        await setViewport(width, height);
+        await exec(`(() => { localStorage.removeItem('tb-pdf-w'); return true; })()`);
+        await client.send("Page.reload", { ignoreCache: true });
+        await sleep(1200);
+        await openFixtureProject();
+        await sleep(350);
+
+        const empty = await inspectPdf();
+        const dragged = await dragPdfDivider(40);
+        const afterDrag = await inspectPdf();
+        await mkdir(`${PROJ}/.texbutler/build`, { recursive: true });
+        await writeFile(
+          `${PROJ}/.texbutler/build/main.pdf`,
+          "%PDF-1.4\\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\\n2 0 obj<</Type/Pages/Count 0/Kids[]>>endobj\\ntrailer<</Root 1 0 R>>\\n%%EOF\\n",
+          "utf8",
+        );
+        await exec(`(async () => {
+          const storeUrl = performance.getEntriesByType('resource')
+            .map((entry) => entry.name)
+            .find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+            ?? '/src/store/projectStore.ts';
+          const { useProjectStore } = await import(storeUrl);
+          await useProjectStore.getState().refresh();
+          return true;
+        })()`);
+        await sleep(350);
+        const populated = await inspectPdf();
+        result.viewports[`${width}x${height}`] = {
+          empty,
+          dragged,
+          afterDrag,
+          populated,
+          dragMovedPane: Math.abs((afterDrag.paneWidth ?? 0) - (empty.paneWidth ?? 0) - 40) <= 3,
+          dragSavedWidth: Math.abs((afterDrag.savedWidth ?? 0) - (empty.savedWidth ?? 0) - 40) <= 3,
+          widthPreserved: Math.abs((populated.paneWidth ?? 0) - (afterDrag.paneWidth ?? 0)) <= 1,
+        };
+      }
+      return result;
+    };
+
     files = suite === "theme" || suite === "pdf" ? true : await runFiles();
     theme = suite === "files" || suite === "pdf" ? true : await runTheme();
+    pdf = suite === "files" || suite === "theme" ? true : await runPdf();
     if (files !== true) await setLocale(testLocaleBaseline);
   } finally {
     if (client && localeBefore && inspectLocale && setLocale) {
@@ -387,10 +481,23 @@ async function main() {
     && theme.escapeRestoresTriggerFocus
     && theme.menuHitTest
   );
-  failed = !filesOk || !themeOk;
+  const pdfOk = pdf === true || Object.values(pdf.viewports).every((snapshot) => (
+    snapshot.empty.paneVisible
+    && snapshot.empty.titleVisible
+    && snapshot.empty.emptyVisible
+    && snapshot.empty.dividerVisible
+    && snapshot.empty.iframeAbsent
+    && snapshot.dragged
+    && snapshot.dragMovedPane
+    && snapshot.dragSavedWidth
+    && snapshot.populated.frameVisible
+    && snapshot.widthPreserved
+  ));
+  failed = !filesOk || !themeOk || !pdfOk;
   console.log("FILES", JSON.stringify(files));
   console.log("THEME", JSON.stringify(theme));
-  console.log("E2E-DONE", failed ? "FAIL" : "PASS", { suite, filesOk, themeOk });
+  console.log("PDF", JSON.stringify(pdf));
+  console.log("E2E-DONE", failed ? "FAIL" : "PASS", { suite, filesOk, themeOk, pdfOk });
   if (failed) process.exitCode = 1;
 }
 

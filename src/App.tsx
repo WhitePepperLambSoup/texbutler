@@ -97,7 +97,12 @@ export default function App() {
   const [welcomeRev, setWelcomeRev] = useState(0);
   // Windows-style splitter sizes (draggable separator bars, persisted)
   const tree = usePanelSize("tb-tree-w", 220, 160, 460);
-  const pdf = usePanelSize("tb-pdf-w", Math.round((window.innerWidth || 1400) * 0.38), 240, Math.round((window.innerWidth || 1400) * 0.7));
+  const pdf = usePanelSize(
+    "tb-pdf-w",
+    360,
+    240,
+    Math.round((window.innerWidth || 1400) * 0.7),
+  );
   const ai = usePanelSize("tb-ai-w", 300, 240, 520);
   const bottom = usePanelHeight("tb-bottom-h", 220, 140, Math.round((window.innerHeight || 900) * 0.55));
   const [aiOpen, setAiOpen] = useState(() => {
@@ -615,16 +620,8 @@ export default function App() {
           <EditorPane />
           {splitFile && <SplitPane file={splitFile} onClose={() => setSplitFile(null)} />}
         </main>
-        <div
-          className="splitter-v"
-          onMouseDown={pdfDrag}
-          title={t("ui.resizePdf")}
-          style={{ visibility: pdfPath ? "visible" : "hidden" }}
-        />
-        <aside
-          className={`col-pdf ${pdfPath ? "has-pdf" : "no-pdf"}`}
-          style={{ width: pdfPath ? pdf.size : 0 }}
-        >
+        <div className="splitter-v" onMouseDown={pdfDrag} title={t("ui.resizePdf")} />
+        <aside className={`col-pdf ${pdfPath ? "has-pdf" : "no-pdf"}`} style={{ width: pdf.size }}>
           <PdfPreview revision={pdfRev} page={pdfPage ?? undefined} />
         </aside>
         <div

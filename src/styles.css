@@ -794,7 +794,6 @@ html[data-theme="light"] .toolbar-more-menu {
   overflow: hidden;
 }
 .col-pdf.no-pdf {
-  border-left: none;
   overflow: hidden;
 }
 
