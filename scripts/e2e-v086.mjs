@@ -90,6 +90,35 @@ async function main() {
       return result.result.value;
     };
 
+    const pressEscape = async () => {
+      const event = {
+        key: 'Escape',
+        code: 'Escape',
+        windowsVirtualKeyCode: 27,
+        nativeVirtualKeyCode: 27,
+      };
+      await client.send('Input.dispatchKeyEvent', { type: 'keyDown', ...event });
+      await client.send('Input.dispatchKeyEvent', { type: 'keyUp', ...event });
+    };
+
+    const pointerClick = async (point) => {
+      await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y });
+      await client.send('Input.dispatchMouseEvent', {
+        type: 'mousePressed',
+        x: point.x,
+        y: point.y,
+        button: 'left',
+        clickCount: 1,
+      });
+      await client.send('Input.dispatchMouseEvent', {
+        type: 'mouseReleased',
+        x: point.x,
+        y: point.y,
+        button: 'left',
+        clickCount: 1,
+      });
+    };
+
     const loadCase = async (width, height, aiWidth, withPdf, withSuggestion, layout = {}) => {
       if (withPdf) {
         await mkdir(PDF_DIR, { recursive: true });
@@ -210,6 +239,43 @@ async function main() {
             && !menu.hasAttribute('role')
             && menu.querySelectorAll('[role="menuitem"]').length === 0);
         })()`));
+        const escapePrepared = JSON.parse(await exec(`(() => {
+          const control = document.querySelector('.ai-menu button:not(:disabled)');
+          control?.focus();
+          return JSON.stringify({
+            menuOpen: !!document.querySelector('.ai-menu'),
+            controlFocused: document.activeElement === control,
+          });
+        })()`));
+        await pressEscape();
+        await sleep(40);
+        const escapeResult = JSON.parse(await exec(`JSON.stringify({
+          menuClosed: !document.querySelector('.ai-menu'),
+          triggerFocused: document.activeElement === document.querySelector('.ai-menu-anchor > button'),
+        })`));
+        result.escapeRestoresTriggerFocus = escapePrepared.menuOpen
+          && escapePrepared.controlFocused
+          && escapeResult.menuClosed
+          && escapeResult.triggerFocused;
+
+        await exec(`document.querySelector('.ai-menu-anchor > button')?.click()`);
+        await sleep(40);
+        const outsidePoint = JSON.parse(await exec(`(() => {
+          const target = document.querySelector('.ai-generate-input');
+          const rect = target?.getBoundingClientRect();
+          return JSON.stringify(rect ? {
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2,
+          } : null);
+        })()`));
+        if (outsidePoint) {
+          await pointerClick(outsidePoint);
+          await sleep(40);
+        }
+        result.outsidePointerPreservesFocus = !!outsidePoint && JSON.parse(await exec(`JSON.stringify(
+          !document.querySelector('.ai-menu')
+          && document.activeElement === document.querySelector('.ai-generate-input')
+        )`));
         const caseOk = Object.entries(result)
           .filter(([, value]) => typeof value === "boolean")
           .every(([, value]) => value === true);
@@ -397,9 +463,64 @@ async function main() {
         }
       }
 
+      const focus = {
+        escapeRestoresTriggerFocus: false,
+        escapeClosesSymbolPicker: false,
+        outsidePointerPreservesFocus: false,
+      };
+      await exec(`document.querySelector('.editor-more-action')?.click()`);
+      await sleep(40);
+      await exec(`document.querySelector('.editor-tools-menu .format-buttons > .btn-mini:last-child')?.click()`);
+      await sleep(40);
+      const escapePrepared = JSON.parse(await exec(`(() => {
+        const control = document.querySelector('.symbol-panel .symbol-btn');
+        control?.scrollIntoView({ block: 'nearest' });
+        control?.focus();
+        return JSON.stringify({
+          menuOpen: !!document.querySelector('.editor-tools-menu'),
+          pickerOpen: !!document.querySelector('.symbol-panel'),
+          controlFocused: document.activeElement === control,
+        });
+      })()`));
+      await pressEscape();
+      await sleep(40);
+      const escapeResult = JSON.parse(await exec(`JSON.stringify({
+        menuClosed: !document.querySelector('.editor-tools-menu'),
+        pickerClosed: !document.querySelector('.symbol-panel'),
+        triggerFocused: document.activeElement === document.querySelector('.editor-more-action'),
+      })`));
+      focus.escapeRestoresTriggerFocus = escapePrepared.menuOpen
+        && escapePrepared.controlFocused
+        && escapeResult.menuClosed
+        && escapeResult.triggerFocused;
+      focus.escapeClosesSymbolPicker = escapePrepared.pickerOpen && escapeResult.pickerClosed;
+
+      await exec(`document.querySelector('.editor-more-action')?.click()`);
+      await sleep(40);
+      const outsidePoint = JSON.parse(await exec(`(() => {
+        document.querySelector('.editor-tools-menu .btn-mini:not(:disabled)')?.focus();
+        const editor = document.querySelector('.monaco-editor');
+        const rect = editor?.getBoundingClientRect();
+        return JSON.stringify(rect ? {
+          x: rect.left + rect.width / 2,
+          y: rect.bottom - 8,
+        } : null);
+      })()`));
+      if (outsidePoint) {
+        await pointerClick(outsidePoint);
+        await sleep(40);
+      }
+      focus.outsidePointerPreservesFocus = !!outsidePoint && JSON.parse(await exec(`JSON.stringify(
+        !document.querySelector('.editor-tools-menu')
+        && !document.querySelector('.symbol-panel')
+        && !!document.activeElement?.closest('.monaco-editor')
+        && document.activeElement !== document.querySelector('.editor-more-action')
+      )`));
+
       console.log("EDITOR primary:", JSON.stringify(primary));
       console.log("EDITOR menu:", JSON.stringify(menu));
       console.log("EDITOR picker:", JSON.stringify(picker));
+      console.log("EDITOR focus:", JSON.stringify(focus));
       return primary.headerFits
         && primary.primaryVisible
         && primary.pdfVisible
@@ -419,7 +540,10 @@ async function main() {
         && picker.horizontalFits
         && picker.stayedOpenOnPointerDown
         && picker.insertedThroughPointer
-        && picker.clearedOnMenuClose;
+        && picker.clearedOnMenuClose
+        && focus.escapeRestoresTriggerFocus
+        && focus.escapeClosesSymbolPicker
+        && focus.outsidePointerPreservesFocus;
     };
 
     const runLightContrast = async () => {

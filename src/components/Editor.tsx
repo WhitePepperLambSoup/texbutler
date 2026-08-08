@@ -262,6 +262,7 @@ export default function EditorPane() {
   const [symbolOpen, setSymbolOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
+  const toolsTriggerRef = useRef<HTMLButtonElement>(null);
   const [imgModal, setImgModal] = useState<{ fileName: string; root: string } | null>(null);
   const [formulaMode, setFormulaMode] = useState<"inline" | "display" | null>(null);
   const [tableOpen, setTableOpen] = useState(false);
@@ -530,7 +531,10 @@ export default function EditorPane() {
       }
     };
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeToolsMenu();
+      if (event.key === "Escape") {
+        closeToolsMenu();
+        toolsTriggerRef.current?.focus();
+      }
     };
     window.addEventListener("mousedown", closeIfOutside);
     window.addEventListener("keydown", closeOnEscape);
@@ -742,6 +746,7 @@ export default function EditorPane() {
             <MessageSquareText size={15} aria-hidden="true" />
           </button>
           <button
+            ref={toolsTriggerRef}
             className="icon-btn editor-more-action"
             title={t("editor.moreTools")}
             aria-label={t("editor.moreTools")}

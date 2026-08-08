@@ -65,6 +65,7 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
   const [expandedRaw, setExpandedRaw] = useState<number | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const t = useT();
   const [genInput, setGenInput] = useState("");
   const [snapshots, setSnapshots] = useState<{ path: string; ts: string; file: string }[] | null>(null);
@@ -103,7 +104,10 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
       if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMenuOpen(false);
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        menuTriggerRef.current?.focus();
+      }
     };
     window.addEventListener("mousedown", onPointerDown);
     window.addEventListener("keydown", onKeyDown);
@@ -164,6 +168,7 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
           </button>
           <div className="ai-menu-anchor" ref={menuRef}>
             <button
+              ref={menuTriggerRef}
               className="btn-mini icon-btn"
               title={t("ai.more")}
               aria-label={t("ai.more")}
