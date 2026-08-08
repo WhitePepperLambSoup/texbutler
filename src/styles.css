@@ -624,16 +624,39 @@ body {
 
 .col-tree {
   flex: 0 0 auto;
-  width: 220px;
-  min-width: 160px;
-  max-width: 420px;
   background: var(--bg2);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  /* drag the bottom-right grip to resize the tree column */
-  resize: horizontal;
   overflow: hidden;
+}
+
+/* Windows-style draggable separator bars */
+.splitter-v {
+  flex: 0 0 auto;
+  width: 6px;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 5;
+  transition: background 0.15s;
+}
+.splitter-v:hover,
+.splitter-v:active {
+  background: var(--accent, rgba(64, 122, 255, 0.45));
+}
+.splitter-h {
+  flex: 0 0 auto;
+  height: 6px;
+  cursor: row-resize;
+  background: transparent;
+  position: relative;
+  z-index: 5;
+  transition: background 0.15s;
+}
+.splitter-h:hover,
+.splitter-h:active {
+  background: var(--accent, rgba(64, 122, 255, 0.45));
 }
 
 .col-editor {
@@ -645,25 +668,16 @@ body {
 
 .col-pdf {
   flex: 0 0 auto;
-  width: 38%;
-  min-width: 240px;
-  max-width: 70%;
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  /* drag the bottom-right grip to resize the PDF column */
-  resize: horizontal;
   overflow: hidden;
 }
 
 .bottom {
   display: flex;
-  flex: 0 0 280px;
+  flex: 0 0 auto;
   border-top: 1px solid var(--border);
-  min-height: 160px;
-  max-height: 55%;
-  /* user-resizable panel height (drag the bottom-right corner grip) */
-  resize: vertical;
   overflow: hidden;
 }
 
@@ -755,22 +769,25 @@ body {
   min-width: 300px;
 }
 
-/* ---------- AI rail (Overleaf-style collapsible right strip) ---------- */
+/* ---------- AI rail (collapsible right strip) ---------- */
 .ai-rail {
   display: flex;
   flex-direction: column;
   min-height: 0;
   border-left: 1px solid var(--border);
-  transition: width 0.18s ease;
   flex-shrink: 0;
+  position: relative;
 }
 .ai-rail.open {
-  /* adapt to narrow windows so the rail never overflows off-screen:
-     min 240px, up to 340px, ~22% of the viewport */
-  width: clamp(240px, 22vw, 340px);
-  /* drag the bottom-left grip to resize the AI panel width */
-  resize: horizontal;
   overflow: hidden;
+}
+.ai-rail .splitter-v {
+  /* the rail's own splitter sits on its left edge, above the border */
+  position: absolute;
+  left: -7px;
+  top: 0;
+  bottom: 0;
+  height: auto;
 }
 .ai-rail.collapsed {
   width: 34px;

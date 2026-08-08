@@ -15,6 +15,7 @@ import NewProjectModal from "./components/NewProjectModal";
 import { api } from "./api";
 import { useProjectStore } from "./store/projectStore";
 import { keyCombo, loadKeymap } from "./store/keymap";
+import { usePanelSize, usePanelHeight } from "./hooks/usePanelSize";
 import { loadStats, recordCompile, recordWords } from "./store/stats";
 import { removeRecent } from "./store/recent";
 import { useCompileStore } from "./store/compileStore";
@@ -26,7 +27,7 @@ import QuickOpenModal from "./components/QuickOpenModal";
 /** Collapsible right rail hosting the AI panel: a thin
  * vertical strip when collapsed (does not take space), a full panel when
  * open. The state persists across launches. */
-function AiRail() {
+function AiRail({ aiWidth, onAiDrag }: { aiWidth: number; onAiDrag: (e: React.MouseEvent) => void }) {
   const [open, setOpen] = useState(() => localStorage.getItem("tb-ai-rail") !== "0");
   const t = useT();
   const toggle = () => {
@@ -35,7 +36,8 @@ function AiRail() {
     localStorage.setItem("tb-ai-rail", next ? "1" : "0");
   };
   return (
-    <aside className={`ai-rail ${open ? "open" : "collapsed"}`}>
+    <aside className={`ai-rail ${open ? "open" : "collapsed"}`} style={open ? { width: aiWidth } : undefined}>
+      <div className="splitter-v" onMouseDown={onAiDrag} title={t("ui.resizeAi")} />
       <button className="ai-rail-toggle" onClick={toggle} title={open ? t("ai.collapse") : t("ai.expand")}>
         {open ? "◂" : "AI"}
       </button>
@@ -88,6 +90,15 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [welcomeRev, setWelcomeRev] = useState(0);
+  // Windows-style splitter sizes (draggable separator bars, persisted)
+  const tree = usePanelSize("tb-tree-w", 220, 160, 460);
+  const pdf = usePanelSize("tb-pdf-w", Math.round((window.innerWidth || 1400) * 0.38), 240, Math.round((window.innerWidth || 1400) * 0.7));
+  const ai = usePanelSize("tb-ai-w", 300, 240, 520);
+  const bottom = usePanelHeight("tb-bottom-h", 280, 140, Math.round((window.innerHeight || 900) * 0.55));
+  const treeDrag = tree.startDrag;
+  const pdfDrag = pdf.startDrag;
+  const aiDrag = ai.startDrag;
+  const bottomDrag = bottom.startDrag;
   const [pdfRev, setPdfRev] = useState(0);
   const [leftTab, setLeftTab] = useState<"tree" | "outline" | "bib" | "todo">("tree");
   const [compileTarget, setCompileTarget] = useState<string>("main");
@@ -488,7 +499,7 @@ export default function App() {
       )}
       {root && (
       <div className="layout">
-        <aside className="col-tree">
+        <aside className="col-tree" style={{ width: tree.size }}>
           <div className="tree-tabs">
             <button
               className={`tree-tab ${leftTab === "tree" ? "active" : ""}`}
@@ -521,17 +532,25 @@ export default function App() {
           {leftTab === "bib" && <BibPanel />}
           {leftTab === "todo" && <TodoPanel />}
         </aside>
+        <div className="splitter-v" onMouseDown={treeDrag} title={t("ui.resizeTree")} />
         <main className={`col-editor ${splitFile ? "is-split" : ""}`}>
           <EditorPane />
           {splitFile && <SplitPane file={splitFile} onClose={() => setSplitFile(null)} />}
         </main>
-        <aside className={`col-pdf ${pdfPath ? "has-pdf" : ""}`}>
+        <div
+          className="splitter-v"
+          onMouseDown={pdfDrag}
+          title={t("ui.resizePdf")}
+          style={{ visibility: pdfPath ? "visible" : "hidden" }}
+        />
+        <aside className={`col-pdf ${pdfPath ? "has-pdf" : ""}`} style={{ width: pdf.size }}>
           <PdfPreview revision={pdfRev} page={pdfPage ?? undefined} />
         </aside>
-        <AiRail />
+        <AiRail aiWidth={ai.size} onAiDrag={aiDrag} />
       </div>
       )}
-      <div className="bottom">
+      <div className="splitter-h" onMouseDown={bottomDrag} title={t("ui.resizeBottom")} />
+      <div className="bottom" style={{ height: bottom.size }}>
         <ProblemsPanel />
       </div>
       {toast && <div className="toast" key={toast.id}>{toast.text}</div>}
