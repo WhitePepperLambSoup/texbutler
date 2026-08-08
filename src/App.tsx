@@ -241,7 +241,10 @@ export default function App() {
           }
         })
         .catch(() => {
-          /* project no longer exists — ignore */
+          // project no longer exists — drop it from the recent list so the
+          // welcome screen stops offering it
+          removeRecent(flow.lastProject);
+          setWelcomeRev((r) => r + 1);
         });
     }
     let timer: number | undefined;
