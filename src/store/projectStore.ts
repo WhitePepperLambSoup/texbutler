@@ -6,6 +6,7 @@ import { api, type Issue, type ProjectFileNode, type ProjectInfo, type RefIndex 
 import { useI18n } from "../i18n";
 import { saveFlow } from "../flow";
 import { loadDraft, clearDraft } from "./drafts";
+import { recordRecent } from "./recent";
 
 /** Monotonic openFile request counter (race guard for async tab activation). */
 let openFileSeq = 0;
@@ -65,7 +66,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }, 3500);
   },
 
-  async openProject(path) {
+  async openProject(path?) {
+    if (path) recordRecent(path);
     const info: ProjectInfo = await api.openProject(path);
     set({
       root: info.root,

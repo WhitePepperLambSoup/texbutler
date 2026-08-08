@@ -10,6 +10,8 @@ import PdfPreview from "./components/PdfPreview";
 import ProblemsPanel from "./components/ProblemsPanel";
 import AiPanel from "./components/AiPanel";
 import SettingsModal from "./components/SettingsModal";
+import WelcomePanel from "./components/WelcomePanel";
+import NewProjectModal from "./components/NewProjectModal";
 import { api } from "./api";
 import { useProjectStore } from "./store/projectStore";
 import { keyCombo, loadKeymap } from "./store/keymap";
@@ -83,6 +85,7 @@ export default function App() {
   }, []);
   const busy = useAiStore((s) => s.busy);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [pdfRev, setPdfRev] = useState(0);
   const [leftTab, setLeftTab] = useState<"tree" | "outline" | "bib" | "todo">("tree");
   const [compileTarget, setCompileTarget] = useState<string>("main");
@@ -455,6 +458,21 @@ export default function App() {
           <span className="compile-bar-text">{progress.message}</span>
         </div>
       )}
+      {!root && (
+        <WelcomePanel
+          onOpen={(p) => {
+            void useProjectStore
+              .getState()
+              .openProject(p)
+              .catch((e) => window.alert(String(e)));
+          }}
+          onBrowse={() => {
+            void useProjectStore.getState().openProject().catch((e) => window.alert(String(e)));
+          }}
+          onNew={() => setNewProjectOpen(true)}
+        />
+      )}
+      {root && (
       <div className="layout">
         <aside className="col-tree">
           <div className="tree-tabs">
@@ -498,6 +516,7 @@ export default function App() {
         </aside>
         <AiRail />
       </div>
+      )}
       <div className="bottom">
         <ProblemsPanel />
       </div>
@@ -540,6 +559,7 @@ export default function App() {
         </span>
       </div>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <NewProjectModal open={newProjectOpen} onClose={() => setNewProjectOpen(false)} />
       {quickOpen && (
         <QuickOpenModal
           onClose={() => {
