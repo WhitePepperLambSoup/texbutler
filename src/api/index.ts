@@ -163,6 +163,13 @@ export interface BundleStatus {
   system_texlive: boolean;
 }
 
+export type TemplateSource = "user" | "market";
+
+export interface ImportedTemplate {
+  target_dir: string;
+  main_file: string;
+}
+
 export const api = {
   // project
   openProject: (path?: string) => invoke<ProjectInfo>("tb_open_project", { path: path ?? null }),
@@ -193,6 +200,12 @@ export const api = {
   bibFromId: (identifier: string) => invoke<string>("tb_bib_from_id", { identifier }),
   listMarketTemplates: () => invoke<MarketTemplate[]>("tb_list_market_templates"),
   downloadTemplate: (id: string) => invoke<string>("tb_download_template", { id }),
+  importProjectTemplate: (targetDir: string, templateId: string, source: TemplateSource) =>
+    invoke<ImportedTemplate>("tb_import_project_template", {
+      targetDir,
+      templateId,
+      source,
+    }),
   createFromMarketTemplate: (parent: string, name: string, templateId: string) =>
     invoke<string>("tb_create_from_market_template", { parent, name, templateId }),
   countWords: (file?: string) =>

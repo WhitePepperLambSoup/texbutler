@@ -525,10 +525,7 @@ pub fn import_resolved_template(
                         file.display()
                     ));
                 }
-                let name = file
-                    .file_name()
-                    .ok_or_else(|| "invalid template file name".to_string())?;
-                std::fs::copy(file, temp.join(name))
+                std::fs::copy(file, temp.join("main.tex"))
                     .map_err(|error| format!("could not copy template file: {error}"))?;
             }
             ResolvedTemplate::Embedded(directory) => extract_embedded_dir(directory, &temp)?,
@@ -552,6 +549,277 @@ pub fn import_resolved_template(
         remove_created_empty_parents(&created_parents);
     }
     result
+}
+
+pub(crate) fn save_user_template_at(
+    project_root: &Path,
+    template_root: &Path,
+    name: &str,
+) -> Result<(), String> {
+    let name = crate::commands::project::validate_template_name(name)?;
+    std::fs::create_dir_all(template_root)
+        .map_err(|error| format!("could not create template directory: {error}"))?;
+    let root_metadata = std::fs::symlink_metadata(template_root)
+        .map_err(|error| format!("could not inspect template directory: {error}"))?;
+    if root_metadata.file_type().is_symlink() || !root_metadata.is_dir() {
+        return Err(format!(
+            "template directory is not a safe directory: {}",
+            template_root.display()
+        ));
+    }
+
+    let target = template_root.join(&name);
+    let legacy = template_root.join(format!("{name}.tex"));
+    for collision in [&target, &legacy] {
+        match std::fs::symlink_metadata(collision) {
+            Ok(_) => return Err(format!("template already exists: {}", collision.display())),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("could not inspect template destination: {error}")),
+        }
+    }
+
+    let temporary_template = import_temp_sibling(&target)?;
+    let result = (|| {
+        std::fs::create_dir(&temporary_template)
+            .map_err(|error| format!("could not create temporary template directory: {error}"))?;
+        copy_tree_checked(
+            project_root,
+            &temporary_template,
+            &[".texbutler", ".git", "node_modules", "target"],
+        )?;
+        detect_main_document(&temporary_template)?;
+        std::fs::rename(&temporary_template, &target)
+            .map_err(|error| format!("could not finalize saved template: {error}"))?;
+        Ok(())
+    })();
+    if result.is_err() {
+        remove_created_dir(&temporary_template);
+    }
+    result
+}
+
+pub(crate) fn list_user_templates_at(
+    template_root: &Path,
+) -> Vec<crate::commands::project::TemplateInfo> {
+    use std::collections::BTreeMap;
+
+    let Ok(entries) = std::fs::read_dir(template_root) else {
+        return Vec::new();
+    };
+    let mut templates = BTreeMap::new();
+    let entries: Vec<_> = entries.flatten().collect();
+
+    for entry in &entries {
+        let Ok(metadata) = std::fs::symlink_metadata(entry.path()) else {
+            continue;
+        };
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            continue;
+        }
+        let id = entry.file_name().to_string_lossy().to_string();
+        if crate::commands::project::validate_template_name(&id).is_ok() {
+            templates.insert(
+                id.clone(),
+                crate::commands::project::TemplateInfo {
+                    name: format!("{id}（我的模板）"),
+                    id,
+                    source: "user".into(),
+                },
+            );
+        }
+    }
+
+    for entry in entries {
+        let path = entry.path();
+        let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if metadata.file_type().is_symlink()
+            || !metadata.is_file()
+            || path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .map(|extension| extension != "tex")
+                .unwrap_or(true)
+        {
+            continue;
+        }
+        let id = path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        if crate::commands::project::validate_template_name(&id).is_ok() {
+            templates
+                .entry(id.clone())
+                .or_insert_with(|| crate::commands::project::TemplateInfo {
+                    name: format!("{id}（我的模板）"),
+                    id,
+                    source: "user".into(),
+                });
+        }
+    }
+
+    templates.into_values().collect()
+}
+
+pub(crate) fn delete_user_template_at(template_root: &Path, name: &str) -> Result<(), String> {
+    let name = crate::commands::project::validate_template_name(name)?;
+    let directory = template_root.join(&name);
+    match std::fs::symlink_metadata(&directory) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() {
+                return Err("template entries may not be symbolic links".into());
+            }
+            if !metadata.is_dir() {
+                return Err(format!(
+                    "template directory is invalid: {}",
+                    directory.display()
+                ));
+            }
+            return std::fs::remove_dir_all(&directory)
+                .map_err(|error| format!("could not delete template: {error}"));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("could not inspect template: {error}")),
+    }
+
+    let legacy = template_root.join(format!("{name}.tex"));
+    let metadata = std::fs::symlink_metadata(&legacy).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            "模板不存在".to_string()
+        } else {
+            format!("could not inspect template: {error}")
+        }
+    })?;
+    if metadata.file_type().is_symlink() {
+        return Err("template entries may not be symbolic links".into());
+    }
+    if !metadata.is_file() {
+        return Err(format!("legacy template is invalid: {}", legacy.display()));
+    }
+    std::fs::remove_file(&legacy).map_err(|error| format!("could not delete template: {error}"))
+}
+
+fn resolve_user_template<'a>(
+    directory: &'a Path,
+    legacy: &'a Path,
+) -> Result<ResolvedTemplate<'a>, String> {
+    let directory_metadata = match std::fs::symlink_metadata(directory) {
+        Ok(metadata) => Some(metadata),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(format!("could not inspect user template: {error}")),
+    };
+    let legacy_metadata = match std::fs::symlink_metadata(legacy) {
+        Ok(metadata) => Some(metadata),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(format!("could not inspect user template: {error}")),
+    };
+
+    if directory_metadata
+        .as_ref()
+        .is_some_and(|metadata| metadata.file_type().is_symlink())
+        || legacy_metadata
+            .as_ref()
+            .is_some_and(|metadata| metadata.file_type().is_symlink())
+    {
+        return Err("template entries may not be symbolic links".into());
+    }
+    if let Some(metadata) = directory_metadata {
+        if !metadata.is_dir() {
+            return Err(format!(
+                "user template directory is invalid: {}",
+                directory.display()
+            ));
+        }
+        return Ok(ResolvedTemplate::Directory(directory));
+    }
+    if let Some(metadata) = legacy_metadata {
+        if !metadata.is_file() {
+            return Err(format!(
+                "legacy user template is invalid: {}",
+                legacy.display()
+            ));
+        }
+        return Ok(ResolvedTemplate::SingleFile(legacy));
+    }
+    Err("模板不存在".into())
+}
+
+fn resolve_market_template<'a>(
+    template_id: &str,
+    downloaded: &'a Path,
+) -> Result<ResolvedTemplate<'a>, String> {
+    if let Some(embedded) = TEMPLATES.get_dir(template_id) {
+        return Ok(ResolvedTemplate::Embedded(embedded));
+    }
+
+    match std::fs::symlink_metadata(downloaded) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                return Err(format!(
+                    "market template is not a safe directory: {}",
+                    downloaded.display()
+                ));
+            }
+            let marker = downloaded.join(".texbutler-verified");
+            let marker_metadata = std::fs::symlink_metadata(&marker)
+                .map_err(|_| "market template has not been verified".to_string())?;
+            if marker_metadata.file_type().is_symlink() || !marker_metadata.is_file() {
+                return Err("market template has not been verified".into());
+            }
+            return Ok(ResolvedTemplate::Directory(downloaded));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("could not inspect market template: {error}")),
+    }
+
+    let core_template_id = if template_id == "ctexart" {
+        "article"
+    } else {
+        template_id
+    };
+    crate::core::project::templates()
+        .into_iter()
+        .find(|(id, _, _)| *id == core_template_id)
+        .map(|(_, _, body)| ResolvedTemplate::Builtin(body))
+        .ok_or_else(|| format!("market template is not ready: {template_id}"))
+}
+
+#[tauri::command]
+pub fn tb_import_project_template(
+    state: tauri::State<'_, crate::state::AppState>,
+    target_dir: String,
+    template_id: String,
+    source: TemplateSource,
+) -> Result<ImportedTemplate, String> {
+    let project = {
+        let guard = state.project.read().map_err(|error| error.to_string())?;
+        guard
+            .as_ref()
+            .ok_or_else(|| "尚未打开项目".to_string())?
+            .clone()
+    };
+
+    match source {
+        TemplateSource::User => {
+            let id = crate::commands::project::validate_template_name(&template_id)?;
+            let template_root = crate::commands::project::user_template_dir();
+            let directory = template_root.join(&id);
+            let legacy = template_root.join(format!("{id}.tex"));
+            let resolved = resolve_user_template(&directory, &legacy)?;
+            import_resolved_template(&project, &target_dir, resolved)
+        }
+        TemplateSource::Market => {
+            let id = template_id.trim();
+            if !load_catalog()?.iter().any(|template| template.id == id) {
+                return Err(format!("market template does not exist: {id}"));
+            }
+            let downloaded = market_download_dir().join(id);
+            let resolved = resolve_market_template(id, &downloaded)?;
+            import_resolved_template(&project, &target_dir, resolved)
+        }
+    }
 }
 
 /// Copy a marketplace template (embedded or downloaded) into a new project.
@@ -641,6 +909,110 @@ mod tests {
     fn write_fixture(path: &Path, content: &[u8]) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, content).unwrap();
+    }
+
+    #[test]
+    fn save_user_template_copies_assets_and_excludes_internal_dirs() {
+        let root = test_root("save-tree");
+        let project = root.join("project");
+        let templates = root.join("templates");
+        write_fixture(&project.join("main.tex"), b"\\documentclass{article}\n");
+        write_fixture(&project.join("refs.bib"), b"@book{x,title={X}}\n");
+        write_fixture(&project.join("figures/a.png"), b"png");
+        for excluded in [
+            ".texbutler/build/out.pdf",
+            ".git/config",
+            "node_modules/x/index.js",
+            "target/debug/x",
+        ] {
+            write_fixture(&project.join(excluded), b"excluded");
+        }
+
+        save_user_template_at(&project, &templates, "paper").unwrap();
+
+        assert!(templates.join("paper/main.tex").is_file());
+        assert!(templates.join("paper/refs.bib").is_file());
+        assert!(templates.join("paper/figures/a.png").is_file());
+        for excluded in [".texbutler", ".git", "node_modules", "target"] {
+            assert!(!templates.join("paper").join(excluded).exists());
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn save_user_template_rejects_existing_directory_or_legacy_file() {
+        let root = test_root("save-collision");
+        let project = root.join("project");
+        let templates = root.join("templates");
+        write_fixture(&project.join("main.tex"), b"\\documentclass{article}\n");
+        write_fixture(&templates.join("legacy.tex"), b"\\documentclass{article}\n");
+        std::fs::create_dir_all(templates.join("directory")).unwrap();
+
+        assert!(save_user_template_at(&project, &templates, "legacy").is_err());
+        assert!(save_user_template_at(&project, &templates, "directory").is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn list_user_templates_merges_directory_and_legacy_entries_without_duplicates() {
+        let root = test_root("list-templates");
+        let templates = root.join("templates");
+        write_fixture(
+            &templates.join("alpha/main.tex"),
+            b"\\documentclass{article}\n",
+        );
+        write_fixture(&templates.join("alpha.tex"), b"\\documentclass{article}\n");
+        write_fixture(&templates.join("beta.tex"), b"\\documentclass{article}\n");
+
+        let items = list_user_templates_at(&templates);
+        let ids: Vec<&str> = items.iter().map(|item| item.id.as_str()).collect();
+        assert_eq!(ids, vec!["alpha", "beta"]);
+        assert!(items.iter().all(|item| item.source == "user"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn delete_user_template_removes_exact_resolved_entry() {
+        let root = test_root("delete-template");
+        let templates = root.join("templates");
+        write_fixture(
+            &templates.join("directory/main.tex"),
+            b"\\documentclass{article}\n",
+        );
+        write_fixture(&templates.join("legacy.tex"), b"\\documentclass{article}\n");
+        write_fixture(&templates.join("keep.tex"), b"\\documentclass{article}\n");
+
+        delete_user_template_at(&templates, "directory").unwrap();
+        delete_user_template_at(&templates, "legacy").unwrap();
+
+        assert!(!templates.join("directory").exists());
+        assert!(!templates.join("legacy.tex").exists());
+        assert!(templates.join("keep.tex").is_file());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn legacy_single_file_import_becomes_main_tex() {
+        let root = test_root("legacy-import");
+        let project_root = root.join("project");
+        let legacy = root.join("sample.tex");
+        write_fixture(
+            &project_root.join("main.tex"),
+            b"\\documentclass{article}\n",
+        );
+        write_fixture(&legacy, b"\\documentclass{report}\n");
+        let project = Project::open(&project_root).unwrap();
+
+        let imported =
+            import_resolved_template(&project, "sample", ResolvedTemplate::SingleFile(&legacy))
+                .unwrap();
+
+        assert_eq!(imported.main_file, "sample/main.tex");
+        assert_eq!(
+            std::fs::read(project_root.join("sample/main.tex")).unwrap(),
+            b"\\documentclass{report}\n"
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[cfg(windows)]

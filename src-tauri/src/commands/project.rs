@@ -1,6 +1,6 @@
-﻿//! Project commands: open / create / save / file tree / read-write files.
+//! Project commands: open / create / save / file tree / read-write files.
 
-use crate::core::project::{Project, flatten_tree};
+use crate::core::project::{flatten_tree, Project};
 use crate::state::AppState;
 use image::GenericImageView;
 use serde::{Deserialize, Serialize};
@@ -70,7 +70,9 @@ pub async fn tb_bib_from_id(identifier: String) -> Result<String, String> {
             .map_err(|e| format!("arXiv 响应读取失败: {e}"))?;
         // the feed has a top-level <title> ("arXiv Query: ..."); the actual
         // paper metadata lives inside the first <entry> block
-        let entry_start = xml.find("<entry>").ok_or_else(|| "arXiv 未返回结果：请检查编号是否正确".to_string())?;
+        let entry_start = xml
+            .find("<entry>")
+            .ok_or_else(|| "arXiv 未返回结果：请检查编号是否正确".to_string())?;
         let entry_end = xml[entry_start..]
             .find("</entry>")
             .map(|e| entry_start + e)
@@ -113,7 +115,10 @@ pub async fn tb_bib_from_id(identifier: String) -> Result<String, String> {
             .await
             .map_err(|e| format!("Crossref 请求失败: {e}"))?;
         if !resp.status().is_success() {
-            return Err(format!("Crossref 未找到该 DOI（HTTP {}）", resp.status().as_u16()));
+            return Err(format!(
+                "Crossref 未找到该 DOI（HTTP {}）",
+                resp.status().as_u16()
+            ));
         }
         let json: serde_json::Value = resp
             .json()
@@ -204,7 +209,10 @@ fn bib_key(title: &str) -> String {
 
 /// Emit a project-changed event to the frontend.
 pub fn emit_project_changed(app: &AppHandle) {
-    let _ = app.emit("tb://project-changed", serde_json::json!({ "ts": chrono_ts() }));
+    let _ = app.emit(
+        "tb://project-changed",
+        serde_json::json!({ "ts": chrono_ts() }),
+    );
 }
 
 fn chrono_ts() -> u64 {
@@ -274,27 +282,15 @@ pub async fn tb_new_project(
             // validate the template id (no traversal) before any join;
             // use the normalized name for both builtin match and file join
             let t = validate_template_name(t)?;
-            // built-in template first, then user-saved template
-            let builtin = crate::core::project::templates().iter().any(|(id, _, _)| *id == t);
+            // New projects only use the fixed built-in seed list. Saved
+            // templates are imported into an already-open project instead.
+            let builtin = crate::core::project::templates()
+                .iter()
+                .any(|(id, _, _)| *id == t);
             if builtin {
                 Project::create_with_template(Path::new(&parent), &name, &t)?
             } else {
-                let user_path = user_template_dir().join(format!("{t}.tex"));
-                if user_path.exists() {
-                    // same project-name validation as the builtin branch
-                    crate::core::project::validate_project_name(&name)?;
-                    let content = std::fs::read_to_string(&user_path).map_err(|e| e.to_string())?;
-                    let dir = Path::new(&parent).join(&name);
-                    if dir.exists() {
-                        return Err(format!("目录已存在: {}", dir.display()));
-                    }
-                    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-                    std::fs::write(dir.join("main.tex"), content).map_err(|e| e.to_string())?;
-                    std::fs::create_dir_all(dir.join(".texbutler")).ok();
-                    Project::open(&dir)?
-                } else {
-                    return Err(format!("模板不存在: {t}"));
-                }
+                return Err(format!("模板不存在: {t}"));
             }
         }
         _ => Project::create(Path::new(&parent), &name)?,
@@ -350,7 +346,11 @@ fn project_info(state: &State<'_, AppState>) -> Result<ProjectInfo, String> {
 pub fn tb_get_templates() -> Vec<TemplateInfo> {
     crate::core::project::templates()
         .into_iter()
-        .map(|(id, name, _)| TemplateInfo { id: id.to_string(), name: name.to_string(), source: "builtin".into() })
+        .map(|(id, name, _)| TemplateInfo {
+            id: id.to_string(),
+            name: name.to_string(),
+            source: "builtin".into(),
+        })
         .collect()
 }
 
@@ -384,12 +384,18 @@ pub fn tb_import_image(state: State<'_, AppState>, source_path: String) -> Resul
         .unwrap_or("")
         .to_ascii_lowercase();
     if !["png", "jpg", "jpeg", "gif", "svg", "pdf", "eps"].contains(&ext.as_str()) {
-        return Err(format!("不支持的图片格式: {ext}（支持 png/jpg/jpeg/gif/svg/pdf/eps）"));
+        return Err(format!(
+            "不支持的图片格式: {ext}（支持 png/jpg/jpeg/gif/svg/pdf/eps）"
+        ));
     }
     if !src.is_file() {
         return Err("源图片文件不存在".into());
     }
-    let fname = src.file_name().ok_or_else(|| "无效文件名".to_string())?.to_string_lossy().to_string();
+    let fname = src
+        .file_name()
+        .ok_or_else(|| "无效文件名".to_string())?
+        .to_string_lossy()
+        .to_string();
     let mut target = proj.root.join(&fname);
     let mut n = 1usize;
     while target.exists() {
@@ -422,14 +428,19 @@ pub fn tb_import_image(state: State<'_, AppState>, source_path: String) -> Resul
                             .write_to(&mut std::io::Cursor::new(&mut buf), out)
                             .is_ok()
                         {
-                            std::fs::write(&target_canon, buf).map_err(|e| format!("压缩图片失败: {e}"))?;
+                            std::fs::write(&target_canon, buf)
+                                .map_err(|e| format!("压缩图片失败: {e}"))?;
                             drop(guard);
                             if let Ok(mut g) = state.project.write() {
                                 if let Some(p) = g.as_mut() {
                                     let _ = p.scan();
                                 }
                             }
-                            return Ok(target.file_name().unwrap_or_default().to_string_lossy().to_string());
+                            return Ok(target
+                                .file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .to_string());
                         }
                     }
                 }
@@ -444,7 +455,11 @@ pub fn tb_import_image(state: State<'_, AppState>, source_path: String) -> Resul
             let _ = p.scan();
         }
     }
-    Ok(target.file_name().unwrap_or_default().to_string_lossy().to_string())
+    Ok(target
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string())
 }
 
 /// Import an image from the clipboard (screenshot) into the project root.
@@ -472,8 +487,15 @@ pub fn tb_import_clipboard_image(
             .ok_or_else(|| "剪贴板图片数据无效".to_string())?;
         let mut buf = Vec::new();
         let mut cursor = std::io::Cursor::new(&mut buf);
-        image::write_buffer_with_format(&mut cursor, img.as_raw(), w, h, image::ExtendedColorType::Rgba8, image::ImageFormat::Png)
-            .map_err(|e| format!("图片编码失败: {e}"))?;
+        image::write_buffer_with_format(
+            &mut cursor,
+            img.as_raw(),
+            w,
+            h,
+            image::ExtendedColorType::Rgba8,
+            image::ImageFormat::Png,
+        )
+        .map_err(|e| format!("图片编码失败: {e}"))?;
         buf
     };
     let ts = std::time::SystemTime::now()
@@ -487,25 +509,34 @@ pub fn tb_import_clipboard_image(
         target = proj.root.join(format!("clipboard_{ts}_{n}.png"));
         n += 1;
     }
-    std::fs::write(&proj.canonical_inside(&target)?, png).map_err(|e| format!("保存图片失败: {e}"))?;
+    std::fs::write(&proj.canonical_inside(&target)?, png)
+        .map_err(|e| format!("保存图片失败: {e}"))?;
     drop(guard);
     if let Ok(mut g) = state.project.write() {
         if let Some(p) = g.as_mut() {
             let _ = p.scan();
         }
     }
-    Ok(target.file_name().unwrap_or_default().to_string_lossy().to_string())
+    Ok(target
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string())
 }
 
 /// Scan the project's `.bib` files and return parsed entries (with their
 /// location for click-to-jump in the reference panel).
 #[tauri::command]
-pub fn tb_list_bib_entries(state: State<'_, AppState>) -> Result<Vec<crate::core::bib::BibEntry>, String> {
+pub fn tb_list_bib_entries(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::core::bib::BibEntry>, String> {
     let guard = state.project.read().map_err(|e| e.to_string())?;
     let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
     let mut out: Vec<crate::core::bib::BibEntry> = Vec::new();
     for rel in proj.bib_files() {
-        let Some(content) = proj.read_file(&rel).ok() else { continue };
+        let Some(content) = proj.read_file(&rel).ok() else {
+            continue;
+        };
         for mut entry in crate::core::bib::parse_bib(&content) {
             if let Some((idx, _)) = content.lines().enumerate().find(|(_, l)| {
                 l.contains(&format!("@{}", entry.entry_type))
@@ -531,7 +562,10 @@ pub async fn tb_import_docx(
 ) -> Result<serde_json::Value, String> {
     let (proj, settings) = {
         let guard = state.project.read().map_err(|e| e.to_string())?;
-        let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?.clone();
+        let proj = guard
+            .as_ref()
+            .ok_or_else(|| "尚未打开项目".to_string())?
+            .clone();
         let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
         (proj, settings)
     };
@@ -558,8 +592,14 @@ pub async fn tb_import_docx(
     let reply = crate::core::ai::chat(
         &settings,
         &[
-            crate::core::ai::ChatMsg { role: "system".into(), content: system.into() },
-            crate::core::ai::ChatMsg { role: "user".into(), content: user_prompt },
+            crate::core::ai::ChatMsg {
+                role: "system".into(),
+                content: system.into(),
+            },
+            crate::core::ai::ChatMsg {
+                role: "user".into(),
+                content: user_prompt,
+            },
         ],
     )
     .await
@@ -571,7 +611,10 @@ pub async fn tb_import_docx(
     // AI-output size guard (untrusted model output)
     const MAX_LATEX_BYTES: usize = 2 * 1024 * 1024;
     if code.len() > MAX_LATEX_BYTES {
-        return Err(format!("AI 生成的 LaTeX 过大（{} 字节，上限 2MB），已拒绝写入", code.len()));
+        return Err(format!(
+            "AI 生成的 LaTeX 过大（{} 字节，上限 2MB），已拒绝写入",
+            code.len()
+        ));
     }
     // strip fences if any
     let code = code
@@ -586,7 +629,11 @@ pub async fn tb_import_docx(
         .unwrap_or(code);
 
     // 3) write into project with a unique name
-    let stem = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+    let stem = path
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
     let mut fname = format!("{stem}.tex");
     let mut n = 1usize;
     while proj.resolve(&fname).map(|p| p.exists()).unwrap_or(false) {
@@ -612,7 +659,7 @@ pub fn user_template_dir() -> PathBuf {
 
 /// Validate a template name: no path separators, no traversal.
 /// Returns the normalized (trimmed) name for consistent use by all callers.
-fn validate_template_name(name: &str) -> Result<String, String> {
+pub(crate) fn validate_template_name(name: &str) -> Result<String, String> {
     let name = name.trim();
     if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
         return Err("模板名不合法（不能含路径分隔符）".into());
@@ -620,54 +667,24 @@ fn validate_template_name(name: &str) -> Result<String, String> {
     Ok(name.to_string())
 }
 
-/// Save the current project's main.tex as a reusable user template.
+/// Save the current project as a reusable user template.
 #[tauri::command]
 pub fn tb_save_template(state: State<'_, AppState>, name: String) -> Result<(), String> {
-    let name = validate_template_name(&name)?;
-    let content = {
-        let guard = state.project.read().map_err(|e| e.to_string())?;
-        let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
-        proj.read_file(&proj.main_file)?
-    };
-    let dir = user_template_dir();
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join(format!("{name}.tex"));
-    std::fs::write(&path, content).map_err(|e| e.to_string())?;
-    Ok(())
+    let guard = state.project.read().map_err(|e| e.to_string())?;
+    let project = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
+    crate::commands::templates::save_user_template_at(&project.root, &user_template_dir(), &name)
 }
 
-/// List all templates: built-in + user-saved.
+/// List user-saved templates.
 #[tauri::command]
 pub fn tb_list_templates() -> Vec<TemplateInfo> {
-    let mut items: Vec<TemplateInfo> = crate::core::project::templates()
-        .into_iter()
-        .map(|(id, name, _)| TemplateInfo { id: id.to_string(), name: name.to_string(), source: "builtin".into() })
-        .collect();
-    if let Ok(rd) = std::fs::read_dir(user_template_dir()) {
-        let mut users: Vec<TemplateInfo> = rd
-            .flatten()
-            .filter(|e| e.path().extension().map(|x| x == "tex").unwrap_or(false))
-            .map(|e| {
-                let stem = e.path().file_stem().unwrap_or_default().to_string_lossy().to_string();
-                TemplateInfo { id: stem.clone(), name: format!("{stem}（我的模板）"), source: "user".into() }
-            })
-            .collect();
-        users.sort_by(|a, b| a.id.cmp(&b.id));
-        items.extend(users);
-    }
-    items
+    crate::commands::templates::list_user_templates_at(&user_template_dir())
 }
 
 /// Delete a user-saved template.
 #[tauri::command]
 pub fn tb_delete_template(name: String) -> Result<(), String> {
-    // same validation as save — prevents path traversal (`../../x`)
-    let name = validate_template_name(&name)?;
-    let path = user_template_dir().join(format!("{name}.tex"));
-    if !path.exists() {
-        return Err("模板不存在".into());
-    }
-    std::fs::remove_file(&path).map_err(|e| e.to_string())
+    crate::commands::templates::delete_user_template_at(&user_template_dir(), &name)
 }
 
 /// Read a file's content (relative path, UTF-8).
@@ -742,7 +759,8 @@ const TEMPLATE_REPORT: &str = "\\documentclass[12pt,a4paper]{report}\n\\usepacka
 
 const TEMPLATE_BEAMER: &str = "\\documentclass{beamer}\n\\usetheme{metropolis}\n\\title{Presentation Title}\n\\author{Author}\n\\date{\\today}\n\n\\begin{document}\n\\begin{frame}\n  \\titlepage\n\\end{frame}\n\n\\begin{frame}{Outline}\n  \\tableofcontents\n\\end{frame}\n\n\\section{Introduction}\n\\begin{frame}{Introduction}\n  Content here.\n\\end{frame}\n\n\\end{document}\n";
 
-const TEMPLATE_MINIMAL: &str = "\\documentclass{article}\n\\begin{document}\nHello, world!\n\\end{document}\n";
+const TEMPLATE_MINIMAL: &str =
+    "\\documentclass{article}\n\\begin{document}\nHello, world!\n\\end{document}\n";
 
 /// A `\label{key}` found in the project (for ref/cite autocompletion).
 #[derive(serde::Serialize)]
@@ -760,14 +778,22 @@ pub fn tb_ref_index(state: State<'_, AppState>) -> Result<RefIndex, String> {
     let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
     let mut labels: Vec<RefLabel> = Vec::new();
     for rel in proj.tex_files() {
-        let Ok(content) = proj.read_file(&rel) else { continue };
+        let Ok(content) = proj.read_file(&rel) else {
+            continue;
+        };
         for (key, line) in crate::core::rules::refs::scan_labels(&content) {
-            labels.push(RefLabel { key, file: proj.relative_path(&rel), line });
+            labels.push(RefLabel {
+                key,
+                file: proj.relative_path(&rel),
+                line,
+            });
         }
     }
     let mut bib: Vec<crate::core::bib::BibEntry> = Vec::new();
     for rel in proj.bib_files() {
-        let Ok(content) = proj.read_file(&rel) else { continue };
+        let Ok(content) = proj.read_file(&rel) else {
+            continue;
+        };
         let entries = crate::core::bib::parse_bib(&content);
         // attach the entry's location for Ctrl+Click navigation: the line
         // where `@<type>{<key>,` appears (entry_type + key on one line)
@@ -807,7 +833,9 @@ pub fn tb_scan_todos(state: State<'_, AppState>) -> Result<Vec<TodoHit>, String>
     let mut out: Vec<TodoHit> = Vec::new();
     const KEYWORDS: [&str; 4] = ["TODO", "FIXME", "HACK", "XXX"];
     for rel in proj.tex_files() {
-        let Ok(content) = proj.read_file(&rel) else { continue };
+        let Ok(content) = proj.read_file(&rel) else {
+            continue;
+        };
         for (i, line) in content.lines().enumerate() {
             // only markers inside comments: everything from the first `%`
             let Some(pct) = line.find('%') else { continue };
@@ -878,7 +906,9 @@ pub fn tb_synctex_forward(
     let rel = proj.relative_path(&file);
     if pdf_path.exists() && proj.resolve(&rel).is_some() {
         let abs = proj.root.join(&rel);
-        if let Some(page) = crate::core::synctex::system_forward("synctex", &pdf_path, &abs.to_string_lossy(), line) {
+        if let Some(page) =
+            crate::core::synctex::system_forward("synctex", &pdf_path, &abs.to_string_lossy(), line)
+        {
             return Ok(Some(page));
         }
     }
@@ -907,7 +937,9 @@ pub fn tb_export(
     let md = crate::core::export::to_markdown(&src);
     // output path next to the source, validated to stay inside the project
     let stem = rel.trim_end_matches(".tex");
-    let out_rel = proj.resolve(&format!("{stem}.md")).ok_or_else(|| "非法导出路径".to_string())?;
+    let out_rel = proj
+        .resolve(&format!("{stem}.md"))
+        .ok_or_else(|| "非法导出路径".to_string())?;
     match format.to_ascii_lowercase().as_str() {
         "md" | "markdown" => {
             let out_canon = proj.canonical_inside(&proj.root.join(&out_rel))?;
@@ -919,7 +951,9 @@ pub fn tb_export(
         }
         "docx" | "word" => {
             let bytes = crate::core::export::to_docx(&md)?;
-            let out_rel = proj.resolve(&format!("{stem}.docx")).ok_or_else(|| "非法导出路径".to_string())?;
+            let out_rel = proj
+                .resolve(&format!("{stem}.docx"))
+                .ok_or_else(|| "非法导出路径".to_string())?;
             let out_canon = proj.canonical_inside(&proj.root.join(&out_rel))?;
             std::fs::write(&out_canon, bytes).map_err(|e| e.to_string())?;
             Ok(proj.root.join(&out_rel).to_string_lossy().to_string())
@@ -956,8 +990,12 @@ mod tests {
             .expect("PNG encode must succeed");
         // PNG is lossless: random-noise fixtures can't shrink, but the
         // resize must have cut the pixel count (dimensions <= 2048 edge)
-        assert!(resized.width() <= 2048 && resized.height() <= 2048,
-            "resize must cap the long edge at 2048px, got {}x{}", resized.width(), resized.height());
+        assert!(
+            resized.width() <= 2048 && resized.height() <= 2048,
+            "resize must cap the long edge at 2048px, got {}x{}",
+            resized.width(),
+            resized.height()
+        );
         assert!(!buf.is_empty(), "encoded PNG must not be empty");
     }
 
@@ -1010,7 +1048,8 @@ mod tests {
 
     #[test]
     fn field_boundary_ignores_subtitle() {
-        let src = "@article{b2021,\n  title = {Real Title},\n  subtitle = {Sub},\n  year = {2021}\n}\n";
+        let src =
+            "@article{b2021,\n  title = {Real Title},\n  subtitle = {Sub},\n  year = {2021}\n}\n";
         let entries = crate::core::bib::parse_bib(src);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].title, "Real Title");

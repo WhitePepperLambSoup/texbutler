@@ -35,7 +35,10 @@ fn percent_decode(s: &str) -> Result<String, ()> {
 /// content types can ever be served.
 const PREVIEW_EXTS: [&str; 7] = ["pdf", "png", "jpg", "jpeg", "gif", "svg", "webp"];
 
-fn serve_project_file(app: &tauri::AppHandle, request: &tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
+fn serve_project_file(
+    app: &tauri::AppHandle,
+    request: &tauri::http::Request<Vec<u8>>,
+) -> tauri::http::Response<Vec<u8>> {
     use tauri::http::{Response, StatusCode};
     let bad = |code: StatusCode| -> tauri::http::Response<Vec<u8>> {
         Response::builder().status(code).body(Vec::new()).unwrap()
@@ -52,7 +55,11 @@ fn serve_project_file(app: &tauri::AppHandle, request: &tauri::http::Request<Vec
     if !host_ok {
         return bad(StatusCode::FORBIDDEN);
     }
-    let path_and_query = request.uri().path_and_query().map(|p| p.as_str()).unwrap_or("/");
+    let path_and_query = request
+        .uri()
+        .path_and_query()
+        .map(|p| p.as_str())
+        .unwrap_or("/");
     // `http://tb-file.localhost/<percent-encoded absolute path>` → strip leading '/'
     let encoded = path_and_query.trim_start_matches('/');
     let Ok(decoded) = percent_decode(encoded) else {
@@ -148,17 +155,18 @@ pub fn run() {
             commands::project::tb_import_clipboard_image,
             commands::project::tb_list_bib_entries,
             commands::project::tb_ref_index,
-        commands::project::tb_scan_todos,
-        commands::project::tb_bib_from_id,
-        commands::templates::tb_list_market_templates,
-        commands::templates::tb_download_template,
-        commands::templates::tb_create_from_market_template,
-        commands::check::tb_count_words,
-        commands::project::tb_list_roots,
-        commands::ai::tb_ai_polish,
-        commands::project::tb_synctex_forward,
-        commands::project::tb_export,
-        commands::ai::tb_ai_translate,
+            commands::project::tb_scan_todos,
+            commands::project::tb_bib_from_id,
+            commands::templates::tb_list_market_templates,
+            commands::templates::tb_download_template,
+            commands::templates::tb_import_project_template,
+            commands::templates::tb_create_from_market_template,
+            commands::check::tb_count_words,
+            commands::project::tb_list_roots,
+            commands::ai::tb_ai_polish,
+            commands::project::tb_synctex_forward,
+            commands::project::tb_export,
+            commands::ai::tb_ai_translate,
             commands::project::tb_import_docx,
             commands::project::tb_save_template,
             commands::project::tb_list_templates,
@@ -178,10 +186,10 @@ pub fn run() {
             commands::ai::tb_ai_chat_stream,
             commands::ai::tb_ai_snapshots,
             commands::ai::tb_token_usage,
-    commands::ai::tb_token_usage_reset,
-    commands::ai::tb_ai_create_guide,
-    commands::ai::tb_ai_rollback,
-    commands::ai::tb_fix_rule_issue,
+            commands::ai::tb_token_usage_reset,
+            commands::ai::tb_ai_create_guide,
+            commands::ai::tb_ai_rollback,
+            commands::ai::tb_fix_rule_issue,
             commands::ai::tb_check_updates,
             commands::ai::tb_get_update_check,
             commands::ai::tb_set_update_check,
