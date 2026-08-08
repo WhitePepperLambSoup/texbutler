@@ -175,6 +175,46 @@ impl Project {
         out
     }
 
+    /// Best-effort path correction for AI tool calls: when a strict resolve
+    /// fails (the model hallucinated a path), match the basename against
+    /// every file in the project. Returns the unique match only — an
+    /// ambiguous basename (or none) yields None. Build dirs (`target/`,
+    /// `.git/`, hidden dirs) are skipped so compiled artifacts never win.
+    pub fn find_by_basename(&self, path: &str) -> Option<String> {
+        let base = path.rsplit(['/', '\\']).next().unwrap_or(path);
+        if base.is_empty() || base == "." || base == ".." {
+            return None;
+        }
+        let mut found: Option<String> = None;
+        let mut stack = vec![self.root.clone()];
+        while let Some(dir) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_dir() {
+                    let name = entry.file_name();
+                    let n = name.to_string_lossy();
+                    if n.starts_with('.') || n == "target" || n == "node_modules" {
+                        continue;
+                    }
+                    stack.push(p);
+                } else {
+                    let fname = entry.file_name();
+                    let f = fname.to_string_lossy();
+                    if f.eq_ignore_ascii_case(&base) {
+                        let Ok(rel) = p.strip_prefix(&self.root) else { continue };
+                        let rel = rel.to_string_lossy().replace('\\', "/");
+                        if found.is_some() {
+                            return None; // ambiguous: two files share the name
+                        }
+                        found = Some(rel);
+                    }
+                }
+            }
+        }
+        found
+    }
+
     /// The absolute path of the main file.
     pub fn main_path(&self) -> PathBuf {
         self.root.join(&self.main_file)
@@ -759,6 +799,50 @@ pub type FileCache = HashMap<String, String>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn find_by_basename_matches_unique_file_anywhere() {
+        // AI-hallucinated path (wrong directory) still resolves when the
+        // basename is unique inside the project
+        let dir = std::env::temp_dir().join(format!("tb-basename-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("contents")).unwrap();
+        std::fs::write(dir.join("contents/abstract.tex"), "\\begin{abstract}\n\\end{abstract}\n").unwrap();
+        std::fs::write(dir.join("main.tex"), "\\documentclass{article}\n").unwrap();
+        let proj = Project::open(&dir).unwrap();
+        // the model said "t/my-latex-project/contents/abstract.tex" — only
+        // the basename matters for the fallback
+        let found = proj.find_by_basename("t/my-latex-project/contents/abstract.tex");
+        assert_eq!(found.as_deref().map(|r| r.replace('\\', "/")), Some("contents/abstract.tex".into()));
+        // a plain relative path that happens to exist must NOT be rewritten
+        assert_eq!(proj.find_by_basename("contents/abstract.tex"), Some("contents/abstract.tex".into()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn find_by_basename_ambiguous_or_missing_returns_none() {
+        let dir = std::env::temp_dir().join(format!("tb-basename2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("a")).unwrap();
+        std::fs::create_dir_all(dir.join("b")).unwrap();
+        std::fs::write(dir.join("a/notes.tex"), "a\n").unwrap();
+        std::fs::write(dir.join("b/notes.tex"), "b\n").unwrap();
+        let proj = Project::open(&dir).unwrap();
+        // two files share the name → ambiguous → None (never guess)
+        assert_eq!(proj.find_by_basename("notes.tex"), None);
+        // build dirs are skipped: target/main.tex must not win
+        std::fs::create_dir_all(dir.join("target")).unwrap();
+        std::fs::write(dir.join("target/main.tex"), "build artifact\n").unwrap();
+        std::fs::write(dir.join("main.tex"), "real\n").unwrap();
+        let proj2 = Project::open(&dir).unwrap();
+        assert_eq!(
+            proj2.find_by_basename("some/where/main.tex").as_deref().map(|r| r.replace('\\', "/")),
+            Some("main.tex".into())
+        );
+        // missing basename → None
+        assert_eq!(proj2.find_by_basename("nope.tex"), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn document_roots_sees_documentclass_after_magic_comment() {

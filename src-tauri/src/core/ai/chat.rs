@@ -174,6 +174,7 @@ enum ApplyOutcome {
     Failed { rel: String, reason: String },
 }
 
+#[derive(Debug)]
 enum ToolOutcome {
     Applied(usize, Vec<String>, usize, String),
     None,
@@ -350,12 +351,20 @@ async fn execute_tool_calls(
     if calls.is_empty() {
         return ToolOutcome::None;
     }
+    // path correction map: when the model hallucinates a path and the
+    // strict resolve fails, we match the basename inside the project once
+    // and reuse the corrected path for every call on the same original path
+    let mut path_fix: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     // phase 1: compute the final content for each unique file
     let mut per_file: Vec<(String, String)> = Vec::new(); // (rel, content)
     let mut failures: Vec<String> = Vec::new();
     let mut skipped = 0usize; // old == new (no-op) calls, not errors
     for call in &calls {
-        let rel = project.relative_path(&call.file);
+        let orig_rel = project.relative_path(&call.file);
+        let mut rel = match path_fix.get(&orig_rel) {
+            Some(fixed) => fixed.clone(),
+            None => orig_rel.clone(),
+        };
         if !is_editable_doc(&rel) {
             failures.push(format!("{}({}): 受保护文件", call.tool, call.anchor));
             continue;
@@ -376,10 +385,25 @@ async fn execute_tool_calls(
                 }
             }
             None => {
-                let src = match project.read_file(&rel) {
+                let mut src = project.read_file(&rel);
+                if src.is_err() {
+                    // AI hallucinated the path: match the basename uniquely
+                    // inside the project (build dirs excluded)
+                    if let Some(found) = project.find_by_basename(&rel) {
+                        if is_editable_doc(&found) {
+                            path_fix.insert(orig_rel, found.clone());
+                            rel = found;
+                            src = project.read_file(&rel);
+                        }
+                    }
+                }
+                let src = match src {
                     Ok(s) => s,
                     Err(e) => {
-                        failures.push(format!("{}({}): 读取失败 {e}", call.tool, call.anchor));
+                        failures.push(format!(
+                            "{}({}): 读取失败（{e}）——路径不存在且项目内无唯一同名文件，请核对文件名",
+                            call.tool, call.anchor
+                        ));
                         continue;
                     }
                 };
@@ -1199,6 +1223,42 @@ mod tests {
         assert!(parse_tool_calls(reply).is_empty());
         let reply2 = "好的。【工具调用】";
         assert!(parse_tool_calls(reply2).is_empty());
+    }
+
+    #[test]
+    fn tool_execution_hallucinated_path_is_corrected_by_basename() {
+        // regression (user report): the model returned a bogus relative
+        // path `t/my-latex-project/contents/abstract.tex` that does not
+        // exist — the executor must fall back to a unique basename match
+        // inside the project instead of failing the whole fix
+        let dir = std::env::temp_dir().join(format!("tb-e2e-fuzzy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("contents")).unwrap();
+        std::fs::write(
+            dir.join("contents/abstract.tex"),
+            "\\begin{abstract}\n摘要内容\n\\end{abstract}\n",
+        )
+        .unwrap();
+        std::fs::write(dir.join("main.tex"), "\\documentclass{article}\n\\begin{document}\n\\end{document}\n").unwrap();
+        let proj = crate::core::project::Project::open(&dir).unwrap();
+        let reply = "【工具调用】{\"tool\": \"replace\", \"file\": \"t/my-latex-project/contents/abstract.tex\", \"old\": \"\\\\begin{abstract}\", \"new\": \"\\\\begin{abstract} 中文摘要：\"}";
+        let mut on_edit = |_: &str, _: &str, _: &str| {};
+        let outcome = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(execute_tool_calls(&proj, reply, &mut on_edit));
+        match outcome {
+            ToolOutcome::Applied(n, failures, skipped, _) => {
+                assert_eq!(n, 1, "one file must be edited: {failures:?} {skipped}");
+                assert!(failures.is_empty(), "no failures expected: {failures:?}");
+                // the edit landed on the real abstract.tex
+                let fixed = proj.read_file("contents/abstract.tex").unwrap();
+                assert!(fixed.contains("中文摘要"), "content must be updated: {fixed}");
+            }
+            other => panic!("expected Applied, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
