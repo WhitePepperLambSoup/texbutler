@@ -27,18 +27,11 @@ import QuickOpenModal from "./components/QuickOpenModal";
 /** Collapsible right rail hosting the AI panel: a thin
  * vertical strip when collapsed (does not take space), a full panel when
  * open. The state persists across launches. */
-function AiRail({ aiWidth, onAiDrag }: { aiWidth: number; onAiDrag: (e: React.MouseEvent) => void }) {
-  const [open, setOpen] = useState(() => localStorage.getItem("tb-ai-rail") !== "0");
+function AiRail({ aiWidth, open, onToggle }: { aiWidth: number; open: boolean; onToggle: () => void }) {
   const t = useT();
-  const toggle = () => {
-    const next = !open;
-    setOpen(next);
-    localStorage.setItem("tb-ai-rail", next ? "1" : "0");
-  };
   return (
     <aside className={`ai-rail ${open ? "open" : "collapsed"}`} style={open ? { width: aiWidth } : undefined}>
-      <div className="splitter-v" onMouseDown={onAiDrag} title={t("ui.resizeAi")} />
-      <button className="ai-rail-toggle" onClick={toggle} title={open ? t("ai.collapse") : t("ai.expand")}>
+      <button className="ai-rail-toggle" onClick={onToggle} title={open ? t("ai.collapse") : t("ai.expand")}>
         {open ? "◂" : "AI"}
       </button>
       {open && <AiPanel />}
@@ -94,7 +87,13 @@ export default function App() {
   const tree = usePanelSize("tb-tree-w", 220, 160, 460);
   const pdf = usePanelSize("tb-pdf-w", Math.round((window.innerWidth || 1400) * 0.38), 240, Math.round((window.innerWidth || 1400) * 0.7));
   const ai = usePanelSize("tb-ai-w", 300, 240, 520);
-  const bottom = usePanelHeight("tb-bottom-h", 280, 140, Math.round((window.innerHeight || 900) * 0.55));
+  const bottom = usePanelHeight("tb-bottom-h", 220, 140, Math.round((window.innerHeight || 900) * 0.55));
+  const [aiOpen, setAiOpen] = useState(() => localStorage.getItem("tb-ai-rail") !== "0");
+  const toggleAi = () => {
+    const next = !aiOpen;
+    setAiOpen(next);
+    localStorage.setItem("tb-ai-rail", next ? "1" : "0");
+  };
   const treeDrag = tree.startDrag;
   const pdfDrag = pdf.startDrag;
   const aiDrag = ai.startDrag;
@@ -292,9 +291,19 @@ export default function App() {
         useAiStore.getState().attachFile(s.activeTab);
       }
     });
+    // narrow windows: auto-collapse the AI rail so fixed-width panels never
+    // overflow and hide the editor (the "AI panel cut off" bug)
+    const onResize = () => {
+      if (window.innerWidth < 960) {
+        setAiOpen(false);
+        localStorage.setItem("tb-ai-rail", "0");
+      }
+    };
+    window.addEventListener("resize", onResize);
     return () => {
       window.removeEventListener("tb:file-saved", onSaved);
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onResize);
       unsubTab();
       window.clearTimeout(timer);
       window.clearTimeout(ruleTimer);
@@ -551,10 +560,19 @@ export default function App() {
           title={t("ui.resizePdf")}
           style={{ visibility: pdfPath ? "visible" : "hidden" }}
         />
-        <aside className={`col-pdf ${pdfPath ? "has-pdf" : ""}`} style={{ width: pdf.size }}>
+        <aside
+          className={`col-pdf ${pdfPath ? "has-pdf" : "no-pdf"}`}
+          style={{ width: pdfPath ? pdf.size : 0 }}
+        >
           <PdfPreview revision={pdfRev} page={pdfPage ?? undefined} />
         </aside>
-        <AiRail aiWidth={ai.size} onAiDrag={aiDrag} />
+        <div
+          className="splitter-v"
+          onMouseDown={aiDrag}
+          title={t("ui.resizeAi")}
+          style={{ visibility: aiOpen ? "visible" : "hidden" }}
+        />
+        <AiRail aiWidth={ai.size} open={aiOpen} onToggle={toggleAi} />
       </div>
       )}
       <div className="splitter-h" onMouseDown={bottomDrag} title={t("ui.resizeBottom")} />
