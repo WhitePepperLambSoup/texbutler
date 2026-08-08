@@ -57,8 +57,9 @@ function Node({
 }
 
 export default function ProjectTree() {
-  const { root, files, mainFile, openProject } = useProjectStore();
+  const { root, files, mainFile, openProject, openFile } = useProjectStore();
   const [newOpen, setNewOpen] = useState(false);
+  const [newFileOpen, setNewFileOpen] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null);
   const t = useT();
 
@@ -101,6 +102,14 @@ export default function ProjectTree() {
           </button>
           <button className="btn-mini" title={t("toolbar.new")} onClick={() => setNewOpen(true)}>
             {t("toolbar.new")}
+          </button>
+          <button
+            className="btn-mini"
+            title={t("tree.newFile")}
+            disabled={!root}
+            onClick={() => setNewFileOpen(true)}
+          >
+            {t("tree.newFileShort")}
           </button>
           <button
             className="btn-mini"
@@ -161,6 +170,78 @@ export default function ProjectTree() {
         </div>
       )}
       <NewProjectModal open={newOpen} onClose={() => setNewOpen(false)} />
+      {newFileOpen && (
+        <NewFileModal
+          onClose={() => setNewFileOpen(false)}
+          onCreated={async (rel) => {
+            setNewFileOpen(false);
+            try {
+              await openFile(rel);
+            } catch (e) {
+              window.alert(String(e));
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Dialog: create a new file inside the project (`.tex` gets a template). */
+function NewFileModal({ onClose, onCreated }: { onClose: () => void; onCreated: (rel: string) => Promise<void> }) {
+  const t = useT();
+  const [name, setName] = useState("new-file.tex");
+  const [tpl, setTpl] = useState("article");
+  const [busy, setBusy] = useState(false);
+  const doCreate = async () => {
+    const nm = name.trim();
+    if (!nm) return;
+    setBusy(true);
+    try {
+      await api.newFile(nm, nm.endsWith(".tex") ? tpl : undefined);
+      await onCreated(nm);
+    } catch (e) {
+      window.alert(String(e));
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{t("tree.newFile")}</span>
+          <button className="btn-mini" onClick={onClose}>
+            ×
+          </button>
+        </div>
+        <div className="modal-body">
+          <label>
+            {t("tree.newFileName")}
+            <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void doCreate()} />
+          </label>
+          {name.trim().endsWith(".tex") && (
+            <label>
+              {t("tree.newFileTemplate")}
+              <select value={tpl} onChange={(e) => setTpl(e.target.value)}>
+                <option value="article">{t("tree.tplArticle")}</option>
+                <option value="ctexart">{t("tree.tplCtexart")}</option>
+                <option value="report">{t("tree.tplReport")}</option>
+                <option value="beamer">{t("tree.tplBeamer")}</option>
+                <option value="minimal">{t("tree.tplMinimal")}</option>
+                <option value="">{t("tree.tplEmpty")}</option>
+              </select>
+            </label>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn-mini" onClick={onClose}>
+            {t("settings.cancel")}
+          </button>
+          <button className="btn-mini btn-primary" onClick={() => void doCreate()} disabled={busy}>
+            {t("tree.newFileCreate")}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

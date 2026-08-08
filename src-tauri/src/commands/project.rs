@@ -693,6 +693,58 @@ pub fn tb_write_file(
     Ok(())
 }
 
+/// Create a new file inside the project. `.tex` files can be seeded from a
+/// small built-in template (article/ctexart/report/beamer/minimal); other
+/// extensions start empty. Refuses existing paths and path traversal.
+#[tauri::command]
+pub fn tb_new_file(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+    template: Option<String>,
+) -> Result<(), String> {
+    let guard = state.project.read().map_err(|e| e.to_string())?;
+    let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
+    let rel = proj.relative_path(&path);
+    if rel.contains(':') || rel.starts_with('/') || rel.starts_with('\\') {
+        return Err("非法路径".to_string());
+    }
+    if rel.is_empty() || rel == "." {
+        return Err("文件名为空".to_string());
+    }
+    if proj.resolve(&rel).is_none() {
+        return Err("非法路径".to_string());
+    }
+    let full = proj.root.join(&rel);
+    if full.exists() {
+        return Err(format!("文件已存在: {rel}"));
+    }
+    let content: String = match template.as_deref() {
+        Some(t) if t == "article" => TEMPLATE_ARTICLE.to_string(),
+        Some(t) if t == "ctexart" => TEMPLATE_CTEXART.to_string(),
+        Some(t) if t == "report" => TEMPLATE_REPORT.to_string(),
+        Some(t) if t == "beamer" => TEMPLATE_BEAMER.to_string(),
+        Some(t) if t == "minimal" => TEMPLATE_MINIMAL.to_string(),
+        _ => String::new(),
+    };
+    if let Some(parent) = full.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&full, content).map_err(|e| e.to_string())?;
+    emit_project_changed(&app);
+    Ok(())
+}
+
+const TEMPLATE_ARTICLE: &str = "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\title{Title}\n\\author{Author}\n\\date{\\today}\n\n\\begin{document}\n\\maketitle\n\n\\section{Introduction}\n\nWrite here.\n\n\\end{document}\n";
+
+const TEMPLATE_CTEXART: &str = "\\documentclass{ctexart}\n\\title{标题}\n\\author{作者}\n\\date{\\today}\n\n\\begin{document}\n\\maketitle\n\n\\section{引言}\n\n在此书写内容。\n\n\\end{document}\n";
+
+const TEMPLATE_REPORT: &str = "\\documentclass[12pt,a4paper]{report}\n\\usepackage[utf8]{inputenc}\n\\title{Report Title}\n\\author{Author}\n\\date{\\today}\n\n\\begin{document}\n\\maketitle\n\\tableofcontents\n\n\\chapter{Introduction}\n\nWrite here.\n\n\\end{document}\n";
+
+const TEMPLATE_BEAMER: &str = "\\documentclass{beamer}\n\\usetheme{metropolis}\n\\title{Presentation Title}\n\\author{Author}\n\\date{\\today}\n\n\\begin{document}\n\\begin{frame}\n  \\titlepage\n\\end{frame}\n\n\\begin{frame}{Outline}\n  \\tableofcontents\n\\end{frame}\n\n\\section{Introduction}\n\\begin{frame}{Introduction}\n  Content here.\n\\end{frame}\n\n\\end{document}\n";
+
+const TEMPLATE_MINIMAL: &str = "\\documentclass{article}\n\\begin{document}\nHello, world!\n\\end{document}\n";
+
 /// A `\label{key}` found in the project (for ref/cite autocompletion).
 #[derive(serde::Serialize)]
 pub struct RefLabel {

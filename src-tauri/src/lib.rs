@@ -141,6 +141,7 @@ pub fn run() {
             commands::project::tb_project_info,
             commands::project::tb_read_file,
             commands::project::tb_write_file,
+            commands::project::tb_new_file,
             commands::project::tb_get_templates,
             commands::project::tb_set_main_file,
             commands::project::tb_import_image,

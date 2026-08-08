@@ -174,6 +174,8 @@ export const api = {
   projectInfo: () => invoke<ProjectInfo>("tb_project_info"),
   readFile: (path: string) => invoke<string>("tb_read_file", { path }),
   writeFile: (path: string, content: string) => invoke<void>("tb_write_file", { path, content }),
+  newFile: (path: string, template?: string) =>
+    invoke<void>("tb_new_file", { path, template: template ?? null }),
 
   // compile
   compile: (mainOverride?: string) =>
