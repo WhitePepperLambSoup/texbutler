@@ -61,6 +61,16 @@ async function main() {
   const wsUrl = await cdp();
   const c = await connect(wsUrl);
   await c.send("Runtime.enable");
+  // auto-dismiss native alerts (failed-open path calls window.alert)
+  await c.send("Page.enable");
+  const autoDismiss = async () => {
+    try {
+      await c.send("Page.handleJavaScriptDialog", { accept: true });
+    } catch {
+      /* no dialog */
+    }
+  };
+  const dialogTimer = setInterval(() => void autoDismiss(), 200);
   const exec = async (expr) => {
     const r = await c.send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true });
     if (r.exceptionDetails) throw new Error("JS: " + JSON.stringify(r.exceptionDetails));
@@ -147,6 +157,7 @@ async function main() {
   const step4Ok = step4.removed === true;
 
   c.close();
+  clearInterval(dialogTimer);
   await rm(PROJ, { recursive: true, force: true }).catch(() => {});
   const pass = step1Ok && step2Ok && step3Ok && step4Ok;
   console.log("E2E-DONE", pass ? "PASS" : "FAIL", { step1Ok, step2Ok, step3Ok, step4Ok });
