@@ -89,7 +89,12 @@ export default function App() {
   const pdf = usePanelSize("tb-pdf-w", Math.round((window.innerWidth || 1400) * 0.38), 240, Math.round((window.innerWidth || 1400) * 0.7));
   const ai = usePanelSize("tb-ai-w", 300, 240, 520);
   const bottom = usePanelHeight("tb-bottom-h", 220, 140, Math.round((window.innerHeight || 900) * 0.55));
-  const [aiOpen, setAiOpen] = useState(() => localStorage.getItem("tb-ai-rail") !== "0");
+  const [aiOpen, setAiOpen] = useState(() => {
+    // cold start: a narrow window must not restore an expanded AI rail
+    // (the "AI panel cut off" bug on first launch)
+    const saved = localStorage.getItem("tb-ai-rail") !== "0";
+    return saved && (window.innerWidth || 1400) >= 960;
+  });
   const toggleAi = () => {
     const next = !aiOpen;
     setAiOpen(next);
