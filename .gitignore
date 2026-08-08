@@ -19,6 +19,7 @@ src-tauri/gen/schemas/
 
 # Agent tool internals
 .reasonix/
+.worktrees/
 
 # OS
 Thumbs.db
