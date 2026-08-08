@@ -693,37 +693,6 @@ pub fn tb_write_file(
     Ok(())
 }
 
-/// Project-wide dangling-reference check (rule "refs"): every `\ref` must
-/// match a `\label` somewhere in the project, every `\cite` must match a
-/// `.bib` key. Returns the same `Issue` list the rule engine emits.
-#[tauri::command]
-pub fn tb_check_refs(state: State<'_, AppState>) -> Result<Vec<crate::core::Issue>, String> {
-    let guard = state.project.read().map_err(|e| e.to_string())?;
-    let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
-    let mut ctx = crate::core::rules::ProjectCtx {
-        files: Vec::new(),
-        bib_keys: Vec::new(),
-    };
-    for rel in proj.tex_files() {
-        if let Ok(content) = proj.read_file(&rel) {
-            ctx.files.push((rel, content));
-        }
-    }
-    for rel in proj.bib_files() {
-        if let Ok(content) = proj.read_file(&rel) {
-            for entry in crate::core::bib::parse_bib(&content) {
-                if !ctx.bib_keys.contains(&entry.key) {
-                    ctx.bib_keys.push(entry.key);
-                }
-            }
-        }
-    }
-    let mut issues = Vec::new();
-    let enabled = |_id: &str| true;
-    crate::core::rules::check_project(&ctx, &enabled, &mut issues);
-    Ok(issues)
-}
-
 /// A `\label{key}` found in the project (for ref/cite autocompletion).
 #[derive(serde::Serialize)]
 pub struct RefLabel {

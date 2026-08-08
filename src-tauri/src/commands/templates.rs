@@ -138,7 +138,14 @@ pub async fn tb_download_template(id: String) -> Result<String, String> {
         let name = entry.name().to_string();
         let rel = match name.split_once('/') {
             Some((_, rest)) if !rest.is_empty() => rest,
-            _ => continue, // the root dir itself
+            _ => {
+                // the zip root dir itself, or a prefix-less entry that
+                // would silently drop the file — surface it, don't swallow
+                if !name.ends_with('/') {
+                    eprintln!("template zip entry without directory prefix skipped: {name}");
+                }
+                continue;
+            }
         };
         // traversal defense: reject any ../, absolute, or drive-relative
         // (C:evil) component — a `:` prefix on Windows would otherwise
