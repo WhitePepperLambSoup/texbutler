@@ -54,7 +54,14 @@ function connect(wsUrl) {
 
 async function main() {
   let client;
+  let exec;
+  let files = true;
   let failed = false;
+  let inspectLocale;
+  let setLocale;
+  let localeBefore;
+  let localeAfter;
+  let testLocaleBaseline;
   try {
     await rm(PROJ, { recursive: true, force: true }).catch(() => {});
     await mkdir(PROJ, { recursive: true });
@@ -68,7 +75,7 @@ async function main() {
       deviceScaleFactor: 1,
       mobile: false,
     });
-    const exec = async (expression) => {
+    exec = async (expression) => {
       const result = await client.send("Runtime.evaluate", {
         expression,
         awaitPromise: true,
@@ -77,6 +84,28 @@ async function main() {
       if (result.exceptionDetails) throw new Error(`JS: ${JSON.stringify(result.exceptionDetails)}`);
       return result.result.value;
     };
+    inspectLocale = async () => JSON.parse(await exec(`(async () => {
+      const i18nUrl = performance.getEntriesByType('resource')
+        .map((entry) => entry.name)
+        .find((name) => new URL(name).pathname.endsWith('/src/i18n/index.ts') && new URL(name).search)
+        ?? '/src/i18n/index.ts';
+      const { useI18n } = await import(i18nUrl);
+      const storedLang = window.localStorage.getItem('tb-lang');
+      return JSON.stringify({
+        lang: useI18n.getState().lang,
+        hasStoredLang: storedLang !== null,
+        storedLang,
+      });
+    })()`));
+    setLocale = async (lang) => exec(`(async () => {
+      const i18nUrl = performance.getEntriesByType('resource')
+        .map((entry) => entry.name)
+        .find((name) => new URL(name).pathname.endsWith('/src/i18n/index.ts') && new URL(name).search)
+        ?? '/src/i18n/index.ts';
+      const { useI18n } = await import(i18nUrl);
+      useI18n.getState().setLang(${JSON.stringify(lang)});
+      return true;
+    })()`);
     const pressEscape = async () => {
       const event = { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 };
       await client.send("Input.dispatchKeyEvent", { type: "keyDown", ...event });
@@ -109,6 +138,11 @@ async function main() {
       return true;
     })()`);
     await sleep(350);
+    if (suite !== "theme" && suite !== "pdf") {
+      localeBefore = await inspectLocale();
+      testLocaleBaseline = localeBefore.lang === "en" ? "zh" : "en";
+      await setLocale(testLocaleBaseline);
+    }
 
     const runFiles = async () => {
       const result = {
@@ -149,15 +183,7 @@ async function main() {
       result.basicHasSixSeeds = toolbarContract.basicSeeds === 6;
       await clickSelector('[data-new-file-tab="user"]');
       const importTargetGuidance = async (lang) => {
-        await exec(`(async () => {
-          const i18nUrl = performance.getEntriesByType('resource')
-            .map((entry) => entry.name)
-            .find((name) => new URL(name).pathname.endsWith('/src/i18n/index.ts') && new URL(name).search)
-            ?? '/src/i18n/index.ts';
-          const { useI18n } = await import(i18nUrl);
-          useI18n.getState().setLang(${JSON.stringify(lang)});
-          return true;
-        })()`);
+        await setLocale(lang);
         await sleep(80);
         return JSON.parse(await exec(`JSON.stringify(
           document.querySelector('.new-file-modal .new-file-panel label.target-row')?.textContent?.trim() ?? ''
@@ -199,28 +225,52 @@ async function main() {
       return result;
     };
 
-    const files = suite === "theme" || suite === "pdf" ? true : await runFiles();
-    const filesOk = files === true || (
-      files.toolbarEntryOpensNewFile
-      && files.treeEntryOpensNewFile
-      && files.sameModalContract
-      && JSON.stringify(files.tabs) === JSON.stringify(["basic", "user", "market"])
-      && files.basicHasSixSeeds
-      && files.importTargetGuidance.en
-      && files.importTargetGuidance.zh
-      && files.newProjectHasNoTemplateTabs
-      && files.newProjectHasParentAndNameOnly
-    );
-    failed = !filesOk;
-    console.log("FILES", JSON.stringify(files));
-    console.log("E2E-DONE", failed ? "FAIL" : "PASS", { suite, filesOk });
+    files = suite === "theme" || suite === "pdf" ? true : await runFiles();
+    if (files !== true) await setLocale(testLocaleBaseline);
   } finally {
+    if (client && localeBefore && inspectLocale && setLocale) {
+      await setLocale(localeBefore.lang);
+      const storageSnapshot = JSON.stringify({
+        hasStoredLang: localeBefore.hasStoredLang,
+        storedLang: localeBefore.storedLang,
+      });
+      await exec(`(() => {
+        const snapshot = ${storageSnapshot};
+        if (snapshot.hasStoredLang) window.localStorage.setItem('tb-lang', snapshot.storedLang);
+        else window.localStorage.removeItem('tb-lang');
+        return true;
+      })()`);
+      localeAfter = await inspectLocale();
+    }
     if (client) {
       await client.send("Emulation.clearDeviceMetricsOverride").catch(() => {});
       client.close();
     }
     await rm(PROJ, { recursive: true, force: true }).catch(() => {});
   }
+  if (files !== true) {
+    files.localeRestored = {
+      live: localeAfter?.lang === localeBefore?.lang,
+      storage: localeAfter?.hasStoredLang === localeBefore?.hasStoredLang
+        && localeAfter?.storedLang === localeBefore?.storedLang,
+    };
+  }
+  const filesOk = files === true || (
+    files.toolbarEntryOpensNewFile
+    && files.treeEntryOpensNewFile
+    && files.sameModalContract
+    && JSON.stringify(files.tabs) === JSON.stringify(["basic", "user", "market"])
+    && files.basicHasSixSeeds
+    && files.importTargetGuidance.en
+    && files.importTargetGuidance.zh
+    && files.newProjectHasNoTemplateTabs
+    && files.newProjectHasParentAndNameOnly
+    && files.localeRestored.live
+    && files.localeRestored.storage
+  );
+  failed = !filesOk;
+  console.log("FILES", JSON.stringify(files));
+  console.log("E2E-DONE", failed ? "FAIL" : "PASS", { suite, filesOk });
   if (failed) process.exitCode = 1;
 }
 
