@@ -15,8 +15,10 @@ export function loadRecent(): RecentProject[] {
     if (!raw) return [];
     const arr = JSON.parse(raw) as RecentProject[];
     if (!Array.isArray(arr)) return [];
+    const seen = new Set<string>();
     return arr
       .filter((p) => typeof p?.path === "string")
+      .filter((p) => (seen.has(p.path) ? false : (seen.add(p.path), true)))
       .slice(0, 10);
   } catch {
     return [];

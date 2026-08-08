@@ -1,4 +1,4 @@
-// e2e: v0.7.0 welcome screen + recent projects (one-click restore).
+// e2e: v0.8.0 welcome screen + recent projects (one-click restore).
 import { writeFile, rm, mkdir } from "node:fs/promises";
 
 const CDP_PORT = 9336;
