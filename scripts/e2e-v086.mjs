@@ -104,6 +104,7 @@ async function main() {
       const bottomStorage = layout.bottomHeight != null
         ? `localStorage.setItem('tb-bottom-h', ${layout.bottomHeight});`
         : "localStorage.removeItem('tb-bottom-h');";
+      const theme = layout.theme ?? "dark";
       await client.send("Emulation.setDeviceMetricsOverride", {
         width,
         height,
@@ -116,6 +117,7 @@ async function main() {
         localStorage.setItem('tb-ai-sessions', '[]');
         localStorage.setItem('tb-ai-file-sessions', '{}');
         localStorage.setItem('tb-tree-w', ${treeWidth});
+        localStorage.setItem('tb-theme', ${JSON.stringify(theme)});
         ${pdfStorage}
         ${bottomStorage}
         return true;
@@ -228,7 +230,7 @@ async function main() {
           }),
           pdfVisible: !!pdfRect && pdfRect.width >= 500,
           narrowEditor: !!editorRect && editorRect.width <= 220,
-          targetEditorWidth: !!editorRect && editorRect.width >= 150 && editorRect.width <= 200,
+          targetEditorWidth: !!editorRect && editorRect.width >= 150 && editorRect.width <= 160,
           editorWidth: editorRect ? Math.round(editorRect.width) : -1,
           pdfWidth: pdfRect ? Math.round(pdfRect.width) : -1,
           headerClientWidth: header?.clientWidth ?? -1,
@@ -246,6 +248,8 @@ async function main() {
         if (!editor || !menu) return JSON.stringify({ exists: false });
         const editorRect = editor.getBoundingClientRect();
         const menuRect = menu.getBoundingClientRect();
+        const menuClientWidth = menu.clientWidth;
+        const menuScrollWidth = menu.scrollWidth;
         const menuClientHeight = menu.clientHeight;
         const menuScrollHeight = menu.scrollHeight;
         const symbolTrigger = menu.querySelector('.format-buttons > .btn-mini:last-child');
@@ -257,8 +261,11 @@ async function main() {
         return JSON.stringify({
           exists: true,
           insideEditor: menuRect.left >= editorRect.left && menuRect.right <= editorRect.right && menuRect.bottom <= editorRect.bottom,
+          horizontalFits: menuScrollWidth <= menuClientWidth + 1,
           scrollCapacity: menuScrollHeight >= menuClientHeight,
           scrollOverflow: menuScrollHeight > menuClientHeight,
+          menuClientWidth,
+          menuScrollWidth,
           menuClientHeight,
           menuScrollHeight,
           symbolOpened,
@@ -276,6 +283,7 @@ async function main() {
         && primary.targetEditorWidth
         && menu.exists
         && menu.insideEditor
+        && menu.horizontalFits
         && menu.scrollCapacity
         && menu.scrollOverflow
         && menu.symbolOpened
@@ -283,8 +291,59 @@ async function main() {
         && menu.controlCount >= 12;
     };
 
+    const runLightContrast = async () => {
+      await loadCase(1280, 800, 300, false, false, { theme: "light" });
+      const result = JSON.parse(await exec(`(() => {
+        const parseColor = (value) => {
+          const parts = value.match(/[\\d.]+/g)?.map(Number);
+          if (!parts || parts.length < 3) return null;
+          return { r: parts[0], g: parts[1], b: parts[2], a: parts[3] ?? 1 };
+        };
+        const luminance = (color) => {
+          const channel = (value) => {
+            const normalized = value / 255;
+            return normalized <= 0.04045
+              ? normalized / 12.92
+              : ((normalized + 0.055) / 1.055) ** 2.4;
+          };
+          return 0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b);
+        };
+        const opaqueBackground = (element) => {
+          for (let current = element; current; current = current.parentElement) {
+            const background = parseColor(getComputedStyle(current).backgroundColor);
+            if (background?.a === 1) return background;
+          }
+          return null;
+        };
+        const contrast = (selector) => {
+          const element = document.querySelector(selector);
+          if (!element) return { exists: false, ratio: 0 };
+          const foreground = parseColor(getComputedStyle(element).color);
+          const background = opaqueBackground(element);
+          if (!foreground || !background) return { exists: false, ratio: 0 };
+          const fg = luminance(foreground);
+          const bg = luminance(background);
+          return { exists: true, ratio: (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05) };
+        };
+        const checks = {
+          brand: contrast('.brand'),
+          activeTab: contrast('.tab-active'),
+          treeTabDim: contrast('.tree-tab:not(.active)'),
+          panelTitleDim: contrast('.panel-title'),
+          toolbarRootDim: contrast('.toolbar-root'),
+          activeMainTag: contrast('.tree-active .tree-main-tag'),
+        };
+        return JSON.stringify(checks);
+      })()`));
+      const ok = Object.values(result).every((check) => check.exists && check.ratio >= 4.5);
+      console.log("LIGHT contrast:", JSON.stringify(result));
+      return ok;
+    };
+
     const aiOk = suite === "editor" ? true : await runAi();
-    const editorOk = suite === "ai" ? true : await runEditor();
+    const editorLayoutOk = suite === "ai" ? true : await runEditor();
+    const lightContrastOk = suite === "ai" ? true : await runLightContrast();
+    const editorOk = editorLayoutOk && lightContrastOk;
     failed = !(aiOk && editorOk);
     console.log("E2E-DONE", failed ? "FAIL" : "PASS", { suite, aiOk, editorOk });
   } finally {
