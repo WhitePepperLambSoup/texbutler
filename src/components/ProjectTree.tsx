@@ -60,15 +60,8 @@ export default function ProjectTree() {
   const { root, files, mainFile, openProject } = useProjectStore();
   const [newOpen, setNewOpen] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null);
-  const [recent, setRecent] = useState<string[]>([]);
   const t = useT();
 
-  // load recent projects whenever no project is open
-  useEffect(() => {
-    if (!useProjectStore.getState().root) {
-      void api.recentProjects().then(setRecent).catch(() => setRecent([]));
-    }
-  }, [root]);
   // File-tree auto-refresh is driven by the notify watcher
   // (tb://file-changed, debounced in compileStore) — no polling needed.
 
@@ -150,21 +143,6 @@ export default function ProjectTree() {
           <p>{t("tree.noProject")}</p>
           <button onClick={handleOpen}>{t("tree.openFolder")}</button>
           <button onClick={() => setNewOpen(true)}>{t("tree.newProject")}</button>
-          {recent.length > 0 && (
-            <div className="recent-list">
-              <div className="recent-title">{t("tree.recent")}</div>
-              {recent.map((p) => (
-                <button
-                  key={p}
-                  className="recent-item"
-                  title={p}
-                  onClick={() => void openProject(p)}
-                >
-                  {p.split(/[\\/]/).pop() || p}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
       )}
       {menu && (

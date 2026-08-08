@@ -256,11 +256,6 @@ pub async fn tb_open_project(
         *proj_guard = Some(proj);
     }
     *state.watcher.write().map_err(|e| e.to_string())? = Some(handle);
-    state
-        .settings
-        .write()
-        .map_err(|e| e.to_string())?
-        .remember_project(&dir.to_string_lossy());
 
     Ok(project_info(&state)?)
 }
@@ -304,7 +299,6 @@ pub async fn tb_new_project(
         }
         _ => Project::create(Path::new(&parent), &name)?,
     };
-    let dir = proj.root.clone();
     let (tx, rx) = std::sync::mpsc::channel();
     let handle = proj.watch(tx)?;
     let app2 = app.clone();
@@ -323,11 +317,6 @@ pub async fn tb_new_project(
         *proj_guard = Some(proj);
     }
     *state.watcher.write().map_err(|e| e.to_string())? = Some(handle);
-    state
-        .settings
-        .write()
-        .map_err(|e| e.to_string())?
-        .remember_project(&dir.to_string_lossy());
     Ok(project_info(&state)?)
 }
 
@@ -702,12 +691,6 @@ pub fn tb_write_file(
     proj.write_file(&path, &content)?;
     emit_project_changed(&app);
     Ok(())
-}
-
-/// Recently opened projects (most recent first).
-#[tauri::command]
-pub fn tb_recent_projects(state: State<'_, AppState>) -> Vec<String> {
-    state.settings.read().map(|s| s.recent_projects.clone()).unwrap_or_default()
 }
 
 /// Project-wide dangling-reference check (rule "refs"): every `\ref` must

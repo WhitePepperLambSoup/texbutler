@@ -30,8 +30,6 @@ pub struct Settings {
     pub rules: std::collections::HashMap<String, bool>,
     /// Number of passes for the system texlive driver.
     pub texlive_passes: u32,
-    /// Recently opened project paths (most recent first).
-    pub recent_projects: Vec<String>,
     /// Check GitHub releases for updates on startup.
     #[serde(default = "default_true")]
     pub check_updates: bool,
@@ -48,7 +46,6 @@ impl Default for Settings {
             engine: EnginePreference::Auto,
             rules: std::collections::HashMap::new(),
             texlive_passes: 2,
-            recent_projects: Vec::new(),
             check_updates: true,
         }
     }
@@ -85,13 +82,6 @@ impl Settings {
     /// Whether a rule is enabled (falls back to the rule default).
     pub fn rule_enabled(&self, id: &str, default: bool) -> bool {
         self.rules.get(id).copied().unwrap_or(default)
-    }
-
-    pub fn remember_project(&mut self, path: &str) {
-        self.recent_projects.retain(|p| p != path);
-        self.recent_projects.insert(0, path.to_string());
-        self.recent_projects.truncate(10);
-        let _ = self.save();
     }
 }
 
