@@ -57,9 +57,8 @@ function Node({
 }
 
 export default function ProjectTree() {
-  const { root, files, mainFile, openProject, openFile } = useProjectStore();
+  const { root, files, mainFile, openProject } = useProjectStore();
   const [newOpen, setNewOpen] = useState(false);
-  const [newFileOpen, setNewFileOpen] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null);
   const t = useT();
 
@@ -102,14 +101,6 @@ export default function ProjectTree() {
           </button>
           <button className="btn-mini" title={t("toolbar.new")} onClick={() => setNewOpen(true)}>
             {t("toolbar.new")}
-          </button>
-          <button
-            className="btn-mini"
-            title={t("tree.newFile")}
-            disabled={!root}
-            onClick={() => setNewFileOpen(true)}
-          >
-            {t("tree.newFileShort")}
           </button>
           <button
             className="btn-mini"
@@ -170,25 +161,12 @@ export default function ProjectTree() {
         </div>
       )}
       <NewProjectModal open={newOpen} onClose={() => setNewOpen(false)} />
-      {newFileOpen && (
-        <NewFileModal
-          onClose={() => setNewFileOpen(false)}
-          onCreated={async (rel) => {
-            setNewFileOpen(false);
-            try {
-              await openFile(rel);
-            } catch (e) {
-              window.alert(String(e));
-            }
-          }}
-        />
-      )}
     </div>
   );
 }
 
 /** Dialog: create a new file inside the project (`.tex` gets a template). */
-function NewFileModal({ onClose, onCreated }: { onClose: () => void; onCreated: (rel: string) => Promise<void> }) {
+export function NewFileModal({ onClose, onCreated }: { onClose: () => void; onCreated: (rel: string) => Promise<void> }) {
   const t = useT();
   const [name, setName] = useState("new-file.tex");
   const [tpl, setTpl] = useState("article");

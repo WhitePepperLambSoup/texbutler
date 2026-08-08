@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import ProjectTree from "./components/ProjectTree";
+import ProjectTree, { NewFileModal } from "./components/ProjectTree";
 import OutlinePanel from "./components/OutlinePanel";
 import BibPanel from "./components/BibPanel";
 import TodoPanel from "./components/TodoPanel";
@@ -82,6 +82,7 @@ export default function App() {
   const busy = useAiStore((s) => s.busy);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [newFileOpen, setNewFileOpen] = useState(false);
   const [welcomeRev, setWelcomeRev] = useState(0);
   // Windows-style splitter sizes (draggable separator bars, persisted)
   const tree = usePanelSize("tb-tree-w", 220, 160, 460);
@@ -413,6 +414,14 @@ export default function App() {
         <button className="btn" onClick={() => void importWord()} disabled={!root}>
           Word→LaTeX
         </button>
+        <button
+          className="btn"
+          title={t("tree.newFile")}
+          disabled={!root}
+          onClick={() => setNewFileOpen(true)}
+        >
+          {t("toolbar.newFile")}
+        </button>
         {root && activeTab?.endsWith(".tex") && (
           <>
             <button
@@ -619,6 +628,19 @@ export default function App() {
       </div>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <NewProjectModal open={newProjectOpen} onClose={() => setNewProjectOpen(false)} />
+      {newFileOpen && (
+        <NewFileModal
+          onClose={() => setNewFileOpen(false)}
+          onCreated={async (rel) => {
+            setNewFileOpen(false);
+            try {
+              await useProjectStore.getState().openFile(rel);
+            } catch (e) {
+              window.alert(String(e));
+            }
+          }}
+        />
+      )}
       {quickOpen && (
         <QuickOpenModal
           onClose={() => {
