@@ -753,7 +753,7 @@ export default function EditorPane() {
         </div>
       </div>
       {toolsOpen && (
-        <div className="editor-tools-menu" ref={toolsMenuRef} role="menu">
+        <div className="editor-tools-menu" ref={toolsMenuRef}>
           <div className="format-buttons" title={t("editor.insert")}>
           <button className="btn-mini" title="插入图片" onClick={() => void insertImage()} disabled={!active}>
             {t("toolbar.image")}
@@ -900,6 +900,15 @@ export default function EditorPane() {
             αβ
           </button>
           </div>
+          {symbolOpen && (
+            <div className="symbol-panel">
+              {MATH_SYMBOLS.map((s) => (
+                <button key={s} className="symbol-btn" onClick={() => insertSnippet(s)}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="editor-tools-footer">
           <select
             className="snippet-select"
@@ -941,15 +950,6 @@ export default function EditorPane() {
             {t("editor.locateInPdf")}
           </button>
           </div>
-        </div>
-      )}
-      {symbolOpen && (
-        <div className="symbol-panel">
-          {MATH_SYMBOLS.map((s) => (
-            <button key={s} className="symbol-btn" onClick={() => insertSnippet(s)}>
-              {s}
-            </button>
-          ))}
         </div>
       )}
       {active ? (

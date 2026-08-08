@@ -530,16 +530,14 @@ body {
 }
 
 .symbol-panel {
-  position: absolute;
-  top: 30px;
-  right: 8px;
-  z-index: 50;
+  width: 100%;
+  margin-top: 6px;
   background: var(--bg3);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 6px;
   display: grid;
-  grid-template-columns: repeat(9, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(30px, 1fr));
   gap: 2px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
 }
@@ -549,7 +547,8 @@ body {
   border: 1px solid var(--border);
   color: var(--fg);
   border-radius: 4px;
-  width: 30px;
+  width: 100%;
+  min-width: 0;
   height: 26px;
   cursor: pointer;
   font-size: 14px;
@@ -572,6 +571,7 @@ body {
 
 .btn-mini:hover:not(:disabled) {
   border-color: var(--accent2);
+  background: var(--accent);
   color: #fff;
 }
 

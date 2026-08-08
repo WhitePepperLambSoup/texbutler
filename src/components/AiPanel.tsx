@@ -173,10 +173,9 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
               <MoreHorizontal size={16} aria-hidden="true" />
             </button>
             {menuOpen && (
-              <div className="ai-menu" role="menu">
+              <div className="ai-menu">
                 <button
                   className="ai-menu-item"
-                  role="menuitem"
                   disabled={!sessionId || busy}
                   onClick={() => {
                     if (!sessionId) return;
@@ -190,7 +189,6 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
                 </button>
                 <button
                   className="ai-menu-item danger"
-                  role="menuitem"
                   disabled={!sessionId || busy}
                   onClick={() => {
                     if (sessionId && window.confirm(t("ai.sessionDeleteConfirm"))) deleteSession(sessionId);
@@ -203,7 +201,6 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
                 <div className="ai-menu-separator" />
                 <button
                   className="ai-menu-item"
-                  role="menuitem"
                   onClick={() => {
                     void loadSnapshots();
                     setMenuOpen(false);
@@ -214,7 +211,6 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
                 </button>
                 <button
                   className="ai-menu-item"
-                  role="menuitem"
                   onClick={() => {
                     createGuide();
                     setMenuOpen(false);
@@ -225,7 +221,6 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
                 </button>
                 <button
                   className="ai-menu-item"
-                  role="menuitem"
                   disabled={messages.length === 0}
                   onClick={() => {
                     clearMessages();
@@ -237,7 +232,6 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
                 </button>
                 <button
                   className="ai-menu-item"
-                  role="menuitem"
                   disabled={!usage}
                   onClick={() => {
                     void (async () => {

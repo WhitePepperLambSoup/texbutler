@@ -202,6 +202,14 @@ async function main() {
       for (const testCase of cases) {
         await loadCase(testCase.width, testCase.height, testCase.aiWidth, false, testCase.withSuggestion);
         const result = await measureAi();
+        result.naturalPopoverSemantics = JSON.parse(await exec(`(async () => {
+          document.querySelector('.ai-menu-anchor > button')?.click();
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          const menu = document.querySelector('.ai-menu');
+          return JSON.stringify(!!menu
+            && !menu.hasAttribute('role')
+            && menu.querySelectorAll('[role="menuitem"]').length === 0);
+        })()`));
         const caseOk = Object.entries(result)
           .filter(([, value]) => typeof value === "boolean")
           .every(([, value]) => value === true);
@@ -253,11 +261,8 @@ async function main() {
         const menuClientHeight = menu.clientHeight;
         const menuScrollHeight = menu.scrollHeight;
         const symbolTrigger = menu.querySelector('.format-buttons > .btn-mini:last-child');
-        symbolTrigger?.click();
-        await new Promise((resolve) => setTimeout(resolve, 30));
-        const symbolOpened = !!document.querySelector('.symbol-panel');
-        button.click();
-        await new Promise((resolve) => setTimeout(resolve, 30));
+        symbolTrigger?.scrollIntoView({ block: 'nearest' });
+        const symbolTriggerRect = symbolTrigger?.getBoundingClientRect();
         return JSON.stringify({
           exists: true,
           insideEditor: menuRect.left >= editorRect.left && menuRect.right <= editorRect.right && menuRect.bottom <= editorRect.bottom,
@@ -268,14 +273,133 @@ async function main() {
           menuScrollWidth,
           menuClientHeight,
           menuScrollHeight,
-          symbolOpened,
-          symbolClearedOnClose: !document.querySelector('.editor-tools-menu') && !document.querySelector('.symbol-panel'),
+          naturalPopoverSemantics: !menu.hasAttribute('role') && menu.querySelectorAll('[role="menuitem"]').length === 0,
+          symbolTriggerPoint: symbolTriggerRect ? {
+            x: symbolTriggerRect.left + symbolTriggerRect.width / 2,
+            y: symbolTriggerRect.top + symbolTriggerRect.height / 2,
+          } : null,
           controlCount: menu.querySelectorAll('button, select').length,
         });
       })()`));
 
+      let picker = {
+        opened: false,
+        containedByMenu: false,
+        insideMenuHorizontally: false,
+        insideEditorHorizontally: false,
+        horizontalFits: false,
+        stayedOpenOnPointerDown: false,
+        insertedThroughPointer: false,
+        clearedOnMenuClose: false,
+      };
+      if (menu.symbolTriggerPoint) {
+        await client.send('Input.dispatchMouseEvent', {
+          type: 'mouseMoved',
+          x: menu.symbolTriggerPoint.x,
+          y: menu.symbolTriggerPoint.y,
+        });
+        await client.send('Input.dispatchMouseEvent', {
+          type: 'mousePressed',
+          x: menu.symbolTriggerPoint.x,
+          y: menu.symbolTriggerPoint.y,
+          button: 'left',
+          clickCount: 1,
+        });
+        await client.send('Input.dispatchMouseEvent', {
+          type: 'mouseReleased',
+          x: menu.symbolTriggerPoint.x,
+          y: menu.symbolTriggerPoint.y,
+          button: 'left',
+          clickCount: 1,
+        });
+        await sleep(50);
+
+        picker = JSON.parse(await exec(`(async () => {
+          const menu = document.querySelector('.editor-tools-menu');
+          const panel = document.querySelector('.symbol-panel');
+          const editor = document.querySelector('.col-editor');
+          const firstSymbol = panel?.querySelector('.symbol-btn');
+          firstSymbol?.scrollIntoView({ block: 'nearest' });
+          const menuRect = menu?.getBoundingClientRect();
+          const panelRect = panel?.getBoundingClientRect();
+          const editorRect = editor?.getBoundingClientRect();
+          const symbolRect = firstSymbol?.getBoundingClientRect();
+          const { useProjectStore } = await import('/src/store/projectStore.ts');
+          const state = useProjectStore.getState();
+          const beforeContent = state.tabs.find((tab) => tab.path === state.activeTab)?.content ?? null;
+          return JSON.stringify({
+            opened: !!panel,
+            containedByMenu: !!menu && !!panel && menu.contains(panel),
+            insideMenuHorizontally: !!menuRect && !!panelRect && panelRect.left >= menuRect.left && panelRect.right <= menuRect.right,
+            insideEditorHorizontally: !!editorRect && !!panelRect && panelRect.left >= editorRect.left && panelRect.right <= editorRect.right,
+            horizontalFits: !!panel && panel.scrollWidth <= panel.clientWidth + 1,
+            symbolPoint: symbolRect ? {
+              x: symbolRect.left + symbolRect.width / 2,
+              y: symbolRect.top + symbolRect.height / 2,
+            } : null,
+            symbolText: firstSymbol?.textContent ?? null,
+            beforeContent,
+          });
+        })()`));
+
+        if (picker.symbolPoint) {
+          await client.send('Input.dispatchMouseEvent', {
+            type: 'mouseMoved',
+            x: picker.symbolPoint.x,
+            y: picker.symbolPoint.y,
+          });
+          await client.send('Input.dispatchMouseEvent', {
+            type: 'mousePressed',
+            x: picker.symbolPoint.x,
+            y: picker.symbolPoint.y,
+            button: 'left',
+            clickCount: 1,
+          });
+          await sleep(30);
+          picker.stayedOpenOnPointerDown = JSON.parse(await exec(`JSON.stringify({
+            menu: !!document.querySelector('.editor-tools-menu'),
+            picker: !!document.querySelector('.symbol-panel'),
+          })`));
+          picker.stayedOpenOnPointerDown = picker.stayedOpenOnPointerDown.menu && picker.stayedOpenOnPointerDown.picker;
+          await client.send('Input.dispatchMouseEvent', {
+            type: 'mouseReleased',
+            x: picker.symbolPoint.x,
+            y: picker.symbolPoint.y,
+            button: 'left',
+            clickCount: 1,
+          });
+          await sleep(80);
+          const afterPointer = JSON.parse(await exec(`(async () => {
+            const { useProjectStore } = await import('/src/store/projectStore.ts');
+            const state = useProjectStore.getState();
+            const content = state.tabs.find((tab) => tab.path === state.activeTab)?.content ?? null;
+            return JSON.stringify({
+              content,
+              menuOpen: !!document.querySelector('.editor-tools-menu'),
+              pickerOpen: !!document.querySelector('.symbol-panel'),
+            });
+          })()`));
+          picker.insertedThroughPointer = typeof picker.beforeContent === 'string'
+            && typeof afterPointer.content === 'string'
+            && typeof picker.symbolText === 'string'
+            && afterPointer.content.length === picker.beforeContent.length + picker.symbolText.length
+            && afterPointer.content.includes(picker.symbolText);
+
+          if (afterPointer.menuOpen && afterPointer.pickerOpen) {
+            await exec(`document.querySelector('.editor-more-action')?.click()`);
+            await sleep(40);
+            picker.clearedOnMenuClose = JSON.parse(await exec(`JSON.stringify({
+              menuClosed: !document.querySelector('.editor-tools-menu'),
+              pickerClosed: !document.querySelector('.symbol-panel'),
+            })`));
+            picker.clearedOnMenuClose = picker.clearedOnMenuClose.menuClosed && picker.clearedOnMenuClose.pickerClosed;
+          }
+        }
+      }
+
       console.log("EDITOR primary:", JSON.stringify(primary));
       console.log("EDITOR menu:", JSON.stringify(menu));
+      console.log("EDITOR picker:", JSON.stringify(picker));
       return primary.headerFits
         && primary.primaryVisible
         && primary.pdfVisible
@@ -286,13 +410,39 @@ async function main() {
         && menu.horizontalFits
         && menu.scrollCapacity
         && menu.scrollOverflow
-        && menu.symbolOpened
-        && menu.symbolClearedOnClose
-        && menu.controlCount >= 12;
+        && menu.naturalPopoverSemantics
+        && menu.controlCount >= 12
+        && picker.opened
+        && picker.containedByMenu
+        && picker.insideMenuHorizontally
+        && picker.insideEditorHorizontally
+        && picker.horizontalFits
+        && picker.stayedOpenOnPointerDown
+        && picker.insertedThroughPointer
+        && picker.clearedOnMenuClose;
     };
 
     const runLightContrast = async () => {
       await loadCase(1280, 800, 300, false, false, { theme: "light" });
+      await exec(`document.querySelector('.editor-more-action')?.click()`);
+      await sleep(40);
+      const hoverTarget = JSON.parse(await exec(`(() => {
+        const button = document.querySelector('.editor-tools-menu .btn-mini:not(:disabled)');
+        button?.scrollIntoView({ block: 'nearest' });
+        const rect = button?.getBoundingClientRect();
+        return JSON.stringify(rect ? {
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
+        } : null);
+      })()`));
+      if (hoverTarget) {
+        await client.send('Input.dispatchMouseEvent', {
+          type: 'mouseMoved',
+          x: hoverTarget.x,
+          y: hoverTarget.y,
+        });
+        await sleep(80);
+      }
       const result = JSON.parse(await exec(`(() => {
         const parseColor = (value) => {
           const parts = value.match(/[\\d.]+/g)?.map(Number);
@@ -332,10 +482,14 @@ async function main() {
           panelTitleDim: contrast('.panel-title'),
           toolbarRootDim: contrast('.toolbar-root'),
           activeMainTag: contrast('.tree-active .tree-main-tag'),
+          hoveredEditorMenuButton: {
+            ...contrast('.editor-tools-menu .btn-mini:not(:disabled)'),
+            hovered: !!document.querySelector('.editor-tools-menu .btn-mini:not(:disabled)')?.matches(':hover'),
+          },
         };
         return JSON.stringify(checks);
       })()`));
-      const ok = Object.values(result).every((check) => check.exists && check.ratio >= 4.5);
+      const ok = Object.values(result).every((check) => check.exists && check.ratio >= 4.5 && check.hovered !== false);
       console.log("LIGHT contrast:", JSON.stringify(result));
       return ok;
     };
