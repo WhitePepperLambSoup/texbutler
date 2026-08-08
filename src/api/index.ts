@@ -94,6 +94,7 @@ export interface MarketTemplate {
   mode: string;
   builtin: boolean;
   ready: boolean;
+  verified?: string | null;
 }
 
 export interface WordCount {

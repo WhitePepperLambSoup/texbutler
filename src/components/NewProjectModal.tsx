@@ -190,7 +190,9 @@ export default function NewProjectModal({ open, onClose }: Props) {
                     <span className="market-meta">
                       {m.stars > 0 ? `★ ${m.stars} · ` : ""}
                       {m.size_kb >= 1024 ? `${(m.size_kb / 1024).toFixed(1)} MB` : `${m.size_kb} KB`}
-                      {m.ready ? (
+                      {m.verified ? (
+                        <span className="market-ready">✓ {t("newProject.marketVerified")}</span>
+                      ) : m.ready ? (
                         <span className="market-ready">✓ {t("newProject.marketReady")}</span>
                       ) : (
                         <span

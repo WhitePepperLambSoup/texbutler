@@ -31,6 +31,8 @@ pub struct MarketTemplateView {
     pub t: MarketTemplate,
     /// true when the template files are already present locally
     pub ready: bool,
+    /// "ok" once the download passed the structure verification, else null
+    pub verified: Option<String>,
 }
 
 /// Path where user-downloaded marketplace templates live.
@@ -80,7 +82,19 @@ pub fn tb_list_market_templates() -> Result<Vec<MarketTemplateView>, String> {
             } else {
                 dl_dir.join(&t.id).exists()
             };
-            MarketTemplateView { t, ready }
+            let verified = if ready && !legacy_builtin && !t.builtin {
+                let marker = dl_dir.join(&t.id).join(".texbutler-verified");
+                if marker.exists() {
+                    std::fs::read_to_string(&marker).ok().filter(|s| !s.trim().is_empty())
+                } else {
+                    None
+                }
+            } else if t.builtin && TEMPLATES.get_dir(&t.id).is_some() {
+                Some("ok".to_string()) // embedded templates pass at build time
+            } else {
+                None
+            };
+            MarketTemplateView { t, ready, verified }
         })
         .collect())
 }
@@ -173,10 +187,49 @@ pub async fn tb_download_template(id: String) -> Result<String, String> {
             std::fs::write(&out, buf).map_err(|e| format!("解压写入失败: {e}"))?;
         }
     }
+    // structure verification: the template must contain at least one .tex
+    // file with \documentclass, or it cannot seed a compilable project
+    let tex_files = collect_tex_rel(&target);
+    let has_root = tex_files.iter().any(|rel| {
+        std::fs::read_to_string(target.join(rel))
+            .map(|s| s.contains("\\documentclass"))
+            .unwrap_or(false)
+    });
+    if !has_root {
+        let _ = std::fs::remove_dir_all(&target);
+        return Err(format!(
+            "模板结构无效：仓库内未找到含 \\documentclass 的主 .tex 文件（已删除下载内容）"
+        ));
+    }
+    // verified marker: the structure check passed; UI shows "已验证"
+    let marker = target.join(".texbutler-verified");
+    std::fs::write(&marker, "ok").ok();
     Ok(target.to_string_lossy().to_string())
 }
 
-/// GitHub API default-branch lookup (public repos, unauthenticated is fine).
+/// Collect `.tex` files relative to `root` (forward slashes).
+fn collect_tex_rel(root: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                let n = entry.file_name().to_string_lossy();
+                if n.starts_with('.') || n == "target" || n == "node_modules" {
+                    continue;
+                }
+                stack.push(p);
+            } else if p.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("tex")) == Some(true) {
+                if let Ok(rel) = p.strip_prefix(root) {
+                    out.push(rel.to_string_lossy().replace('\\', "/"));
+                }
+            }
+        }
+    }
+    out
+}
 async fn default_branch(repo: &str) -> Result<String, String> {
     let url = format!("https://api.github.com/repos/{repo}");
     let resp = reqwest::Client::new()
