@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { Bot } from "lucide-react";
 import ProjectTree, { NewFileModal } from "./components/ProjectTree";
 import OutlinePanel from "./components/OutlinePanel";
 import BibPanel from "./components/BibPanel";
@@ -31,10 +32,19 @@ function AiRail({ aiWidth, open, onToggle }: { aiWidth: number; open: boolean; o
   const t = useT();
   return (
     <aside className={`ai-rail ${open ? "open" : "collapsed"}`} style={open ? { width: aiWidth } : undefined}>
-      <button className="ai-rail-toggle" onClick={onToggle} title={open ? t("ai.collapse") : t("ai.expand")}>
-        {open ? "◂" : "AI"}
-      </button>
-      {open && <AiPanel />}
+      {open ? (
+        <AiPanel onCollapse={onToggle} />
+      ) : (
+        <button
+          className="ai-rail-toggle"
+          onClick={onToggle}
+          title={t("ai.expand")}
+          aria-label={t("ai.expand")}
+        >
+          <Bot size={16} aria-hidden="true" />
+          <span>AI</span>
+        </button>
+      )}
     </aside>
   );
 }
