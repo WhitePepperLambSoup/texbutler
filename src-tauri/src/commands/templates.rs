@@ -3,14 +3,17 @@
 //! (embedded at compile time via include_dir, preserving directory trees);
 //! large ones are downloaded on demand from codeload.github.com into the
 //! user data directory.
+use crate::core::project::Project;
 use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Embedded template tree (`assets/templates/` at compile time).
 static TEMPLATES: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../assets/templates");
 
 const MAX_DOWNLOAD_BYTES: u64 = 500 * 1024 * 1024; // 500 MB safety cap
+static NEXT_IMPORT_TEMP: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct MarketTemplate {
@@ -33,6 +36,26 @@ pub struct MarketTemplateView {
     pub ready: bool,
     /// "ok" once the download passed the structure verification, else null
     pub verified: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TemplateSource {
+    User,
+    Market,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct ImportedTemplate {
+    pub target_dir: String,
+    pub main_file: String,
+}
+
+pub enum ResolvedTemplate<'a> {
+    Directory(&'a Path),
+    SingleFile(&'a Path),
+    Embedded(&'a Dir<'a>),
+    Builtin(&'static str),
 }
 
 /// Path where user-downloaded marketplace templates live.
@@ -87,7 +110,9 @@ pub fn tb_list_market_templates() -> Result<Vec<MarketTemplateView>, String> {
             } else if ready && !t.builtin {
                 let marker = dl_dir.join(&t.id).join(".texbutler-verified");
                 if marker.exists() {
-                    std::fs::read_to_string(&marker).ok().filter(|s| !s.trim().is_empty())
+                    std::fs::read_to_string(&marker)
+                        .ok()
+                        .filter(|s| !s.trim().is_empty())
                 } else {
                     None
                 }
@@ -217,7 +242,9 @@ fn collect_tex_rel(root: &Path) -> Vec<String> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let p = entry.path();
             if p.is_dir() {
@@ -226,7 +253,12 @@ fn collect_tex_rel(root: &Path) -> Vec<String> {
                     continue;
                 }
                 stack.push(p);
-            } else if p.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("tex")) == Some(true) {
+            } else if p
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.eq_ignore_ascii_case("tex"))
+                == Some(true)
+            {
                 if let Ok(rel) = p.strip_prefix(root) {
                     out.push(rel.to_string_lossy().replace('\\', "/"));
                 }
@@ -251,6 +283,272 @@ async fn default_branch(repo: &str) -> Result<String, String> {
         .as_str()
         .map(|s| s.to_string())
         .ok_or_else(|| format!("GitHub 未返回仓库信息: {repo}"))
+}
+
+pub fn normalize_project_relative_dir(project: &Project, raw: &str) -> Result<String, String> {
+    let raw = raw.trim();
+    if raw.is_empty() || raw == "." || raw.contains(':') {
+        return Err("invalid template import directory".into());
+    }
+
+    let path = Path::new(raw);
+    if path.is_absolute() {
+        return Err("invalid template import directory".into());
+    }
+    for component in path.components() {
+        if matches!(
+            component,
+            std::path::Component::ParentDir
+                | std::path::Component::RootDir
+                | std::path::Component::Prefix(_)
+        ) {
+            return Err("invalid template import directory".into());
+        }
+    }
+
+    let target = project
+        .resolve(raw)
+        .ok_or_else(|| "template import directory escapes the project".to_string())?;
+    project.canonical_inside(&target)?;
+    match std::fs::symlink_metadata(&target) {
+        Ok(_) => {
+            return Err(format!(
+                "template import directory already exists: {}",
+                target.display()
+            ))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(format!(
+                "could not inspect template import directory: {error}"
+            ))
+        }
+    }
+
+    Ok(path.to_string_lossy().replace('\\', "/"))
+}
+
+pub fn import_temp_sibling(target: &Path) -> Result<PathBuf, String> {
+    let parent = target
+        .parent()
+        .filter(|parent| parent.is_dir())
+        .ok_or_else(|| {
+            format!(
+                "template import parent does not exist: {}",
+                target.display()
+            )
+        })?;
+    let target_name = target
+        .file_name()
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| "invalid template import directory".to_string())?
+        .to_string_lossy();
+
+    loop {
+        let counter = NEXT_IMPORT_TEMP.fetch_add(1, Ordering::Relaxed);
+        let temp = parent.join(format!(
+            ".{target_name}.texbutler-import-{}-{counter}",
+            std::process::id(),
+        ));
+        match std::fs::symlink_metadata(&temp) {
+            Ok(_) => continue,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(temp),
+            Err(error) => {
+                return Err(format!(
+                    "could not inspect temporary import directory: {error}"
+                ))
+            }
+        }
+    }
+}
+
+pub fn remove_created_dir(path: &Path) {
+    if std::fs::symlink_metadata(path)
+        .map(|metadata| metadata.is_dir())
+        .unwrap_or(false)
+    {
+        let _ = std::fs::remove_dir_all(path);
+    }
+}
+
+fn remove_created_empty_parents(created: &[PathBuf]) {
+    for path in created.iter().rev() {
+        let _ = std::fs::remove_dir(path);
+    }
+}
+
+fn create_missing_target_parents(project: &Project, target: &Path) -> Result<Vec<PathBuf>, String> {
+    let parent = target
+        .parent()
+        .ok_or_else(|| "invalid template import directory".to_string())?;
+    let relative_parent = parent
+        .strip_prefix(&project.root)
+        .map_err(|_| "template import directory escapes the project".to_string())?;
+    let mut current = project.root.clone();
+    let mut created = Vec::new();
+
+    for component in relative_parent.components() {
+        let std::path::Component::Normal(name) = component else {
+            return Err("invalid template import directory".into());
+        };
+        current.push(name);
+        match std::fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.is_dir() => {}
+            Ok(_) => {
+                return Err(format!(
+                    "template import parent is not a directory: {}",
+                    current.display()
+                ))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                if let Err(error) = std::fs::create_dir(&current) {
+                    remove_created_empty_parents(&created);
+                    return Err(format!(
+                        "could not create template import directory: {error}"
+                    ));
+                }
+                created.push(current.clone());
+            }
+            Err(error) => {
+                return Err(format!(
+                    "could not inspect template import directory: {error}"
+                ))
+            }
+        }
+    }
+    if let Err(error) = project.canonical_inside(target) {
+        remove_created_empty_parents(&created);
+        return Err(error);
+    }
+    Ok(created)
+}
+
+pub fn copy_tree_checked(src: &Path, dst: &Path, excluded_dirs: &[&str]) -> Result<(), String> {
+    let source_metadata = std::fs::symlink_metadata(src)
+        .map_err(|error| format!("could not inspect template source directory: {error}"))?;
+    if source_metadata.file_type().is_symlink() || !source_metadata.is_dir() {
+        return Err(format!(
+            "template source is not a safe directory: {}",
+            src.display()
+        ));
+    }
+
+    std::fs::create_dir_all(dst)
+        .map_err(|error| format!("could not create template import directory: {error}"))?;
+    for entry in std::fs::read_dir(src)
+        .map_err(|error| format!("could not read template directory: {error}"))?
+    {
+        let entry = entry.map_err(|error| format!("could not read template directory: {error}"))?;
+        let from = entry.path();
+        let metadata = std::fs::symlink_metadata(&from)
+            .map_err(|error| format!("could not inspect template file: {error}"))?;
+        if metadata.file_type().is_symlink() {
+            return Err(format!(
+                "template may not contain symbolic links: {}",
+                from.display()
+            ));
+        }
+
+        let name = entry.file_name();
+        let to = dst.join(&name);
+        if metadata.is_dir() {
+            if excluded_dirs
+                .iter()
+                .any(|excluded| name == std::ffi::OsStr::new(excluded))
+            {
+                continue;
+            }
+            copy_tree_checked(&from, &to, excluded_dirs)?;
+        } else if metadata.is_file() {
+            std::fs::copy(&from, &to)
+                .map_err(|error| format!("could not copy template file: {error}"))?;
+        } else {
+            return Err(format!(
+                "template contains an unsupported file: {}",
+                from.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub fn detect_main_document(root: &Path) -> Result<String, String> {
+    let staged = Project::open(root)?;
+    let roots = staged.document_roots();
+    if roots.iter().any(|root| root == "main.tex") {
+        return Ok("main.tex".to_string());
+    }
+    roots
+        .into_iter()
+        .next()
+        .ok_or_else(|| "template has no .tex document containing \\documentclass".to_string())
+}
+
+pub fn import_resolved_template(
+    project: &Project,
+    target_dir: &str,
+    source: ResolvedTemplate<'_>,
+) -> Result<ImportedTemplate, String> {
+    let normalized_target = normalize_project_relative_dir(project, target_dir)?;
+    let target = project
+        .resolve(&normalized_target)
+        .ok_or_else(|| "template import directory escapes the project".to_string())?;
+    let created_parents = create_missing_target_parents(project, &target)?;
+    let temp = match import_temp_sibling(&target) {
+        Ok(temp) => temp,
+        Err(error) => {
+            remove_created_empty_parents(&created_parents);
+            return Err(error);
+        }
+    };
+
+    let result = (|| {
+        std::fs::create_dir(&temp)
+            .map_err(|error| format!("could not create temporary import directory: {error}"))?;
+        match source {
+            ResolvedTemplate::Directory(directory) => {
+                copy_tree_checked(
+                    directory,
+                    &temp,
+                    &[".git", ".texbutler", "target", "node_modules"],
+                )?;
+            }
+            ResolvedTemplate::SingleFile(file) => {
+                let metadata = std::fs::symlink_metadata(file)
+                    .map_err(|error| format!("could not inspect template file: {error}"))?;
+                if metadata.file_type().is_symlink() || !metadata.is_file() {
+                    return Err(format!(
+                        "template source is not a safe file: {}",
+                        file.display()
+                    ));
+                }
+                let name = file
+                    .file_name()
+                    .ok_or_else(|| "invalid template file name".to_string())?;
+                std::fs::copy(file, temp.join(name))
+                    .map_err(|error| format!("could not copy template file: {error}"))?;
+            }
+            ResolvedTemplate::Embedded(directory) => extract_embedded_dir(directory, &temp)?,
+            ResolvedTemplate::Builtin(body) => {
+                std::fs::write(temp.join("main.tex"), body)
+                    .map_err(|error| format!("could not write built-in template: {error}"))?;
+            }
+        }
+
+        let main_inside = detect_main_document(&temp)?;
+        std::fs::rename(&temp, &target)
+            .map_err(|error| format!("could not finalize template import: {error}"))?;
+        Ok(ImportedTemplate {
+            target_dir: normalized_target.clone(),
+            main_file: format!("{normalized_target}/{main_inside}"),
+        })
+    })();
+
+    if result.is_err() {
+        remove_created_dir(&temp);
+        remove_created_empty_parents(&created_parents);
+    }
+    result
 }
 
 /// Copy a marketplace template (embedded or downloaded) into a new project.
@@ -316,4 +614,212 @@ fn copy_tree(src: &Path, dst: &Path) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::project::Project;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_TEST_DIR: AtomicU64 = AtomicU64::new(1);
+
+    fn test_root(label: &str) -> PathBuf {
+        let id = NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "texbutler-template-{label}-{}-{id}",
+            std::process::id(),
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    fn write_fixture(path: &Path, content: &[u8]) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, content).unwrap();
+    }
+
+    #[cfg(windows)]
+    fn symlink_privilege_unavailable(error: &std::io::Error) -> bool {
+        error.kind() == std::io::ErrorKind::PermissionDenied || error.raw_os_error() == Some(1314)
+    }
+
+    #[test]
+    fn import_rejects_absolute_traversal_and_existing_targets() {
+        let root = test_root("reject-target");
+        let project_root = root.join("project");
+        let source_root = root.join("source");
+        write_fixture(
+            &project_root.join("main.tex"),
+            b"\\documentclass{article}\n",
+        );
+        write_fixture(&source_root.join("main.tex"), b"\\documentclass{article}\n");
+        std::fs::create_dir_all(project_root.join("notes")).unwrap();
+        let project = Project::open(&project_root).unwrap();
+
+        for bad in ["D:/escape", "/escape", "../escape", "notes"] {
+            assert!(
+                import_resolved_template(&project, bad, ResolvedTemplate::Directory(&source_root),)
+                    .is_err(),
+                "target must be rejected: {bad}"
+            );
+        }
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn import_returns_project_relative_target_and_main_file() {
+        let root = test_root("relative-result");
+        let project_root = root.join("project");
+        let source_root = root.join("source");
+        write_fixture(
+            &project_root.join("main.tex"),
+            b"\\documentclass{article}\n",
+        );
+        write_fixture(&source_root.join("main.tex"), b"\\documentclass{report}\n");
+        write_fixture(&source_root.join("chapters/a.tex"), b"chapter\n");
+        let project = Project::open(&project_root).unwrap();
+
+        let imported = import_resolved_template(
+            &project,
+            "thesis",
+            ResolvedTemplate::Directory(&source_root),
+        )
+        .unwrap();
+
+        assert_eq!(imported.target_dir, "thesis");
+        assert_eq!(imported.main_file, "thesis/main.tex");
+        assert_eq!(
+            std::fs::read(project_root.join("thesis/chapters/a.tex")).unwrap(),
+            b"chapter\n"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn import_rejects_tree_without_document_root_and_cleans_temp() {
+        let root = test_root("cleanup");
+        let project_root = root.join("project");
+        let source_root = root.join("source");
+        write_fixture(
+            &project_root.join("main.tex"),
+            b"\\documentclass{article}\n",
+        );
+        write_fixture(&source_root.join("chapter.tex"), b"plain chapter\n");
+        let project = Project::open(&project_root).unwrap();
+
+        assert!(import_resolved_template(
+            &project,
+            "broken",
+            ResolvedTemplate::Directory(&source_root),
+        )
+        .is_err());
+        assert!(!project_root.join("broken").exists());
+        let residue = std::fs::read_dir(&project_root)
+            .unwrap()
+            .flatten()
+            .any(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .contains("texbutler-import")
+            });
+        assert!(!residue, "failed import must remove its temporary sibling");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn import_preserves_project_root_and_unrelated_files() {
+        let root = test_root("preserve-root");
+        let project_root = root.join("project");
+        let source_root = root.join("source");
+        write_fixture(
+            &project_root.join("main.tex"),
+            b"\\documentclass{article}\n",
+        );
+        write_fixture(&project_root.join("keep.txt"), b"unchanged");
+        write_fixture(
+            &source_root.join("paper.tex"),
+            b"\\documentclass{article}\n",
+        );
+        let project = Project::open(&project_root).unwrap();
+
+        let imported = import_resolved_template(
+            &project,
+            "papers/demo",
+            ResolvedTemplate::Directory(&source_root),
+        )
+        .unwrap();
+
+        assert_eq!(
+            std::fs::read(project_root.join("keep.txt")).unwrap(),
+            b"unchanged"
+        );
+        assert!(project_root
+            .join(&imported.target_dir)
+            .starts_with(&project_root));
+        assert!(project_root
+            .join(&imported.main_file)
+            .starts_with(&project_root));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn import_rejects_source_and_target_symlinks() {
+        let root = test_root("reject-symlinks");
+        let project_root = root.join("project");
+        let source_root = root.join("source");
+        write_fixture(
+            &project_root.join("main.tex"),
+            b"\\documentclass{article}\n",
+        );
+        write_fixture(&source_root.join("main.tex"), b"\\documentclass{article}\n");
+        let project = Project::open(&project_root).unwrap();
+
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("main.tex", source_root.join("linked.tex")).unwrap();
+        #[cfg(windows)]
+        if let Err(error) =
+            std::os::windows::fs::symlink_file("main.tex", source_root.join("linked.tex"))
+        {
+            if symlink_privilege_unavailable(&error) {
+                std::fs::remove_dir_all(root).unwrap();
+                return;
+            }
+            panic!("failed to create source symlink: {error}");
+        }
+
+        assert!(import_resolved_template(
+            &project,
+            "source-link",
+            ResolvedTemplate::Directory(&source_root),
+        )
+        .is_err());
+        assert!(!project_root.join("source-link").exists());
+        std::fs::remove_file(source_root.join("linked.tex")).unwrap();
+
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(root.join("outside"), project_root.join("dangling")).unwrap();
+        #[cfg(windows)]
+        if let Err(error) =
+            std::os::windows::fs::symlink_dir(root.join("outside"), project_root.join("dangling"))
+        {
+            if symlink_privilege_unavailable(&error) {
+                std::fs::remove_dir_all(root).unwrap();
+                return;
+            }
+            panic!("failed to create target symlink: {error}");
+        }
+
+        assert!(import_resolved_template(
+            &project,
+            "dangling/target",
+            ResolvedTemplate::Directory(&source_root),
+        )
+        .is_err());
+        assert!(!project_root.join("dangling/target").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
