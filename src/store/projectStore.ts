@@ -67,8 +67,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   async openProject(path?) {
-    if (path) recordRecent(path);
     const info: ProjectInfo = await api.openProject(path);
+    // record only on success so failed opens (deleted projects) never
+    // pollute the recent list; info.root is the canonical path even for
+    // the file-dialog (no-arg) flow
+    recordRecent(info.root);
     set({
       root: info.root,
       mainFile: info.main_file,
