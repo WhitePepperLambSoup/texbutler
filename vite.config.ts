@@ -14,7 +14,7 @@ export default defineConfig({
       // Ignore `src-tauri` AND build artifacts: vite's fs watcher dies with
       // EBUSY when the running app locks files under `target/` (WebView2
       // Cookies etc.), which killed `tauri dev` mid-session.
-      ignored: ["**/src-tauri/**", "**/target/**", "**/dist/**"],
+      ignored: ["**/src-tauri/**", "**/target/**", "**/dist/**", "**/assets/e2e/**"],
     },
   },
   build: {

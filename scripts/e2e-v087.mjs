@@ -1,6 +1,8 @@
 // e2e: v0.8.7 new-file workflow — toolbar/tree parity and template center.
-import { access, mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { access, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const CDP_PORT = 9336;
 const PROJ = "D:/reasonix program/idea/tex/.worktrees/codex-fix-ui-ai-layout/assets/e2e/v087-check";
@@ -10,38 +12,114 @@ const USER_TEMPLATE_ROOT = APP_DATA ? join(APP_DATA, "texbutler", "templates") :
 const suite = process.argv[2] ?? "all";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-if (!new Set(["files", "theme", "pdf", "all"]).has(suite)) {
+if (!new Set(["files", "theme", "pdf", "all", "cleanup-fault"]).has(suite)) {
   throw new Error(`unknown suite: ${suite}`);
 }
 
 const exists = async (path) => access(path).then(() => true, () => false);
 
-async function installTemplateFixtures() {
+async function installTemplateFixtures(snapshot) {
   if (!USER_TEMPLATE_ROOT) {
     throw new Error("APPDATA is required for state-preserving template fixtures");
   }
-  const nonce = `${process.pid}-${Date.now()}`;
+  const nonce = process.env.V087_FIXTURE_NONCE ?? `${process.pid}-${Date.now()}`;
   const userDir = join(USER_TEMPLATE_ROOT, "article");
   const userFile = join(USER_TEMPLATE_ROOT, "article.tex");
-  const snapshot = {
-    userRootExisted: await exists(USER_TEMPLATE_ROOT),
-    entries: [],
-  };
+  await mkdir(USER_TEMPLATE_ROOT, { recursive: true });
+  for (const target of [userDir, userFile]) {
+    if (!await exists(target)) continue;
+    const backup = `${target}.e2e-v087-backup-${nonce}`;
+    await rename(target, backup);
+    snapshot.entries.push({ target, backup });
+  }
+  await mkdir(userDir, { recursive: true });
+  await writeFile(join(userDir, "main.tex"), "\\documentclass{article}\n% V087_USER_COLLISION\n", "utf8");
+  await writeFile(join(userDir, "user-only.txt"), "V087_USER_COLLISION\n", "utf8");
+}
+
+async function snapshotPath(path) {
   try {
-    await mkdir(USER_TEMPLATE_ROOT, { recursive: true });
-    for (const target of [userDir, userFile]) {
-      if (!await exists(target)) continue;
-      const backup = `${target}.e2e-v087-backup-${nonce}`;
-      await rename(target, backup);
-      snapshot.entries.push({ target, backup });
+    const metadata = await lstat(path);
+    if (metadata.isDirectory()) {
+      const entries = {};
+      for (const name of (await readdir(path)).sort()) entries[name] = await snapshotPath(join(path, name));
+      return { type: "directory", entries };
     }
-    await mkdir(userDir, { recursive: true });
-    await writeFile(join(userDir, "main.tex"), "\\documentclass{article}\n% V087_USER_COLLISION\n", "utf8");
-    await writeFile(join(userDir, "user-only.txt"), "V087_USER_COLLISION\n", "utf8");
-    return snapshot;
+    if (metadata.isFile()) return { type: "file", data: (await readFile(path)).toString("base64") };
+    return { type: "other" };
   } catch (error) {
-    await restoreTemplateFixtures(snapshot);
+    if (error?.code === "ENOENT") return null;
     throw error;
+  }
+}
+
+async function runCleanupFaultProbe() {
+  if (!USER_TEMPLATE_ROOT) throw new Error("APPDATA is required for cleanup fault injection");
+  const nonce = `cleanup-fault-${process.pid}`;
+  const userDir = join(USER_TEMPLATE_ROOT, "article");
+  const userFile = join(USER_TEMPLATE_ROOT, "article.tex");
+  const userDirBackup = `${userDir}.e2e-v087-backup-${nonce}`;
+  const userFileBackup = `${userFile}.e2e-v087-backup-${nonce}`;
+  const rootExisted = await exists(USER_TEMPLATE_ROOT);
+  const before = {
+    userDir: await snapshotPath(userDir),
+    userFile: await snapshotPath(userFile),
+  };
+  await rm(PROJ, { recursive: true, force: true });
+  let child;
+  let after;
+  try {
+    child = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "files"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      timeout: 120_000,
+      env: {
+        ...process.env,
+        V087_CLEANUP_FAIL_STAGE: "locale",
+        V087_FIXTURE_NONCE: nonce,
+      },
+    });
+    after = {
+      userDir: await snapshotPath(userDir),
+      userFile: await snapshotPath(userFile),
+      userDirBackup: await snapshotPath(userDirBackup),
+      userFileBackup: await snapshotPath(userFileBackup),
+      projectExists: await exists(PROJ),
+    };
+  } finally {
+    await rm(PROJ, { recursive: true, force: true }).catch(() => {});
+    for (const [target, backup, original] of [
+      [userDir, userDirBackup, before.userDir],
+      [userFile, userFileBackup, before.userFile],
+    ]) {
+      if (await exists(backup)) {
+        await rm(target, { recursive: true, force: true }).catch(() => {});
+        await rename(backup, target);
+      } else if (original === null) {
+        await rm(target, { recursive: true, force: true }).catch(() => {});
+      }
+    }
+    if (!rootExisted) await rm(USER_TEMPLATE_ROOT).catch(() => {});
+  }
+  const combinedOutput = `${child?.stdout ?? ""}\n${child?.stderr ?? ""}`;
+  const result = {
+    childReportedFailure: child?.status !== 0 && combinedOutput.includes("E2E-FAIL")
+      && combinedOutput.includes("injected cleanup failure: locale"),
+    appDataRestored: JSON.stringify(after?.userDir) === JSON.stringify(before.userDir)
+      && JSON.stringify(after?.userFile) === JSON.stringify(before.userFile)
+      && after?.userDirBackup === null && after?.userFileBackup === null,
+    projectFixtureRemoved: after?.projectExists === false,
+    childStatus: child?.status ?? null,
+    childSignal: child?.signal ?? null,
+    childError: child?.error ? String(child.error) : null,
+  };
+  console.log("CLEANUP-FAULT", JSON.stringify(result));
+  if (!result.childReportedFailure || !result.appDataRestored || !result.projectFixtureRemoved) process.exitCode = 1;
+}
+
+function injectCleanupFailure(stage) {
+  if (process.env.V087_CLEANUP_FAIL_STAGE === stage) {
+    throw new Error(`injected cleanup failure: ${stage}`);
   }
 }
 
@@ -115,31 +193,27 @@ async function main() {
   let browserStateAfter;
   const cleanupErrors = [];
   try {
-    templateFixtures = await installTemplateFixtures();
-    await rm(PROJ, { recursive: true, force: true }).catch(() => {});
-    await mkdir(PROJ, { recursive: true });
-    await writeFile(FILE, "\\documentclass{article}\n\\begin{document}\nE2E fixture.\n\\end{document}\n", "utf8");
-
-    client = await connect(await cdp());
-    await client.send("Runtime.enable");
-    await client.send("Emulation.setDeviceMetricsOverride", {
-      width: 1280,
-      height: 800,
-      deviceScaleFactor: 1,
-      mobile: false,
-    });
-    await client.send("Page.reload", { ignoreCache: true });
-    await sleep(1200);
-    exec = async (expression) => {
-      const result = await client.send("Runtime.evaluate", {
-        expression,
-        awaitPromise: true,
-        returnByValue: true,
+    try {
+      client = await connect(await cdp());
+      await client.send("Runtime.enable");
+      await client.send("Emulation.setDeviceMetricsOverride", {
+        width: 1280,
+        height: 800,
+        deviceScaleFactor: 1,
+        mobile: false,
       });
-      if (result.exceptionDetails) throw new Error(`JS: ${JSON.stringify(result.exceptionDetails)}`);
-      return result.result.value;
-    };
-    browserStateBefore = JSON.parse(await exec(`(async () => {
+      await client.send("Page.reload", { ignoreCache: true });
+      await sleep(1200);
+      exec = async (expression) => {
+        const result = await client.send("Runtime.evaluate", {
+          expression,
+          awaitPromise: true,
+          returnByValue: true,
+        });
+        if (result.exceptionDetails) throw new Error(`JS: ${JSON.stringify(result.exceptionDetails)}`);
+        return result.result.value;
+      };
+      browserStateBefore = JSON.parse(await exec(`(async () => {
       const storeUrl = performance.getEntriesByType('resource')
         .map((entry) => entry.name)
         .find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
@@ -167,6 +241,14 @@ async function main() {
         },
       });
     })()`));
+      templateFixtures = {
+        userRootExisted: await exists(USER_TEMPLATE_ROOT),
+        entries: [],
+      };
+      await installTemplateFixtures(templateFixtures);
+      await rm(PROJ, { recursive: true, force: true });
+      await mkdir(PROJ, { recursive: true });
+      await writeFile(FILE, "\\documentclass{article}\n\\begin{document}\nE2E fixture.\n\\end{document}\n", "utf8");
     inspectLocale = async () => JSON.parse(await exec(`(async () => {
       const i18nUrl = performance.getEntriesByType('resource')
         .map((entry) => entry.name)
@@ -318,14 +400,43 @@ async function main() {
         }
         return false;
       };
-      const setTarget = async (value) => exec(`(() => {
-        const input = document.querySelector('.new-file-modal label.target-row input');
-        if (!input) return false;
-        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-        setter?.call(input, ${JSON.stringify(value)});
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        return true;
-      })()`);
+      const setTarget = async (value) => {
+        const observed = await exec(`(() => {
+          const input = document.querySelector('.new-file-modal label.target-row input');
+          if (!input) return null;
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+          setter?.call(input, ${JSON.stringify(value)});
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          return { requested: ${JSON.stringify(value)}, immediate: input.value };
+        })()`);
+        const committed = await exec(`new Promise((resolve) => requestAnimationFrame(() => {
+          resolve(document.querySelector('.new-file-modal label.target-row input')?.value ?? null);
+        }))`);
+        if (!observed || committed !== value) {
+          throw new Error(`target input did not commit: ${JSON.stringify({ observed, committed, value })}`);
+        }
+        return { ...observed, committed };
+      };
+      const submitNewFileModal = async () => {
+        const clicked = await clickSelector('.new-file-modal .modal-footer .btn-primary');
+        if (!clicked) return { outcome: 'missing-submit', open: false, error: null };
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          const state = JSON.parse(await exec(`JSON.stringify({
+            open: !!document.querySelector('.new-file-modal'),
+            error: document.querySelector('.new-file-modal .modal-error')?.textContent?.trim() ?? null,
+            input: document.querySelector('.new-file-modal label.target-row input')?.value ?? null,
+          })`));
+          if (!state.open) return { outcome: 'closed', ...state };
+          if (state.error) return { outcome: 'error', ...state };
+          await sleep(50);
+        }
+        const state = JSON.parse(await exec(`JSON.stringify({
+          open: !!document.querySelector('.new-file-modal'),
+          error: document.querySelector('.new-file-modal .modal-error')?.textContent?.trim() ?? null,
+          input: document.querySelector('.new-file-modal label.target-row input')?.value ?? null,
+        })`));
+        return { outcome: 'timeout', ...state };
+      };
       const readProjectFile = async (path) => exec(`(async () => {
         const apiUrl = performance.getEntriesByType('resource')
           .map((entry) => entry.name)
@@ -469,28 +580,43 @@ async function main() {
       await clickSelector('[data-new-file-tab="market"]');
       result.templateSourceIsolation.userToMarketCleared = await exec(`!document.querySelector('.market-card.template-active')`);
       await setTarget('carry-blocked');
-      await clickSelector('.new-file-modal .modal-footer .btn-primary');
-      await sleep(350);
-      result.templateSourceIsolation.blockedCarryImport = await exec(`!!document.querySelector('.new-file-modal .modal-error')`);
+      const blockedCarryOutcome = await submitNewFileModal();
+      result.templateSourceIsolation.blockedCarryImport = blockedCarryOutcome.outcome === 'error';
       await closeModal();
       await rm(`${PROJ}/carry-blocked`, { recursive: true, force: true });
 
       await openNewFile();
       await clickSelector('[data-new-file-tab="user"]');
       await selectTemplate('user', 'article');
-      await setTarget('from-user');
-      await clickSelector('.new-file-modal .modal-footer .btn-primary');
-      result.templateSourceIsolation.userImportUsesUserSource =
-        (await waitForProjectFile('from-user/user-only.txt'))?.trim() === 'V087_USER_COLLISION';
+      const userTargetSet = await setTarget('from-user');
+      const userImportOutcome = await submitNewFileModal();
+      const userMarker = await waitForProjectFile('from-user/user-only.txt');
+      result.templateSourceIsolation.userImportUsesUserSource = userImportOutcome.outcome === 'closed'
+        && userMarker?.trim() === 'V087_USER_COLLISION';
+      if (!result.templateSourceIsolation.userImportUsesUserSource) {
+        result.userImportDiagnostics = {
+          userTargetSet,
+          userImportOutcome,
+          blockedCarryOutcome,
+          modal: JSON.parse(await exec(`JSON.stringify({
+            open: !!document.querySelector('.new-file-modal'),
+            input: document.querySelector('.new-file-modal label.target-row input')?.value ?? null,
+            error: document.querySelector('.new-file-modal .modal-error')?.textContent?.trim() ?? null,
+          })`)),
+          fromUser: await snapshotPath(`${PROJ}/from-user`),
+          carryBlocked: await snapshotPath(`${PROJ}/carry-blocked`),
+        };
+      }
 
       await openNewFile();
       await clickSelector('[data-new-file-tab="market"]');
       await selectTemplate('market', 'article');
       await setTarget('from-market');
-      await clickSelector('.new-file-modal .modal-footer .btn-primary');
+      const marketImportOutcome = await submitNewFileModal();
       const marketMain = await waitForProjectFile('from-market/main.tex');
       const marketOnly = await readProjectFile('from-market/user-only.txt');
-      result.templateSourceIsolation.marketImportUsesMarketSource =
+      result.templateSourceIsolation.marketImportUsesMarketSource = marketImportOutcome.outcome === 'closed'
+        &&
         typeof marketMain === 'string' && marketMain.includes('\\documentclass') && marketOnly === null;
 
       await openNewFile();
@@ -510,9 +636,8 @@ async function main() {
       await sleep(80);
       result.templateSourceIsolation.downloadClearedSelection = await exec(`!document.querySelector('.market-card.template-active')`);
       await setTarget('download-carry-blocked');
-      await clickSelector('.new-file-modal .modal-footer .btn-primary');
-      await sleep(150);
-      result.templateSourceIsolation.downloadBlockedCarryImport = await exec(`!!document.querySelector('.new-file-modal .modal-error')`);
+      const downloadCarryOutcome = await submitNewFileModal();
+      result.templateSourceIsolation.downloadBlockedCarryImport = downloadCarryOutcome.outcome === 'error';
       await exec(`(async () => {
         const apiUrl = performance.getEntriesByType('resource')
           .map((entry) => entry.name)
@@ -776,36 +901,45 @@ async function main() {
     theme = suite === "files" || suite === "pdf" ? true : await runTheme();
     pdf = suite === "files" || suite === "theme" ? true : await runPdf();
     if (files !== true) await setLocale(testLocaleBaseline);
-  } finally {
-    if (client && exec && pdfWidthBefore) {
-      const storageSnapshot = JSON.stringify(pdfWidthBefore);
-      await exec(`(() => {
-        const snapshot = ${storageSnapshot};
-        if (snapshot.hasValue) window.localStorage.setItem('tb-pdf-w', snapshot.value);
-        else window.localStorage.removeItem('tb-pdf-w');
-        return true;
-      })()`);
-      pdfWidthAfter = JSON.parse(await exec(`(() => {
-        const value = localStorage.getItem('tb-pdf-w');
-        return JSON.stringify({ hasValue: value !== null, value });
-      })()`));
-    }
-    if (client && localeBefore && inspectLocale && setLocale) {
-      await setLocale(localeBefore.lang);
-      const storageSnapshot = JSON.stringify({
-        hasStoredLang: localeBefore.hasStoredLang,
-        storedLang: localeBefore.storedLang,
-      });
-      await exec(`(() => {
-        const snapshot = ${storageSnapshot};
-        if (snapshot.hasStoredLang) window.localStorage.setItem('tb-lang', snapshot.storedLang);
-        else window.localStorage.removeItem('tb-lang');
-        return true;
-      })()`);
-      localeAfter = await inspectLocale();
-    }
-    if (client && exec && browserStateBefore) {
+    } finally {
       try {
+        if (client && exec && pdfWidthBefore) {
+          const storageSnapshot = JSON.stringify(pdfWidthBefore);
+          await exec(`(() => {
+            const snapshot = ${storageSnapshot};
+            if (snapshot.hasValue) window.localStorage.setItem('tb-pdf-w', snapshot.value);
+            else window.localStorage.removeItem('tb-pdf-w');
+            return true;
+          })()`);
+          pdfWidthAfter = JSON.parse(await exec(`(() => {
+            const value = localStorage.getItem('tb-pdf-w');
+            return JSON.stringify({ hasValue: value !== null, value });
+          })()`));
+        }
+      } catch (error) {
+        cleanupErrors.push(`PDF restoration: ${error}`);
+      }
+      try {
+        if (client && localeBefore && inspectLocale && setLocale) {
+          injectCleanupFailure("locale");
+          await setLocale(localeBefore.lang);
+          const storageSnapshot = JSON.stringify({
+            hasStoredLang: localeBefore.hasStoredLang,
+            storedLang: localeBefore.storedLang,
+          });
+          await exec(`(() => {
+            const snapshot = ${storageSnapshot};
+            if (snapshot.hasStoredLang) window.localStorage.setItem('tb-lang', snapshot.storedLang);
+            else window.localStorage.removeItem('tb-lang');
+            return true;
+          })()`);
+          localeAfter = await inspectLocale();
+        }
+      } catch (error) {
+        cleanupErrors.push(`locale restoration: ${error}`);
+      }
+      try {
+        if (client && exec && browserStateBefore) {
         await exec(`(async () => {
           const apiUrl = performance.getEntriesByType('resource')
             .map((entry) => entry.name)
@@ -859,22 +993,35 @@ async function main() {
               toast: project.toast,
             },
           });
-        })()`));
+          })()`));
+        }
       } catch (error) {
-        cleanupErrors.push(`browser restoration: ${error}`);
+        cleanupErrors.push(`project restoration: ${error}`);
+      }
+      try {
+        if (client) await client.send("Emulation.clearDeviceMetricsOverride");
+      } catch (error) {
+        cleanupErrors.push(`viewport restoration: ${error}`);
+      }
+      try {
+        client?.close();
+      } catch (error) {
+        cleanupErrors.push(`CDP close: ${error}`);
+      }
+      try {
+        await rm(PROJ, { recursive: true, force: true });
+      } catch (error) {
+        cleanupErrors.push(`project fixture removal: ${error}`);
       }
     }
-    if (client) {
-      await client.send("Emulation.clearDeviceMetricsOverride").catch(() => {});
-      client.close();
-    }
-    await rm(PROJ, { recursive: true, force: true }).catch(() => {});
+  } finally {
     try {
       await restoreTemplateFixtures(templateFixtures);
     } catch (error) {
-      cleanupErrors.push(`template restoration: ${error}`);
+      cleanupErrors.push(`AppData restoration: ${error}`);
     }
   }
+  if (cleanupErrors.length > 0) throw new Error(`cleanup failed: ${cleanupErrors.join(" | ")}`);
   if (files !== true) {
     files.localeRestored = {
       live: localeAfter?.lang === localeBefore?.lang,
@@ -948,7 +1095,14 @@ async function main() {
   if (failed) process.exitCode = 1;
 }
 
-main().catch((error) => {
-  console.error("E2E-FAIL", error);
-  process.exit(1);
-});
+if (suite === "cleanup-fault") {
+  runCleanupFaultProbe().catch((error) => {
+    console.error("CLEANUP-FAULT-FAIL", error);
+    process.exit(1);
+  });
+} else {
+  main().catch((error) => {
+    console.error("E2E-FAIL", error);
+    process.exit(1);
+  });
+}
