@@ -1,14 +1,58 @@
 // e2e: v0.8.7 new-file workflow — toolbar/tree parity and template center.
-import { writeFile, rm, mkdir } from "node:fs/promises";
+import { access, mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 const CDP_PORT = 9336;
 const PROJ = "D:/reasonix program/idea/tex/.worktrees/codex-fix-ui-ai-layout/assets/e2e/v087-check";
 const FILE = `${PROJ}/main.tex`;
+const APP_DATA = process.env.APPDATA;
+const USER_TEMPLATE_ROOT = APP_DATA ? join(APP_DATA, "texbutler", "templates") : null;
 const suite = process.argv[2] ?? "all";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 if (!new Set(["files", "theme", "pdf", "all"]).has(suite)) {
   throw new Error(`unknown suite: ${suite}`);
+}
+
+const exists = async (path) => access(path).then(() => true, () => false);
+
+async function installTemplateFixtures() {
+  if (!USER_TEMPLATE_ROOT) {
+    throw new Error("APPDATA is required for state-preserving template fixtures");
+  }
+  const nonce = `${process.pid}-${Date.now()}`;
+  const userDir = join(USER_TEMPLATE_ROOT, "article");
+  const userFile = join(USER_TEMPLATE_ROOT, "article.tex");
+  const snapshot = {
+    userRootExisted: await exists(USER_TEMPLATE_ROOT),
+    entries: [],
+  };
+  try {
+    await mkdir(USER_TEMPLATE_ROOT, { recursive: true });
+    for (const target of [userDir, userFile]) {
+      if (!await exists(target)) continue;
+      const backup = `${target}.e2e-v087-backup-${nonce}`;
+      await rename(target, backup);
+      snapshot.entries.push({ target, backup });
+    }
+    await mkdir(userDir, { recursive: true });
+    await writeFile(join(userDir, "main.tex"), "\\documentclass{article}\n% V087_USER_COLLISION\n", "utf8");
+    await writeFile(join(userDir, "user-only.txt"), "V087_USER_COLLISION\n", "utf8");
+    return snapshot;
+  } catch (error) {
+    await restoreTemplateFixtures(snapshot);
+    throw error;
+  }
+}
+
+async function restoreTemplateFixtures(snapshot) {
+  if (!snapshot || !USER_TEMPLATE_ROOT) return;
+  await rm(join(USER_TEMPLATE_ROOT, "article"), { recursive: true, force: true });
+  await rm(join(USER_TEMPLATE_ROOT, "article.tex"), { force: true });
+  for (const { target, backup } of [...snapshot.entries].reverse()) {
+    await rename(backup, target);
+  }
+  if (!snapshot.userRootExisted) await rm(USER_TEMPLATE_ROOT).catch(() => {});
 }
 
 async function cdp() {
@@ -66,7 +110,12 @@ async function main() {
   let testLocaleBaseline;
   let pdfWidthBefore;
   let pdfWidthAfter;
+  let templateFixtures;
+  let browserStateBefore;
+  let browserStateAfter;
+  const cleanupErrors = [];
   try {
+    templateFixtures = await installTemplateFixtures();
     await rm(PROJ, { recursive: true, force: true }).catch(() => {});
     await mkdir(PROJ, { recursive: true });
     await writeFile(FILE, "\\documentclass{article}\n\\begin{document}\nE2E fixture.\n\\end{document}\n", "utf8");
@@ -90,6 +139,34 @@ async function main() {
       if (result.exceptionDetails) throw new Error(`JS: ${JSON.stringify(result.exceptionDetails)}`);
       return result.result.value;
     };
+    browserStateBefore = JSON.parse(await exec(`(async () => {
+      const storeUrl = performance.getEntriesByType('resource')
+        .map((entry) => entry.name)
+        .find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+        ?? '/src/store/projectStore.ts';
+      const i18nUrl = performance.getEntriesByType('resource')
+        .map((entry) => entry.name)
+        .find((name) => new URL(name).pathname.endsWith('/src/i18n/index.ts') && new URL(name).search)
+        ?? '/src/i18n/index.ts';
+      const { useProjectStore } = await import(storeUrl);
+      const { useI18n } = await import(i18nUrl);
+      const project = useProjectStore.getState();
+      return JSON.stringify({
+        storage: Object.fromEntries(Object.entries(localStorage)),
+        theme: document.documentElement.dataset.theme ?? null,
+        locale: useI18n.getState().lang,
+        project: {
+          root: project.root,
+          mainFile: project.mainFile,
+          files: project.files,
+          tabs: project.tabs,
+          activeTab: project.activeTab,
+          pdfPath: project.pdfPath,
+          refIndex: project.refIndex,
+          toast: project.toast,
+        },
+      });
+    })()`));
     inspectLocale = async () => JSON.parse(await exec(`(async () => {
       const i18nUrl = performance.getEntriesByType('resource')
         .map((entry) => entry.name)
@@ -161,6 +238,110 @@ async function main() {
         importTargetGuidance: { en: false, zh: false },
         newProjectHasNoTemplateTabs: false,
         newProjectHasParentAndNameOnly: false,
+        templateSourceIsolation: {
+          collidingIdPresent: false,
+          userToMarketCleared: false,
+          marketToUserCleared: false,
+          blockedCarryImport: false,
+          downloadClearedSelection: false,
+          downloadBlockedCarryImport: false,
+          userImportUsesUserSource: false,
+          marketImportUsesMarketSource: false,
+        },
+        treeActions: {},
+        selectedCardContrast: { basic: 0, saved: 0 },
+      };
+      const openNewFile = async () => {
+        if (await exec(`!!document.querySelector('.new-file-modal')`)) return true;
+        const clicked = await clickSelector('.toolbar-new-file');
+        return clicked && await exec(`!!document.querySelector('.new-file-modal')`);
+      };
+      const closeModal = async () => {
+        if (await exec(`!!document.querySelector('.modal-header button')`)) {
+          await clickSelector('.modal-header button');
+        }
+      };
+      const waitFor = async (expression, attempts = 40) => {
+        for (let attempt = 0; attempt < attempts; attempt += 1) {
+          if (await exec(expression)) return true;
+          await sleep(50);
+        }
+        return false;
+      };
+      const markMarketTemplates = async () => exec(`(async () => {
+        const apiUrl = performance.getEntriesByType('resource')
+          .map((entry) => entry.name)
+          .find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { api } = await import(apiUrl);
+        const templates = await api.listMarketTemplates();
+        [...document.querySelectorAll('.market-card')].forEach((card, index) => {
+          card.dataset.templateId = templates[index]?.id ?? '';
+        });
+        return templates.length;
+      })()`);
+      const markUserTemplates = async () => exec(`(async () => {
+        const apiUrl = performance.getEntriesByType('resource')
+          .map((entry) => entry.name)
+          .find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { api } = await import(apiUrl);
+        const templates = await api.listTemplates();
+        [...document.querySelectorAll('.template-wrap .template-card')].forEach((card, index) => {
+          card.dataset.templateId = templates[index]?.id ?? '';
+        });
+        return templates.length;
+      })()`);
+      const selectTemplate = async (source, id) => {
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          const selector = await exec(`(async () => {
+            const source = ${JSON.stringify(source)};
+            const id = ${JSON.stringify(id)};
+            const apiUrl = performance.getEntriesByType('resource')
+              .map((entry) => entry.name)
+              .find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+              ?? '/src/api/index.ts';
+            const { api } = await import(apiUrl);
+            const templates = source === 'market' ? await api.listMarketTemplates() : await api.listTemplates();
+            const rendered = source === 'market'
+              ? [...document.querySelectorAll('.market-card')]
+              : [...document.querySelectorAll('.template-wrap .template-card')];
+            rendered.forEach((card, index) => { card.dataset.templateId = templates[index]?.id ?? ''; });
+            const button = rendered.find((candidate) => candidate.dataset.templateId === id);
+            if (!button) return null;
+            button.dataset.e2eTemplate = source + '-' + id;
+            button.scrollIntoView({ block: 'center', inline: 'nearest' });
+            return '[data-e2e-template="' + source + '-' + id + '"]';
+          })()`);
+          if (selector) return clickSelector(selector);
+          await sleep(50);
+        }
+        return false;
+      };
+      const setTarget = async (value) => exec(`(() => {
+        const input = document.querySelector('.new-file-modal label.target-row input');
+        if (!input) return false;
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        setter?.call(input, ${JSON.stringify(value)});
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+      })()`);
+      const readProjectFile = async (path) => exec(`(async () => {
+        const apiUrl = performance.getEntriesByType('resource')
+          .map((entry) => entry.name)
+          .find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { api } = await import(apiUrl);
+        try { return await api.readFile(${JSON.stringify(path)}); }
+        catch { return null; }
+      })()`);
+      const waitForProjectFile = async (path) => {
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          const content = await readProjectFile(path);
+          if (content !== null) return content;
+          await sleep(50);
+        }
+        return null;
       };
       if (await exec(`document.querySelector('.modal') ? '.modal-header button' : null`)) {
         await clickSelector('.modal-header button');
@@ -226,9 +407,172 @@ async function main() {
       })`));
       result.newProjectHasNoTemplateTabs = projectContract.hasModal && !projectContract.hasMarketTabs;
       result.newProjectHasParentAndNameOnly = projectContract.hasModal && projectContract.fields === 2;
-      if (await exec(`document.querySelector('.modal') ? '.modal-header button' : null`)) {
-        await clickSelector('.modal-header button');
+      await closeModal();
+
+      const originalTreeWidth = await exec(`document.querySelector('.col-tree')?.style.width ?? ''`);
+      for (const width of [160, 220]) {
+        for (const lang of ['en', 'zh']) {
+          await setLocale(lang);
+          await exec(`(() => {
+            const rail = document.querySelector('.col-tree');
+            if (rail) rail.style.width = ${JSON.stringify(`${width}px`)};
+          })()`);
+          await sleep(80);
+          result.treeActions[`${width}-${lang}`] = JSON.parse(await exec(`(() => {
+            const rail = document.querySelector('.col-tree');
+            const actions = [...document.querySelectorAll('.project-tree > .panel-header .panel-actions > button')];
+            if (!rail) return JSON.stringify({ rendered: false, visible: false, contained: false, count: actions.length });
+            const railRect = rail.getBoundingClientRect();
+            const geometry = actions.map((button) => {
+              const rect = button.getBoundingClientRect();
+              const style = getComputedStyle(button);
+              return {
+                text: button.textContent?.trim() ?? '',
+                rendered: rect.width > 0 && rect.height > 0 && style.display !== 'none',
+                visible: style.visibility !== 'hidden' && rect.top >= railRect.top && rect.bottom <= railRect.bottom,
+                contained: rect.left >= railRect.left - 0.5 && rect.right <= railRect.right + 0.5,
+              };
+            });
+            return JSON.stringify({
+              railWidth: railRect.width,
+              count: actions.length,
+              rendered: actions.length === 4 && geometry.every((item) => item.rendered),
+              visible: geometry.every((item) => item.visible),
+              contained: geometry.every((item) => item.contained),
+              geometry,
+            });
+          })()`));
+        }
       }
+      await exec(`(() => {
+        const rail = document.querySelector('.col-tree');
+        if (rail) rail.style.width = ${JSON.stringify(originalTreeWidth)};
+      })()`);
+
+      await openNewFile();
+      await clickSelector('[data-new-file-tab="user"]');
+      await waitFor(`document.querySelectorAll('.template-wrap .template-card').length > 0`);
+      await markUserTemplates();
+      const userCollision = await exec(`!!document.querySelector('.template-wrap .template-card[data-template-id="article"]')`);
+      await clickSelector('[data-new-file-tab="market"]');
+      await markMarketTemplates();
+      const marketCollision = await exec(`!!document.querySelector('.market-card[data-template-id="article"]')`);
+      result.templateSourceIsolation.collidingIdPresent = userCollision && marketCollision;
+      await closeModal();
+
+      await openNewFile();
+      await clickSelector('[data-new-file-tab="market"]');
+      await selectTemplate('market', 'article');
+      await clickSelector('[data-new-file-tab="user"]');
+      result.templateSourceIsolation.marketToUserCleared = await exec(`!document.querySelector('.template-wrap .template-active')`);
+      await selectTemplate('user', 'article');
+      await clickSelector('[data-new-file-tab="market"]');
+      result.templateSourceIsolation.userToMarketCleared = await exec(`!document.querySelector('.market-card.template-active')`);
+      await setTarget('carry-blocked');
+      await clickSelector('.new-file-modal .modal-footer .btn-primary');
+      await sleep(350);
+      result.templateSourceIsolation.blockedCarryImport = await exec(`!!document.querySelector('.new-file-modal .modal-error')`);
+      await closeModal();
+      await rm(`${PROJ}/carry-blocked`, { recursive: true, force: true });
+
+      await openNewFile();
+      await clickSelector('[data-new-file-tab="user"]');
+      await selectTemplate('user', 'article');
+      await setTarget('from-user');
+      await clickSelector('.new-file-modal .modal-footer .btn-primary');
+      result.templateSourceIsolation.userImportUsesUserSource =
+        (await waitForProjectFile('from-user/user-only.txt'))?.trim() === 'V087_USER_COLLISION';
+
+      await openNewFile();
+      await clickSelector('[data-new-file-tab="market"]');
+      await selectTemplate('market', 'article');
+      await setTarget('from-market');
+      await clickSelector('.new-file-modal .modal-footer .btn-primary');
+      const marketMain = await waitForProjectFile('from-market/main.tex');
+      const marketOnly = await readProjectFile('from-market/user-only.txt');
+      result.templateSourceIsolation.marketImportUsesMarketSource =
+        typeof marketMain === 'string' && marketMain.includes('\\documentclass') && marketOnly === null;
+
+      await openNewFile();
+      await clickSelector('[data-new-file-tab="market"]');
+      await selectTemplate('market', 'article');
+      await exec(`(async () => {
+        const apiUrl = performance.getEntriesByType('resource')
+          .map((entry) => entry.name)
+          .find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { api } = await import(apiUrl);
+        window.__v087DownloadOriginal = api.downloadTemplate;
+        api.downloadTemplate = () => new Promise((resolve) => { window.__v087ResolveDownload = resolve; });
+        return true;
+      })()`);
+      await selectTemplate('market', 'zjuthesis');
+      await sleep(80);
+      result.templateSourceIsolation.downloadClearedSelection = await exec(`!document.querySelector('.market-card.template-active')`);
+      await setTarget('download-carry-blocked');
+      await clickSelector('.new-file-modal .modal-footer .btn-primary');
+      await sleep(150);
+      result.templateSourceIsolation.downloadBlockedCarryImport = await exec(`!!document.querySelector('.new-file-modal .modal-error')`);
+      await exec(`(async () => {
+        const apiUrl = performance.getEntriesByType('resource')
+          .map((entry) => entry.name)
+          .find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { api } = await import(apiUrl);
+        window.__v087ResolveDownload?.('fixture');
+        if (window.__v087DownloadOriginal) api.downloadTemplate = window.__v087DownloadOriginal;
+        delete window.__v087ResolveDownload;
+        delete window.__v087DownloadOriginal;
+        return true;
+      })()`);
+      await sleep(120);
+      await closeModal();
+      await rm(`${PROJ}/download-carry-blocked`, { recursive: true, force: true });
+
+      const themeBeforeContrast = await exec(`document.documentElement.dataset.theme ?? ''`);
+      await exec(`document.documentElement.dataset.theme = 'light'`);
+      await openNewFile();
+      await clickSelector('[data-new-file-tab="basic"]');
+      const renderedContrast = async (selector) => Number(await exec(`(() => {
+        const node = document.querySelector(${JSON.stringify(selector)});
+        if (!node) return 0;
+        const parse = (value) => {
+          const match = value.match(/rgba?\\(([^)]+)\\)/);
+          if (!match) return { r: 0, g: 0, b: 0, a: 0 };
+          const parts = match[1].split(/[ ,/]+/).filter(Boolean).map(Number);
+          return { r: parts[0], g: parts[1], b: parts[2], a: parts[3] ?? 1 };
+        };
+        const over = (front, back) => {
+          const a = front.a + back.a * (1 - front.a);
+          return a === 0 ? { r: 0, g: 0, b: 0, a: 0 } : {
+            r: (front.r * front.a + back.r * back.a * (1 - front.a)) / a,
+            g: (front.g * front.a + back.g * back.a * (1 - front.a)) / a,
+            b: (front.b * front.a + back.b * back.a * (1 - front.a)) / a,
+            a,
+          };
+        };
+        const chain = [];
+        for (let current = node; current; current = current.parentElement) chain.push(current);
+        let background = { r: 255, g: 255, b: 255, a: 1 };
+        for (const current of chain.reverse()) background = over(parse(getComputedStyle(current).backgroundColor), background);
+        const foreground = over(parse(getComputedStyle(node).color), background);
+        const luminance = ({ r, g, b }) => {
+          const linear = [r, g, b].map((channel) => {
+            const value = channel / 255;
+            return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+          });
+          return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+        };
+        const a = luminance(foreground);
+        const b = luminance(background);
+        return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+      })()`));
+      result.selectedCardContrast.basic = await renderedContrast('.template-grid .template-card.template-active');
+      await clickSelector('[data-new-file-tab="user"]');
+      await selectTemplate('user', 'article');
+      result.selectedCardContrast.saved = await renderedContrast('.template-wrap .template-card.template-active');
+      await closeModal();
+      await exec(`document.documentElement.dataset.theme = ${JSON.stringify(themeBeforeContrast)}`);
       return result;
     };
 
@@ -460,11 +804,76 @@ async function main() {
       })()`);
       localeAfter = await inspectLocale();
     }
+    if (client && exec && browserStateBefore) {
+      try {
+        await exec(`(async () => {
+          const apiUrl = performance.getEntriesByType('resource')
+            .map((entry) => entry.name)
+            .find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+            ?? '/src/api/index.ts';
+          const { api } = await import(apiUrl);
+          window.__v087ResolveDownload?.('fixture');
+          if (window.__v087DownloadOriginal) api.downloadTemplate = window.__v087DownloadOriginal;
+          delete window.__v087ResolveDownload;
+          delete window.__v087DownloadOriginal;
+          const snapshot = ${JSON.stringify(browserStateBefore)};
+          localStorage.clear();
+          for (const [key, value] of Object.entries(snapshot.storage)) localStorage.setItem(key, value);
+          return true;
+        })()`);
+        await client.send("Page.reload", { ignoreCache: true });
+        await sleep(1200);
+        browserStateAfter = JSON.parse(await exec(`(async () => {
+          const snapshot = ${JSON.stringify(browserStateBefore)};
+          const storeUrl = performance.getEntriesByType('resource')
+            .map((entry) => entry.name)
+            .find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+            ?? '/src/store/projectStore.ts';
+          const i18nUrl = performance.getEntriesByType('resource')
+            .map((entry) => entry.name)
+            .find((name) => new URL(name).pathname.endsWith('/src/i18n/index.ts') && new URL(name).search)
+            ?? '/src/i18n/index.ts';
+          const { useProjectStore } = await import(storeUrl);
+          const { useI18n } = await import(i18nUrl);
+          if (snapshot.project.root) await useProjectStore.getState().openProject(snapshot.project.root);
+          else useProjectStore.getState().closeProject();
+          useProjectStore.setState(snapshot.project);
+          useI18n.getState().setLang(snapshot.locale);
+          if (snapshot.theme === null) delete document.documentElement.dataset.theme;
+          else document.documentElement.dataset.theme = snapshot.theme;
+          localStorage.clear();
+          for (const [key, value] of Object.entries(snapshot.storage)) localStorage.setItem(key, value);
+          const project = useProjectStore.getState();
+          return JSON.stringify({
+            storage: Object.fromEntries(Object.entries(localStorage)),
+            theme: document.documentElement.dataset.theme ?? null,
+            locale: useI18n.getState().lang,
+            project: {
+              root: project.root,
+              mainFile: project.mainFile,
+              files: project.files,
+              tabs: project.tabs,
+              activeTab: project.activeTab,
+              pdfPath: project.pdfPath,
+              refIndex: project.refIndex,
+              toast: project.toast,
+            },
+          });
+        })()`));
+      } catch (error) {
+        cleanupErrors.push(`browser restoration: ${error}`);
+      }
+    }
     if (client) {
       await client.send("Emulation.clearDeviceMetricsOverride").catch(() => {});
       client.close();
     }
     await rm(PROJ, { recursive: true, force: true }).catch(() => {});
+    try {
+      await restoreTemplateFixtures(templateFixtures);
+    } catch (error) {
+      cleanupErrors.push(`template restoration: ${error}`);
+    }
   }
   if (files !== true) {
     files.localeRestored = {
@@ -491,6 +900,13 @@ async function main() {
     && files.importTargetGuidance.zh
     && files.newProjectHasNoTemplateTabs
     && files.newProjectHasParentAndNameOnly
+    && Object.values(files.templateSourceIsolation).every(Boolean)
+    && Object.values(files.treeActions).length === 4
+    && Object.values(files.treeActions).every((snapshot) => (
+      snapshot.rendered && snapshot.visible && snapshot.contained
+    ))
+    && files.selectedCardContrast.basic >= 4.5
+    && files.selectedCardContrast.saved >= 4.5
     && files.localeRestored.live
     && files.localeRestored.storage
   );
@@ -521,11 +937,14 @@ async function main() {
     && snapshot.populated.frameVisible
     && snapshot.widthPreserved
   )));
-  failed = !filesOk || !themeOk || !pdfOk;
+  const browserRestored = cleanupErrors.length === 0
+    && JSON.stringify(browserStateAfter) === JSON.stringify(browserStateBefore);
+  failed = !filesOk || !themeOk || !pdfOk || !browserRestored;
   console.log("FILES", JSON.stringify(files));
   console.log("THEME", JSON.stringify(theme));
   console.log("PDF", JSON.stringify(pdf));
-  console.log("E2E-DONE", failed ? "FAIL" : "PASS", { suite, filesOk, themeOk, pdfOk });
+  console.log("STATE", JSON.stringify({ browserRestored, cleanupErrors }));
+  console.log("E2E-DONE", failed ? "FAIL" : "PASS", { suite, filesOk, themeOk, pdfOk, browserRestored });
   if (failed) process.exitCode = 1;
 }
 

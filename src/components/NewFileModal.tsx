@@ -123,6 +123,7 @@ const NewFileModal: NewFileModalComponent = ({ open, onClose }) => {
 
   const downloadMarketTemplate = async (id: string) => {
     setError(null);
+    setSelectedTemplate(null);
     setDownloading(id);
     try {
       await api.downloadTemplate(id);
@@ -154,6 +155,7 @@ const NewFileModal: NewFileModalComponent = ({ open, onClose }) => {
                 className={`new-file-tab ${tab === value ? "active" : ""}`}
                 data-new-file-tab={value}
                 onClick={() => {
+                  if (value !== tab) setSelectedTemplate(null);
                   setTab(value);
                   setError(null);
                 }}

@@ -1082,6 +1082,22 @@ html[data-theme="light"] .toolbar-more-menu {
   align-items: center;
 }
 
+.project-tree > .panel-header {
+  align-items: flex-start;
+}
+
+.project-tree > .panel-header .panel-actions {
+  flex: 1 1 auto;
+  max-width: 100%;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.project-tree > .panel-header .panel-actions .btn-mini {
+  max-width: 100%;
+  white-space: normal;
+}
+
 .editor-header {
   min-width: 0;
   overflow: hidden;
@@ -1879,8 +1895,8 @@ html[data-theme="liquid"] .tree-active .tree-main-tag {
 
 .template-active {
   border-color: var(--accent2);
-  background: rgba(17, 119, 187, 0.18);
-  color: #fff;
+  background: color-mix(in srgb, var(--accent2) 18%, var(--bg));
+  color: var(--fg);
 }
 
 .new-file-modal {
