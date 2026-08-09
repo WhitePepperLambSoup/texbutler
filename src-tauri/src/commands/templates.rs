@@ -558,14 +558,33 @@ struct MergeEntry {
     is_dir: bool,
 }
 
-fn inspect_merge_conflicts(stage: &Path, destination: &Path) -> Result<Vec<MergeEntry>, String> {
-    fn inspect(
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DestinationEntry {
+    Missing,
+    ReusableDirectory,
+    Conflict,
+}
+
+fn inspect_merge_conflicts_with<F>(
+    stage: &Path,
+    destination: &Path,
+    mut inspect_target: F,
+) -> Result<Vec<MergeEntry>, String>
+where
+    F: FnMut(&Path) -> Result<DestinationEntry, String>,
+{
+    fn inspect<F>(
         stage: &Path,
         destination: &Path,
         relative: &Path,
+        probe_destination: bool,
         entries: &mut Vec<MergeEntry>,
         conflicts: &mut Vec<String>,
-    ) -> Result<(), String> {
+        inspect_target: &mut F,
+    ) -> Result<(), String>
+    where
+        F: FnMut(&Path) -> Result<DestinationEntry, String>,
+    {
         let source_dir = stage.join(relative);
         let mut children = std::fs::read_dir(&source_dir)
             .map_err(|error| format!("could not inspect staged template: {error}"))?
@@ -593,26 +612,30 @@ fn inspect_merge_conflicts(stage: &Path, destination: &Path) -> Result<Vec<Merge
             }
 
             let target = destination.join(&child_relative);
-            match std::fs::symlink_metadata(&target) {
-                Ok(target_metadata) => {
-                    let reusable_directory = is_dir
-                        && target_metadata.is_dir()
-                        && !target_metadata.file_type().is_symlink();
-                    if !reusable_directory {
-                        conflicts.push(child_relative.to_string_lossy().replace('\\', "/"));
-                    }
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => {
-                    return Err(format!("could not inspect template destination: {error}"))
-                }
+            let destination_entry = if probe_destination {
+                inspect_target(&target)?
+            } else {
+                DestinationEntry::Missing
+            };
+            if destination_entry == DestinationEntry::Conflict
+                || (!is_dir && destination_entry == DestinationEntry::ReusableDirectory)
+            {
+                conflicts.push(child_relative.to_string_lossy().replace('\\', "/"));
             }
             entries.push(MergeEntry {
                 relative: child_relative.clone(),
                 is_dir,
             });
             if is_dir {
-                inspect(stage, destination, &child_relative, entries, conflicts)?;
+                inspect(
+                    stage,
+                    destination,
+                    &child_relative,
+                    destination_entry == DestinationEntry::ReusableDirectory,
+                    entries,
+                    conflicts,
+                    inspect_target,
+                )?;
             }
         }
         Ok(())
@@ -624,8 +647,10 @@ fn inspect_merge_conflicts(stage: &Path, destination: &Path) -> Result<Vec<Merge
         stage,
         destination,
         Path::new(""),
+        true,
         &mut entries,
         &mut conflicts,
+        &mut inspect_target,
     )?;
     if conflicts.is_empty() {
         Ok(entries)
@@ -635,6 +660,23 @@ fn inspect_merge_conflicts(stage: &Path, destination: &Path) -> Result<Vec<Merge
             conflicts.join(", ")
         ))
     }
+}
+
+fn inspect_merge_conflicts(stage: &Path, destination: &Path) -> Result<Vec<MergeEntry>, String> {
+    inspect_merge_conflicts_with(
+        stage,
+        destination,
+        |target| match std::fs::symlink_metadata(target) {
+            Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
+                Ok(DestinationEntry::ReusableDirectory)
+            }
+            Ok(_) => Ok(DestinationEntry::Conflict),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                Ok(DestinationEntry::Missing)
+            }
+            Err(error) => Err(format!("could not inspect template destination: {error}")),
+        },
+    )
 }
 
 #[derive(Default)]
@@ -733,33 +775,126 @@ fn join_relative(directory: &str, child: &str) -> String {
     }
 }
 
-pub fn merge_resolved_template(
+struct OwnedImportStage {
+    path: PathBuf,
+}
+
+impl Drop for OwnedImportStage {
+    fn drop(&mut self) {
+        remove_created_dir(&self.path);
+    }
+}
+
+fn ensure_real_import_directory(project: &Project, path: &Path, label: &str) -> Result<(), String> {
+    loop {
+        match std::fs::symlink_metadata(path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(format!(
+                    "template import {label} may not be a symbolic link"
+                ));
+            }
+            Ok(metadata) if metadata.is_dir() => {
+                project.canonical_inside(path)?;
+                return Ok(());
+            }
+            Ok(_) => {
+                return Err(format!(
+                    "template import {label} is not a directory: {}",
+                    path.display()
+                ));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                match std::fs::create_dir(path) {
+                    Ok(()) => {
+                        if let Err(error) = project.canonical_inside(path) {
+                            let _ = std::fs::remove_dir(path);
+                            return Err(error);
+                        }
+                        return Ok(());
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                    Err(error) => {
+                        return Err(format!("could not create template import {label}: {error}"));
+                    }
+                }
+            }
+            Err(error) => {
+                return Err(format!(
+                    "could not inspect template import {label}: {error}"
+                ));
+            }
+        }
+    }
+}
+
+fn create_import_stage_from_nonce(
+    project: &Project,
+    starting_nonce: u64,
+) -> Result<OwnedImportStage, String> {
+    let metadata_dir = project.root.join(".texbutler");
+    ensure_real_import_directory(project, &metadata_dir, "metadata directory")?;
+    let backup_dir = project.backup_dir();
+    ensure_real_import_directory(project, &backup_dir, "backup directory")?;
+
+    let mut nonce = starting_nonce;
+    loop {
+        let stage = backup_dir.join(format!("import-stage-{}-{nonce}", std::process::id()));
+        project.canonical_inside(&stage)?;
+        match std::fs::create_dir(&stage) {
+            Ok(()) => {
+                if let Err(error) = project.canonical_inside(&stage) {
+                    remove_created_dir(&stage);
+                    return Err(error);
+                }
+                return Ok(OwnedImportStage { path: stage });
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                nonce = nonce
+                    .checked_add(1)
+                    .ok_or_else(|| "template import stage nonce exhausted".to_string())?;
+            }
+            Err(error) => {
+                return Err(format!("could not create template import stage: {error}"));
+            }
+        }
+    }
+}
+
+fn merge_resolved_template_from_nonce(
     project: &Project,
     destination_dir: &str,
     source: ResolvedTemplate<'_>,
+    starting_nonce: u64,
 ) -> Result<ImportedTemplate, String> {
     let destination_dir = normalize_existing_project_dir(project, destination_dir)?;
     let destination = project
         .resolve(&destination_dir)
         .ok_or_else(|| "template import directory escapes the project".to_string())?;
-    let stage = project.backup_dir().join(format!(
-        "import-stage-{}-{}",
-        std::process::id(),
+    let stage = create_import_stage_from_nonce(project, starting_nonce)?;
+    let main_inside = {
+        stage_resolved_template(source, &stage.path)?;
+        let main_inside = detect_main_document(&stage.path)?;
+        let entries = inspect_merge_conflicts(&stage.path, &destination)?;
+        merge_staged_tree(&stage.path, &destination, &entries)?;
+        main_inside
+    };
+    Ok(ImportedTemplate {
+        target_dir: destination_dir.clone(),
+        main_file: join_relative(&destination_dir, &main_inside),
+    })
+}
+
+pub fn merge_resolved_template(
+    project: &Project,
+    destination_dir: &str,
+    source: ResolvedTemplate<'_>,
+) -> Result<ImportedTemplate, String> {
+    merge_resolved_template_from_nonce(
+        project,
+        destination_dir,
+        source,
         NEXT_IMPORT_TEMP.fetch_add(1, Ordering::Relaxed),
-    ));
-    let result = (|| {
-        std::fs::create_dir_all(&stage).map_err(|error| error.to_string())?;
-        stage_resolved_template(source, &stage)?;
-        let main_inside = detect_main_document(&stage)?;
-        let entries = inspect_merge_conflicts(&stage, &destination)?;
-        merge_staged_tree(&stage, &destination, &entries)?;
-        Ok(ImportedTemplate {
-            target_dir: destination_dir.clone(),
-            main_file: join_relative(&destination_dir, &main_inside),
-        })
-    })();
-    remove_created_dir(&stage);
-    result
+    )
 }
 
 pub fn import_resolved_template(
@@ -1610,6 +1745,340 @@ mod tests {
             std::fs::read(destination.join("paper.tex")).unwrap(),
             b"external\n"
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn merge_collects_sibling_conflicts_when_staged_directory_hits_file() {
+        let root = test_root("merge-directory-file-conflicts");
+        let staged = root.join("staged");
+        let destination = root.join("destination");
+        write_fixture(&staged.join("blocked/child.tex"), b"child\n");
+        write_fixture(&staged.join("sibling.tex"), b"new\n");
+        write_fixture(&destination.join("blocked"), b"not a directory\n");
+        write_fixture(&destination.join("sibling.tex"), b"existing\n");
+
+        let error = inspect_merge_conflicts(&staged, &destination).unwrap_err();
+
+        assert!(error.starts_with("template import conflicts with existing entries:"));
+        assert!(error.contains("blocked"));
+        assert!(error.contains("sibling.tex"));
+        assert!(!error.contains("could not inspect template destination"));
+        assert_eq!(
+            std::fs::read(destination.join("blocked")).unwrap(),
+            b"not a directory\n"
+        );
+        assert_eq!(
+            std::fs::read(destination.join("sibling.tex")).unwrap(),
+            b"existing\n"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn merge_conflict_scanner_skips_target_children_below_non_directory() {
+        let root = test_root("merge-conflict-probe-boundary");
+        let staged = root.join("staged");
+        let destination = root.join("destination");
+        write_fixture(&staged.join("blocked/child.tex"), b"child\n");
+        write_fixture(&staged.join("sibling.tex"), b"new\n");
+        std::fs::create_dir_all(&destination).unwrap();
+        let mut probed = Vec::new();
+
+        let error = inspect_merge_conflicts_with(&staged, &destination, |target| {
+            let relative = target.strip_prefix(&destination).unwrap().to_path_buf();
+            assert_ne!(relative, PathBuf::from("blocked/child.tex"));
+            probed.push(relative.clone());
+            Ok(
+                if relative == Path::new("blocked") || relative == Path::new("sibling.tex") {
+                    DestinationEntry::Conflict
+                } else {
+                    DestinationEntry::Missing
+                },
+            )
+        })
+        .unwrap_err();
+
+        assert!(error.contains("blocked"));
+        assert!(error.contains("sibling.tex"));
+        assert_eq!(
+            probed,
+            vec![PathBuf::from("blocked"), PathBuf::from("sibling.tex")]
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn merge_collects_file_to_directory_mismatch_with_sibling_conflicts() {
+        let root = test_root("merge-file-directory-conflicts");
+        let staged = root.join("staged");
+        let destination = root.join("destination");
+        write_fixture(&staged.join("blocked"), b"file\n");
+        write_fixture(&staged.join("sibling.tex"), b"new\n");
+        std::fs::create_dir_all(destination.join("blocked")).unwrap();
+        write_fixture(&destination.join("sibling.tex"), b"existing\n");
+
+        let error = inspect_merge_conflicts(&staged, &destination).unwrap_err();
+
+        assert!(error.starts_with("template import conflicts with existing entries:"));
+        assert!(error.contains("blocked"));
+        assert!(error.contains("sibling.tex"));
+        assert!(destination.join("blocked").is_dir());
+        assert_eq!(
+            std::fs::read(destination.join("sibling.tex")).unwrap(),
+            b"existing\n"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn merge_does_not_follow_conflicting_destination_symlink_subtree() {
+        let root = test_root("merge-directory-symlink-conflicts");
+        let staged = root.join("staged");
+        let destination = root.join("destination");
+        let outside = root.join("outside");
+        write_fixture(&staged.join("blocked/child.tex"), b"child\n");
+        write_fixture(&staged.join("sibling.tex"), b"new\n");
+        write_fixture(&outside.join("child.tex"), b"outside\n");
+        write_fixture(&destination.join("sibling.tex"), b"existing\n");
+
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, destination.join("blocked")).unwrap();
+        #[cfg(windows)]
+        if let Err(error) = std::os::windows::fs::symlink_dir(&outside, destination.join("blocked"))
+        {
+            if symlink_privilege_unavailable(&error) {
+                std::fs::remove_dir_all(root).unwrap();
+                return;
+            }
+            panic!("failed to create destination symlink: {error}");
+        }
+
+        let error = inspect_merge_conflicts(&staged, &destination).unwrap_err();
+
+        assert!(error.starts_with("template import conflicts with existing entries:"));
+        assert!(error.contains("blocked"));
+        assert!(error.contains("sibling.tex"));
+        assert!(!error.contains("blocked/child.tex"));
+        assert_eq!(
+            std::fs::read(outside.join("child.tex")).unwrap(),
+            b"outside\n"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn merge_preserves_stale_stage_and_uses_exclusive_sibling() {
+        let root = test_root("merge-stale-stage");
+        let project_root = root.join("project");
+        let source_root = root.join("source");
+        write_fixture(
+            &project_root.join("main.tex"),
+            b"\\documentclass{article}\n",
+        );
+        write_fixture(&source_root.join("paper.tex"), b"\\documentclass{report}\n");
+        let project = Project::open(&project_root).unwrap();
+        let nonce = 9_000_000 + NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed);
+        let stale = project
+            .backup_dir()
+            .join(format!("import-stage-{}-{nonce}", std::process::id()));
+        write_fixture(&stale.join("stale.txt"), b"preserve\n");
+
+        let imported = merge_resolved_template_from_nonce(
+            &project,
+            "",
+            ResolvedTemplate::Directory(&source_root),
+            nonce,
+        )
+        .unwrap();
+
+        assert_eq!(imported.main_file, "paper.tex");
+        assert_eq!(
+            std::fs::read(stale.join("stale.txt")).unwrap(),
+            b"preserve\n"
+        );
+        let stages = std::fs::read_dir(project.backup_dir())
+            .unwrap()
+            .flatten()
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("import-stage-")
+            })
+            .count();
+        assert_eq!(stages, 1, "only the pre-existing stale stage may remain");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn merge_rejects_outward_backup_symlink_without_touching_external_files() {
+        let root = test_root("merge-backup-symlink");
+        let project_root = root.join("project");
+        let source_root = root.join("source");
+        let outside = root.join("outside");
+        write_fixture(
+            &project_root.join("main.tex"),
+            b"\\documentclass{article}\n",
+        );
+        write_fixture(&source_root.join("paper.tex"), b"\\documentclass{report}\n");
+        write_fixture(&outside.join("keep.txt"), b"outside\n");
+        std::fs::create_dir_all(project_root.join(".texbutler")).unwrap();
+
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, project_root.join(".texbutler/backup")).unwrap();
+        #[cfg(windows)]
+        if let Err(error) =
+            std::os::windows::fs::symlink_dir(&outside, project_root.join(".texbutler/backup"))
+        {
+            if symlink_privilege_unavailable(&error) {
+                std::fs::remove_dir_all(root).unwrap();
+                return;
+            }
+            panic!("failed to create backup symlink: {error}");
+        }
+        let project = Project::open(&project_root).unwrap();
+
+        let error = merge_resolved_template_from_nonce(
+            &project,
+            "",
+            ResolvedTemplate::Directory(&source_root),
+            9_100_000,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("symbolic link"));
+        assert_eq!(
+            std::fs::read(outside.join("keep.txt")).unwrap(),
+            b"outside\n"
+        );
+        assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 1);
+        assert!(!project_root.join("paper.tex").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn merge_cleans_owned_stage_after_success_and_failure() {
+        let root = test_root("merge-stage-cleanup");
+        let project_root = root.join("project");
+        let valid_source = root.join("valid-source");
+        let invalid_source = root.join("invalid-source");
+        write_fixture(
+            &project_root.join("main.tex"),
+            b"\\documentclass{article}\n",
+        );
+        write_fixture(
+            &valid_source.join("paper.tex"),
+            b"\\documentclass{report}\n",
+        );
+        write_fixture(&invalid_source.join("chapter.tex"), b"chapter\n");
+        let project = Project::open(&project_root).unwrap();
+
+        merge_resolved_template_from_nonce(
+            &project,
+            "",
+            ResolvedTemplate::Directory(&valid_source),
+            9_200_000,
+        )
+        .unwrap();
+        assert!(merge_resolved_template_from_nonce(
+            &project,
+            "",
+            ResolvedTemplate::Directory(&invalid_source),
+            9_300_000,
+        )
+        .is_err());
+
+        let residue = std::fs::read_dir(project.backup_dir())
+            .unwrap()
+            .flatten()
+            .any(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("import-stage-")
+            });
+        assert!(
+            !residue,
+            "owned stages must be removed on success and failure"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn normalize_existing_directory_accepts_only_real_project_directories() {
+        let root = test_root("normalize-existing-directory");
+        let project_root = root.join("project");
+        write_fixture(
+            &project_root.join("main.tex"),
+            b"\\documentclass{article}\n",
+        );
+        std::fs::create_dir_all(project_root.join("contents/nested")).unwrap();
+        write_fixture(&project_root.join("ordinary-file"), b"file\n");
+        let project = Project::open(&project_root).unwrap();
+
+        assert_eq!(normalize_existing_project_dir(&project, "").unwrap(), "");
+        assert_eq!(normalize_existing_project_dir(&project, ".").unwrap(), "");
+        assert_eq!(
+            normalize_existing_project_dir(&project, "contents/nested").unwrap(),
+            "contents/nested"
+        );
+        let absolute = project_root.to_string_lossy().to_string();
+        for rejected in [
+            "missing",
+            "ordinary-file",
+            "../outside",
+            "C:/outside",
+            absolute.as_str(),
+        ] {
+            assert!(
+                normalize_existing_project_dir(&project, rejected).is_err(),
+                "directory must be rejected: {rejected}"
+            );
+        }
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn normalize_existing_directory_rejects_internal_and_external_symlinks() {
+        let root = test_root("normalize-directory-symlinks");
+        let project_root = root.join("project");
+        let outside = root.join("outside");
+        write_fixture(
+            &project_root.join("main.tex"),
+            b"\\documentclass{article}\n",
+        );
+        std::fs::create_dir_all(project_root.join("inside")).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(
+                project_root.join("inside"),
+                project_root.join("inside-link"),
+            )
+            .unwrap();
+            std::os::unix::fs::symlink(&outside, project_root.join("outside-link")).unwrap();
+        }
+        #[cfg(windows)]
+        {
+            if let Err(error) = std::os::windows::fs::symlink_dir(
+                project_root.join("inside"),
+                project_root.join("inside-link"),
+            ) {
+                if symlink_privilege_unavailable(&error) {
+                    std::fs::remove_dir_all(root).unwrap();
+                    return;
+                }
+                panic!("failed to create internal directory symlink: {error}");
+            }
+            std::os::windows::fs::symlink_dir(&outside, project_root.join("outside-link")).unwrap();
+        }
+        let project = Project::open(&project_root).unwrap();
+
+        assert!(normalize_existing_project_dir(&project, "inside-link").is_err());
+        assert!(normalize_existing_project_dir(&project, "outside-link").is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
 }
