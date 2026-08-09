@@ -1468,10 +1468,13 @@ async function main() {
         window.__v087SecondaryTimelinePromise = useAiStore.getState().restoreTimelineSnapshot('secondary-await-snapshot');
         return true;
       })()`);
+      let secondaryReadStarted = false;
       for (let attempt = 0; attempt < 40; attempt += 1) {
-        if (await exec(`Boolean(window.__v087SecondaryReadStarted)`)) break;
+        secondaryReadStarted = await exec(`Boolean(window.__v087SecondaryReadStarted)`);
+        if (secondaryReadStarted) break;
         await sleep(50);
       }
+      if (!secondaryReadStarted) throw new Error('secondary timeline read did not start');
       await openSessionProject(SESSION_PROJ, 'contents/abstract.tex');
       const secondProjectContentBeforeStaleRead = await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
@@ -1533,10 +1536,13 @@ async function main() {
         }, 3, true);
         return true;
       })()`);
+      let secondaryCheckStarted = false;
       for (let attempt = 0; attempt < 40; attempt += 1) {
-        if (await exec(`Boolean(window.__v087SecondaryCheckStarted)`)) break;
+        secondaryCheckStarted = await exec(`Boolean(window.__v087SecondaryCheckStarted)`);
+        if (secondaryCheckStarted) break;
         await sleep(50);
       }
+      if (!secondaryCheckStarted) throw new Error('secondary rule check did not start');
       await openSessionProject(SESSION_PROJ, 'contents/abstract.tex');
       await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
