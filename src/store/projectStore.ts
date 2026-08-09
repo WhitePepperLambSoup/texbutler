@@ -183,10 +183,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
    *  user started typing while the read was in flight (dirty), keep their
    *  edits — the disk content will win on their next explicit save. */
   async reloadTab(rel: string) {
+    const requestRoot = get().root;
     const content = await api.readFile(rel);
-    set((s) => ({
-      tabs: s.tabs.map((t) => (t.path === rel && !t.dirty ? { ...t, content, dirty: false } : t)),
-    }));
+    set((s) => s.root === requestRoot
+      ? { tabs: s.tabs.map((t) => (t.path === rel && !t.dirty ? { ...t, content, dirty: false } : t)) }
+      : s);
   },
 
   async ensureTab(rel: string) {

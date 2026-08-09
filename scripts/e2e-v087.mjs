@@ -1443,6 +1443,140 @@ async function main() {
       result.deleteClearsAllBindings = rebound.sessionId === isolated.sessionId
         && !Object.values(deleted.fileSessions).includes(isolated.sessionId)
         && !Object.values(deleted.storedBindings).includes(isolated.sessionId);
+
+      await openSessionProject(PROJ, 'contents/abstract.tex');
+      await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+          ?? '/src/store/aiStore.ts';
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { useAiStore } = await import(aiUrl);
+        const { api } = await import(apiUrl);
+        window.__v087SecondaryRollbackOriginal = api.aiRollback;
+        window.__v087SecondaryReadOriginal = api.readFile;
+        window.__v087SecondaryReadArmed = true;
+        api.aiRollback = async () => 'contents/abstract.tex';
+        api.readFile = (path) => {
+          if (path === 'contents/abstract.tex' && window.__v087SecondaryReadArmed) {
+            window.__v087SecondaryReadArmed = false;
+            window.__v087SecondaryReadStarted = true;
+            return new Promise((resolve) => { window.__v087ResolveSecondaryRead = resolve; });
+          }
+          return window.__v087SecondaryReadOriginal(path);
+        };
+        window.__v087SecondaryTimelinePromise = useAiStore.getState().restoreTimelineSnapshot('secondary-await-snapshot');
+        return true;
+      })()`);
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        if (await exec(`Boolean(window.__v087SecondaryReadStarted)`)) break;
+        await sleep(50);
+      }
+      await openSessionProject(SESSION_PROJ, 'contents/abstract.tex');
+      const secondProjectContentBeforeStaleRead = await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+          ?? '/src/store/projectStore.ts';
+        const { useProjectStore } = await import(projectUrl);
+        return useProjectStore.getState().tabs.find((tab) => tab.path === 'contents/abstract.tex')?.content ?? null;
+      })()`);
+      await exec(`(async () => {
+        window.__v087ResolveSecondaryRead?.('STALE_A_TIMELINE_CONTENT');
+        await window.__v087SecondaryTimelinePromise;
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { api } = await import(apiUrl);
+        if (window.__v087SecondaryRollbackOriginal) api.aiRollback = window.__v087SecondaryRollbackOriginal;
+        if (window.__v087SecondaryReadOriginal) api.readFile = window.__v087SecondaryReadOriginal;
+        delete window.__v087SecondaryRollbackOriginal;
+        delete window.__v087SecondaryReadOriginal;
+        delete window.__v087SecondaryReadArmed;
+        delete window.__v087SecondaryReadStarted;
+        delete window.__v087ResolveSecondaryRead;
+        delete window.__v087SecondaryTimelinePromise;
+        return true;
+      })()`);
+      const secondProjectContentAfterStaleRead = await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+          ?? '/src/store/projectStore.ts';
+        const { useProjectStore } = await import(projectUrl);
+        return useProjectStore.getState().tabs.find((tab) => tab.path === 'contents/abstract.tex')?.content ?? null;
+      })()`);
+      result.secondaryTimelineReadCannotOverwriteNewProject = secondProjectContentBeforeStaleRead === 'Synthetic abstract fixture.\n'
+        && secondProjectContentAfterStaleRead === secondProjectContentBeforeStaleRead;
+
+      await openSessionProject(PROJ, 'contents/abstract.tex');
+      await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+          ?? '/src/store/aiStore.ts';
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { useAiStore } = await import(aiUrl);
+        const { api } = await import(apiUrl);
+        window.__v087SecondaryRuleFixOriginal = api.fixRuleIssue;
+        window.__v087SecondaryRunCheckOriginal = api.runCheck;
+        window.__v087SecondaryCheckArmed = true;
+        api.fixRuleIssue = async () => ({ ok: true, rounds: 1, summary: 'secondary check report', diff: null });
+        api.runCheck = () => {
+          if (window.__v087SecondaryCheckArmed) {
+            window.__v087SecondaryCheckArmed = false;
+            window.__v087SecondaryCheckStarted = true;
+            return new Promise((resolve) => { window.__v087ResolveSecondaryCheck = resolve; });
+          }
+          return window.__v087SecondaryRunCheckOriginal();
+        };
+        window.__v087SecondaryRulePromise = useAiStore.getState().fixRuleIssueForSession({
+          message: 'secondary ownership rule', severity: 'error', file: 'contents/abstract.tex', line: 7,
+        }, 3, true);
+        return true;
+      })()`);
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        if (await exec(`Boolean(window.__v087SecondaryCheckStarted)`)) break;
+        await sleep(50);
+      }
+      await openSessionProject(SESSION_PROJ, 'contents/abstract.tex');
+      await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const compileUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
+          ?? '/src/store/compileStore.ts';
+        const { useCompileStore } = await import(compileUrl);
+        useCompileStore.setState({
+          ruleIssues: [{ message: 'B_RULE_SENTINEL', severity: 'info', file: 'main.tex', line: 1 }],
+        });
+        window.__v087ResolveSecondaryCheck?.({
+          issues: [{ message: 'STALE_A_RULE_ISSUE', severity: 'error', file: 'contents/abstract.tex', line: 7 }],
+        });
+        await window.__v087SecondaryRulePromise;
+        return true;
+      })()`);
+      const secondaryRuleState = JSON.parse(await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const compileUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
+          ?? '/src/store/compileStore.ts';
+        const { api } = await import(apiUrl);
+        const { useCompileStore } = await import(compileUrl);
+        const state = useCompileStore.getState();
+        if (window.__v087SecondaryRuleFixOriginal) api.fixRuleIssue = window.__v087SecondaryRuleFixOriginal;
+        if (window.__v087SecondaryRunCheckOriginal) api.runCheck = window.__v087SecondaryRunCheckOriginal;
+        return JSON.stringify({ ruleIssues: state.ruleIssues, checkRunning: state.checkRunning });
+      })()`));
+      result.secondaryRuleCheckCannotOverwriteNewProject = secondaryRuleState.ruleIssues.length === 1
+        && secondaryRuleState.ruleIssues[0].message === 'B_RULE_SENTINEL'
+        && secondaryRuleState.checkRunning === false;
+      await exec(`(() => {
+        delete window.__v087SecondaryRuleFixOriginal;
+        delete window.__v087SecondaryRunCheckOriginal;
+        delete window.__v087SecondaryCheckArmed;
+        delete window.__v087SecondaryCheckStarted;
+        delete window.__v087ResolveSecondaryCheck;
+        delete window.__v087SecondaryRulePromise;
+        return true;
+      })()`);
       return result;
     };
 
@@ -1510,6 +1644,12 @@ async function main() {
           window.__v087ResolveRuleFix?.({ ok: false, rounds: 0, summary: 'cleanup', diff: null });
           window.__v087RejectRuleFix?.(new Error('cleanup'));
           if (window.__v087RuleFixOriginal) api.fixRuleIssue = window.__v087RuleFixOriginal;
+          window.__v087ResolveSecondaryRead?.('cleanup');
+          if (window.__v087SecondaryRollbackOriginal) api.aiRollback = window.__v087SecondaryRollbackOriginal;
+          if (window.__v087SecondaryReadOriginal) api.readFile = window.__v087SecondaryReadOriginal;
+          window.__v087ResolveSecondaryCheck?.({ issues: [] });
+          if (window.__v087SecondaryRuleFixOriginal) api.fixRuleIssue = window.__v087SecondaryRuleFixOriginal;
+          if (window.__v087SecondaryRunCheckOriginal) api.runCheck = window.__v087SecondaryRunCheckOriginal;
           delete window.__v087ResolveDownload;
           delete window.__v087DownloadOriginal;
           delete window.__v087ResolveChat;
@@ -1529,6 +1669,18 @@ async function main() {
           delete window.__v087RejectRuleFix;
           delete window.__v087RuleFixOriginal;
           delete window.__v087RuleFixPromise;
+          delete window.__v087SecondaryRollbackOriginal;
+          delete window.__v087SecondaryReadOriginal;
+          delete window.__v087SecondaryReadArmed;
+          delete window.__v087SecondaryReadStarted;
+          delete window.__v087ResolveSecondaryRead;
+          delete window.__v087SecondaryTimelinePromise;
+          delete window.__v087SecondaryRuleFixOriginal;
+          delete window.__v087SecondaryRunCheckOriginal;
+          delete window.__v087SecondaryCheckArmed;
+          delete window.__v087SecondaryCheckStarted;
+          delete window.__v087ResolveSecondaryCheck;
+          delete window.__v087SecondaryRulePromise;
           const snapshot = ${JSON.stringify(browserStateBefore)};
           localStorage.clear();
           for (const [key, value] of Object.entries(snapshot.storage)) localStorage.setItem(key, value);

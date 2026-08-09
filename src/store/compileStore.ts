@@ -19,6 +19,9 @@ interface CompileState {
   refreshDiagnostics: () => Promise<void>;
 }
 
+let ruleCheckSeq = 0;
+let diagnosticsSeq = 0;
+
 export const useCompileStore = create<CompileState>((set, get) => ({
   running: false,
   progress: null,
@@ -77,20 +80,31 @@ export const useCompileStore = create<CompileState>((set, get) => ({
   },
 
   async runCheck(onlyFile?: string) {
+    const seq = ++ruleCheckSeq;
+    const requestRoot = useProjectStore.getState().root;
     set({ checkRunning: true });
     try {
       const res = await api.runCheck(onlyFile);
+      if (seq !== ruleCheckSeq) return;
+      if (useProjectStore.getState().root !== requestRoot) {
+        set({ checkRunning: false });
+        return;
+      }
       set({ ruleIssues: res.issues, checkRunning: false });
     } catch (e) {
       console.error("runCheck failed", e);
-      set({ checkRunning: false });
+      if (seq === ruleCheckSeq) set({ checkRunning: false });
     }
   },
 
   async refreshDiagnostics() {
+    const seq = ++diagnosticsSeq;
+    const requestRoot = useProjectStore.getState().root;
     try {
       const d = await api.diagnostics();
-      set({ compileIssues: d.compile_issues, ruleIssues: d.rule_issues });
+      if (seq === diagnosticsSeq && useProjectStore.getState().root === requestRoot) {
+        set({ compileIssues: d.compile_issues, ruleIssues: d.rule_issues });
+      }
     } catch {
       /* not opened yet */
     }
