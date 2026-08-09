@@ -13,7 +13,7 @@ import {
   SendHorizontal,
   Trash2,
 } from "lucide-react";
-import { useAiStore } from "../store/aiStore";
+import { aiEditBelongsToScope, useAiStore } from "../store/aiStore";
 import { api } from "../api";
 import { useT } from "../i18n";
 
@@ -59,7 +59,7 @@ function DiffHighlight({ diff }: { diff: string }) {
 }
 
 export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
-  const { messages, busy, busyKind, diffPending, acceptDiff, rejectDiff, applyHunk, clearMessages, suggestMode, toggleSuggestMode, pendingSelection, setSelection, askAi, lastEdits, rollbackEdit, restoreTimelineSnapshot, sessions, sessionId, newSession, switchSession, renameSession, deleteSession, activeFile } =
+  const { messages, busy, busyKind, diffPending, acceptDiff, rejectDiff, applyHunk, clearMessages, suggestMode, toggleSuggestMode, pendingSelection, setSelection, askAi, lastEdits, rollbackEdit, restoreTimelineSnapshot, sessions, sessionId, newSession, switchSession, renameSession, deleteSession, activeProjectRoot, activeFile } =
     useAiStore();
   const [expandedRaw, setExpandedRaw] = useState<number | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -70,6 +70,9 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
   const [snapshots, setSnapshots] = useState<{ path: string; ts: string; file: string }[] | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const newestAppliedId = messages.filter((m) => m.applied).slice(-1)[0]?.id ?? null;
+  const scopedLastEdits = lastEdits.filter((edit) => (
+    aiEditBelongsToScope(edit, sessionId, activeProjectRoot, activeFile)
+  ));
   const [usage, setUsage] = useState<{ prompt_tokens: number; completion_tokens: number; requests: number; cost_usd: number } | null>(null);
 
   const refreshUsage = async () => {
@@ -297,9 +300,9 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
             {/* collaborative edit: the AI changed a file — roll back right
                 inside the message bubble (compile-check then decide).
                 Only the newest applied message shows the buttons. */}
-            {m.role === "assistant" && m.applied && lastEdits.length > 0 && m.id === newestAppliedId && (
+            {m.role === "assistant" && m.applied && scopedLastEdits.length > 0 && m.id === newestAppliedId && (
               <div className="ai-msg-actions">
-                {lastEdits.map((e) => (
+                {scopedLastEdits.map((e) => (
                   <div key={e.file} className="ai-rollback-row">
                     {e.diff && <DiffHighlight diff={e.diff} />}
                     <button className="btn-mini btn-danger" onClick={() => void rollbackEdit(e.file)}>
@@ -428,7 +431,7 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
           </button>
         </div>
         <div className="ai-generate-actions">
-          {lastEdits.map((e) => (
+          {scopedLastEdits.map((e) => (
             <button
               key={e.file}
               className="btn-mini btn-danger"

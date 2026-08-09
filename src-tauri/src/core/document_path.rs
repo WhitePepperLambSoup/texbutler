@@ -9,10 +9,7 @@ fn normalized(value: &str) -> String {
 
 fn windows_drive_form(value: &str) -> bool {
     let bytes = value.as_bytes();
-    bytes
-        .first()
-        .is_some_and(u8::is_ascii_alphabetic)
-        && bytes.get(1) == Some(&b':')
+    bytes.first().is_some_and(u8::is_ascii_alphabetic) && bytes.get(1) == Some(&b':')
 }
 
 fn supported(path: &str) -> bool {
@@ -37,13 +34,24 @@ fn collect_documents(nodes: &[FileNode], out: &mut Vec<String>) {
 }
 
 fn exact_existing(project: &Project, candidate: &str) -> Option<String> {
-    let rel = project.relative_path(candidate).replace('\\', "/");
-    if !supported(&rel) {
+    let path = Path::new(candidate);
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        project.resolve(candidate)?
+    };
+    let canonical = project.canonical_inside(&absolute).ok()?;
+    let metadata = std::fs::metadata(&canonical).ok()?;
+    if !metadata.is_file() {
         return None;
     }
-    let absolute = project.resolve(&rel)?;
-    let metadata = std::fs::metadata(&absolute).ok()?;
-    if !metadata.is_file() || project.canonical_inside(&absolute).is_err() {
+    let root = std::fs::canonicalize(&project.root).ok()?;
+    let rel = canonical
+        .strip_prefix(root)
+        .ok()?
+        .to_string_lossy()
+        .replace('\\', "/");
+    if !supported(&rel) {
         return None;
     }
     Some(rel)
@@ -61,17 +69,13 @@ pub fn resolve_existing_document(project: &Project, candidate: &str) -> Result<S
         return Err(format!("无法读取文件 `{candidate}`：路径无效"));
     }
     if has_windows_drive_form && !native_absolute {
-        return Err(format!(
-            "无法读取文件 `{candidate}`：文件不在当前项目内"
-        ));
+        return Err(format!("无法读取文件 `{candidate}`：文件不在当前项目内"));
     }
     if let Some(rel) = exact_existing(project, &candidate) {
         return Ok(rel);
     }
     if native_absolute || has_windows_drive_form {
-        return Err(format!(
-            "无法读取文件 `{candidate}`：文件不在当前项目内"
-        ));
+        return Err(format!("无法读取文件 `{candidate}`：文件不在当前项目内"));
     }
 
     let mut documents = Vec::new();
@@ -110,9 +114,7 @@ pub fn resolve_existing_document(project: &Project, candidate: &str) -> Result<S
     basenames.dedup();
     match basenames.as_slice() {
         [only] => Ok(only.clone()),
-        [] => Err(format!(
-            "无法读取文件 `{candidate}`：项目内不存在该文档"
-        )),
+        [] => Err(format!("无法读取文件 `{candidate}`：项目内不存在该文档")),
         _ => Err(format!(
             "无法读取文件 `{candidate}`：同名文档不唯一（多个匹配）"
         )),
@@ -158,8 +160,39 @@ mod tests {
             "contents/abstract.tex"
         );
         assert_eq!(
-            resolve_existing_document(&project, "t/my-latex-project/contents/abstract.tex").unwrap(),
+            resolve_existing_document(&project, "t/my-latex-project/contents/abstract.tex")
+                .unwrap(),
             "contents/abstract.tex",
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn returns_file_tree_path_for_lexically_noisy_relative_input() {
+        let (root, project) = fixture("canonical-relative");
+        assert_eq!(
+            resolve_existing_document(&project, ".//contents///./abstract.tex").unwrap(),
+            "contents/abstract.tex"
+        );
+        assert_eq!(
+            resolve_existing_document(&project, ".\\contents\\\\abstract.tex").unwrap(),
+            "contents/abstract.tex"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn resolves_internal_absolute_path_with_different_windows_casing() {
+        let (root, project) = fixture("absolute-case");
+        let absolute = root
+            .join("contents/abstract.tex")
+            .to_string_lossy()
+            .replace('\\', "/")
+            .to_ascii_uppercase();
+        assert_eq!(
+            resolve_existing_document(&project, &absolute).unwrap(),
+            "contents/abstract.tex"
         );
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -224,7 +257,8 @@ mod tests {
         std::fs::create_dir_all(&outside).unwrap();
         std::fs::write(outside.join("leak.tex"), "outside\\n").unwrap();
         #[cfg(windows)]
-        let link = std::os::windows::fs::symlink_file(outside.join("leak.tex"), root.join("leak.tex"));
+        let link =
+            std::os::windows::fs::symlink_file(outside.join("leak.tex"), root.join("leak.tex"));
         #[cfg(not(windows))]
         let link = std::os::unix::fs::symlink(outside.join("leak.tex"), root.join("leak.tex"));
         if link.is_ok() {

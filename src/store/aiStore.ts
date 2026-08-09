@@ -30,6 +30,15 @@ export interface AiSession {
   updatedAt: number;
 }
 
+export interface AiEdit {
+  file: string;
+  backup: string;
+  diff?: string;
+  sessionId: string | null;
+  projectRoot: string;
+  requestFile: string | null;
+}
+
 const SESSIONS_KEY = "tb-ai-sessions";
 
 function loadSessions(): AiSession[] {
@@ -66,7 +75,7 @@ interface AiState {
   /** Editor selection handed to the AI panel for "ask about this selection". */
   pendingSelection: string | null;
   /** Last collaborative edit applied by the AI (snapshot path for rollback). */
-  lastEdits: { file: string; backup: string; diff?: string }[];
+  lastEdits: AiEdit[];
   /** Persisted conversations (localStorage). */
   sessions: AiSession[];
   /** Id of the active conversation; null = unsaved scratch chat. */
@@ -137,6 +146,27 @@ function requestContextIsActive(state: AiState, context: AiRequestContext): bool
   return state.sessionId === context.sessionId
     && state.activeProjectRoot === context.projectRoot
     && state.activeFile === context.file;
+}
+
+export function aiEditBelongsToScope(
+  edit: AiEdit,
+  sessionId: string | null,
+  projectRoot: string,
+  file: string | null,
+): boolean {
+  return edit.sessionId === sessionId
+    && edit.projectRoot === projectRoot
+    && edit.requestFile === file;
+}
+
+function requestContextStillExists(state: AiState, context: AiRequestContext): boolean {
+  return context.sessionId
+    ? state.sessions.some((session) => session.id === context.sessionId)
+    : requestContextIsActive(state, context);
+}
+
+function editBelongsToRequest(edit: AiEdit, context: AiRequestContext): boolean {
+  return aiEditBelongsToScope(edit, context.sessionId, context.projectRoot, context.file);
 }
 
 function messagesForRequestContext(context: AiRequestContext): AiMessage[] {
@@ -255,21 +285,34 @@ export const useAiStore = create<AiState>((set, get) => ({
     let editedThisRound = false;
     const listenEditP = onEvent<{ file?: string; backup?: string; diff?: string }>("tb://ai-edit", (payload) => {
       if (payload.file && payload.backup) {
-        editedThisRound = true;
         const { file, backup, diff } = payload as { file: string; backup: string; diff?: string };
+        if (!requestContextStillExists(useAiStore.getState(), context)) return;
+        editedThisRound = true;
         useAiStore.setState((s) => {
-          const rest = s.lastEdits.filter((e) => e.file !== file);
-          return { lastEdits: [...rest, { file, backup, diff }] };
+          const rest = s.lastEdits.filter((edit) => !(editBelongsToRequest(edit, context) && edit.file === file));
+          return {
+            lastEdits: [...rest, {
+              file,
+              backup,
+              diff,
+              sessionId: context.sessionId,
+              projectRoot: context.projectRoot,
+              requestFile: context.file,
+            }],
+          };
         });
         // the file changed on disk — sync the open editor tab(s) so the
         // user immediately sees the AI's edits. If the user is mid-typing
         // in that same file (dirty), keep their unsaved edits — an AI edit
         // must never silently discard what the user is writing.
-        const tab = useProjectStore.getState().tabs.find((t) => t.path === file);
+        const project = useProjectStore.getState();
+        const tab = project.root === context.projectRoot
+          ? project.tabs.find((candidate) => candidate.path === file)
+          : undefined;
         if (tab && !tab.dirty) {
-          void useProjectStore.getState().reloadTab(file);
+          void project.reloadTab(file);
         }
-        void useCompileStoreRefresh();
+        if (project.root === context.projectRoot) void useCompileStoreRefresh();
       }
     });
     // WAIT for the listeners to be registered before firing the request —
@@ -311,17 +354,23 @@ export const useAiStore = create<AiState>((set, get) => ({
   },
 
   async rollbackEdit(file?: string) {
-    const edits = get().lastEdits;
+    const context = captureRequestContext();
+    const edits = get().lastEdits.filter((edit) => editBelongsToRequest(edit, context));
     const edit = file ? edits.find((e) => e.file === file) : edits[edits.length - 1];
     if (!edit) return;
-    const context = captureRequestContext();
     set({ busy: true, busyKind: "fix" });
     try {
       await api.aiRollback(edit.backup);
-      useProjectStore.getState().reloadTab(edit.file);
-      useAiStore.setState((s) => ({ lastEdits: s.lastEdits.filter((e) => e.file !== edit.file) }));
+      if (useProjectStore.getState().root === context.projectRoot) {
+        await useProjectStore.getState().reloadTab(edit.file);
+      }
+      useAiStore.setState((s) => ({
+        lastEdits: s.lastEdits.filter((candidate) => !(
+          candidate.backup === edit.backup && editBelongsToRequest(candidate, context)
+        )),
+      }));
       // refresh the rule-issue list so it no longer shows stale entries
-      await useCompileStoreRefresh();
+      if (useProjectStore.getState().root === context.projectRoot) await useCompileStoreRefresh();
       appendMessageToRequest(context, { role: "assistant", kind: "plain", text: useI18n.getState().t("ai.editRolledBack", { file: edit.file }) });
     } catch (e) {
       appendMessageToRequest(context, { role: "assistant", kind: "error", text: useI18n.getState().t("ai.chatFailed", { e: String(e) }) });
@@ -552,6 +601,7 @@ export const useAiStore = create<AiState>((set, get) => ({
       messages: isCurrent ? [] : get().messages,
       diffPending: isCurrent ? null : get().diffPending,
       fileSessions: fs,
+      lastEdits: get().lastEdits.filter((edit) => edit.sessionId !== id),
     });
     persistSessions(next);
     if (changed) persistScopedBindings(fs);

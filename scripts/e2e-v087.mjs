@@ -55,6 +55,22 @@ async function snapshotPath(path) {
   }
 }
 
+async function writePathSnapshot(path, snapshot) {
+  if (snapshot === null) return;
+  if (snapshot.type === "directory") {
+    await mkdir(path, { recursive: true });
+    for (const [name, entry] of Object.entries(snapshot.entries)) {
+      await writePathSnapshot(join(path, name), entry);
+    }
+    return;
+  }
+  if (snapshot.type === "file") {
+    await writeFile(path, Buffer.from(snapshot.data, "base64"));
+    return;
+  }
+  throw new Error(`cannot restore unsupported path type at ${path}`);
+}
+
 async function runSyntheticRootProbes() {
   const probeBase = `${PROJ}-root-probe-${process.pid}`;
   const absentRoot = join(probeBase, "absent");
@@ -107,10 +123,17 @@ async function runCleanupFaultProbe() {
   const before = {
     userDir: await snapshotPath(userDir),
     userFile: await snapshotPath(userFile),
+    project: await snapshotPath(PROJ),
   };
-  await rm(PROJ, { recursive: true, force: true });
+  if (before.project === null) {
+    await mkdir(PROJ, { recursive: true });
+    await writeFile(join(PROJ, "preexisting-sentinel.txt"), "V087_PREEXISTING_PROJECT\n", "utf8");
+  }
+  const childProjectBefore = await snapshotPath(PROJ);
+  const projectBackup = `${PROJ}.e2e-v087-backup-${nonce}`;
   let child;
   let after;
+  let finalProject;
   try {
     child = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "files"], {
       cwd: process.cwd(),
@@ -118,7 +141,7 @@ async function runCleanupFaultProbe() {
       timeout: 120_000,
       env: {
         ...process.env,
-        V087_CLEANUP_FAIL_STAGE: "locale",
+        V087_CLEANUP_FAIL_STAGE: "project",
         V087_FIXTURE_NONCE: nonce,
       },
     });
@@ -128,10 +151,14 @@ async function runCleanupFaultProbe() {
       userDirBackup: await snapshotPath(userDirBackup),
       userFileBackup: await snapshotPath(userFileBackup),
       userRootExists: await exists(USER_TEMPLATE_ROOT),
-      projectExists: await exists(PROJ),
+      project: await snapshotPath(PROJ),
+      projectBackup: await snapshotPath(projectBackup),
     };
   } finally {
-    await rm(PROJ, { recursive: true, force: true }).catch(() => {});
+    if (await exists(projectBackup)) {
+      await rm(PROJ, { recursive: true, force: true }).catch(() => {});
+      await rename(projectBackup, PROJ);
+    }
     for (const [target, backup, original] of [
       [userDir, userDirBackup, before.userDir],
       [userFile, userFileBackup, before.userFile],
@@ -144,17 +171,25 @@ async function runCleanupFaultProbe() {
       }
     }
     if (!rootExisted) await rm(USER_TEMPLATE_ROOT).catch(() => {});
+    const currentProject = await snapshotPath(PROJ);
+    if (JSON.stringify(currentProject) !== JSON.stringify(before.project)) {
+      await rm(PROJ, { recursive: true, force: true }).catch(() => {});
+      await writePathSnapshot(PROJ, before.project);
+    }
+    finalProject = await snapshotPath(PROJ);
   }
   const combinedOutput = `${child?.stdout ?? ""}\n${child?.stderr ?? ""}`;
   const synthetic = await runSyntheticRootProbes();
   const result = {
     childReportedFailure: child?.status !== 0 && combinedOutput.includes("E2E-FAIL")
-      && combinedOutput.includes("injected cleanup failure: locale"),
+      && combinedOutput.includes("injected cleanup failure: project"),
     appDataRestored: JSON.stringify(after?.userDir) === JSON.stringify(before.userDir)
       && JSON.stringify(after?.userFile) === JSON.stringify(before.userFile)
       && after?.userDirBackup === null && after?.userFileBackup === null
       && after?.userRootExists === rootExisted,
-    projectFixtureRemoved: after?.projectExists === false,
+    projectFixtureRestored: JSON.stringify(after?.project) === JSON.stringify(childProjectBefore)
+      && after?.projectBackup === null,
+    originalProjectRestored: JSON.stringify(finalProject) === JSON.stringify(before.project),
     synthetic,
     childStatus: child?.status ?? null,
     childSignal: child?.signal ?? null,
@@ -162,7 +197,8 @@ async function runCleanupFaultProbe() {
   };
   if (!result.childReportedFailure) result.childOutput = combinedOutput.slice(-2000);
   console.log("CLEANUP-FAULT", JSON.stringify(result));
-  if (!result.childReportedFailure || !result.appDataRestored || !result.projectFixtureRemoved
+  if (!result.childReportedFailure || !result.appDataRestored || !result.projectFixtureRestored
+    || !result.originalProjectRestored
     || !Object.values(result.synthetic).every(Boolean)) process.exitCode = 1;
 }
 
@@ -246,6 +282,9 @@ async function main() {
   let templateFixtures;
   let browserStateBefore;
   let browserStateAfter;
+  let projectBackup = null;
+  let projectOwned = false;
+  let projectRestored = true;
   let sessionProjectBackup = null;
   let sessionProjectOwned = false;
   let sessionProjectRestored = true;
@@ -317,7 +356,12 @@ async function main() {
         await writeFile(`${SESSION_PROJ}/contents/abstract.tex`, "Synthetic abstract fixture.\n", "utf8");
       }
       sessionProjectUntouched = !sessionProjectOwned;
-      await rm(PROJ, { recursive: true, force: true });
+      if (await exists(PROJ)) {
+        const nonce = process.env.V087_FIXTURE_NONCE ?? `${process.pid}-${Date.now()}`;
+        projectBackup = `${PROJ}.e2e-v087-backup-${nonce}`;
+        await rename(PROJ, projectBackup);
+      }
+      projectOwned = true;
       await mkdir(PROJ, { recursive: true });
       await writeFile(FILE, "\\documentclass{article}\n\\begin{document}\nE2E fixture.\n\\end{document}\n", "utf8");
       await mkdir(`${PROJ}/contents`, { recursive: true });
@@ -835,6 +879,7 @@ async function main() {
         moreMenuHasSecondaryActions: false,
         themeSelections: { liquid: false, dark: false, light: false },
         overflowMenuSurfaces: {},
+        disabledItemsVisuallyDistinct: {},
         brightGradientRejected: false,
         brightGradientContrast: 0,
         outsidePointerPreservesFocus: false,
@@ -913,7 +958,10 @@ async function main() {
             value: item.style.getPropertyValue('color'),
             priority: item.style.getPropertyPriority('color'),
           };
-          const foreground = getComputedStyle(item).color;
+          const itemStyle = getComputedStyle(item);
+          const foreground = itemStyle.color;
+          const cursor = itemStyle.cursor;
+          const opacity = Number(itemStyle.opacity);
           item.style.setProperty('color', 'transparent', 'important');
           [...item.querySelectorAll('*')].forEach((node) => {
             node.style.setProperty('visibility', 'hidden', 'important');
@@ -927,6 +975,8 @@ async function main() {
               height: rect.height,
             },
             foreground,
+            cursor,
+            opacity,
             surfaceAlpha,
             itemColor,
             descendants,
@@ -972,6 +1022,7 @@ async function main() {
             context.drawImage(image, 0, 0);
             const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
             const foreground = parse(${JSON.stringify(prepared.foreground)});
+            foreground.a *= ${JSON.stringify(prepared.opacity)};
             let minimumContrast = Infinity;
             for (let y = 2; y < canvas.height - 2; y += 1) {
               for (let x = 2; x < canvas.width - 2; x += 1) {
@@ -996,6 +1047,9 @@ async function main() {
             opened: true,
             surfaceAlpha: prepared.surfaceAlpha,
             contrast,
+            foreground: prepared.foreground,
+            cursor: prepared.cursor,
+            opacity: prepared.opacity,
           };
         } finally {
           await exec(`(() => {
@@ -1048,6 +1102,45 @@ async function main() {
           })()`);
         }
       };
+      const inspectDisabledMutation = async (menuSelector, itemSelector) => {
+        const original = JSON.parse(await exec(`(() => {
+          const item = document.querySelector(${JSON.stringify(menuSelector)})
+            ?.querySelector(${JSON.stringify(itemSelector)});
+          if (!(item instanceof HTMLButtonElement)) return JSON.stringify(null);
+          const snapshot = {
+            disabled: item.disabled,
+            probe: item.getAttribute('data-v087-disabled-probe'),
+          };
+          item.setAttribute('data-v087-disabled-probe', 'true');
+          item.disabled = true;
+          return JSON.stringify(snapshot);
+        })()`));
+        if (!original) return { opened: false, surfaceAlpha: 0, contrast: 0 };
+        try {
+          await sleep(50);
+          return await inspectMenuSurface(menuSelector, '[data-v087-disabled-probe="true"]');
+        } finally {
+          await exec(`(() => {
+            const item = document.querySelector(${JSON.stringify(menuSelector)})
+              ?.querySelector('[data-v087-disabled-probe="true"]');
+            if (!(item instanceof HTMLButtonElement)) return;
+            item.disabled = ${JSON.stringify(original.disabled)};
+            const probe = ${JSON.stringify(original.probe)};
+            if (probe === null) item.removeAttribute('data-v087-disabled-probe');
+            else item.setAttribute('data-v087-disabled-probe', probe);
+          })()`);
+        }
+      };
+      const colorDistance = (first, second) => {
+        const channels = (value) => {
+          const match = value?.match(/rgba?\(([^)]+)\)/);
+          return match ? match[1].split(/[ ,/]+/).filter(Boolean).slice(0, 3).map(Number) : [];
+        };
+        const a = channels(first);
+        const b = channels(second);
+        if (a.length !== 3 || b.length !== 3) return 0;
+        return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+      };
 
       for (const [width, height] of [[940, 700], [1280, 800]]) {
         await setViewport(width, height);
@@ -1076,10 +1169,13 @@ async function main() {
             && window.localStorage.getItem('tb-theme') === ${JSON.stringify(id)}
         )`));
         const editorOpened = await clickSelector('.editor-more-action');
-        const editor = editorOpened
+        const editorNormal = editorOpened
           ? await inspectMenuSurface('.editor-tools-menu', 'button:not(:disabled)')
           : { opened: false, surfaceAlpha: 0, contrast: 0 };
-        if (id === "liquid" && editor.opened) {
+        const editorDisabled = editorOpened
+          ? await inspectDisabledMutation('.editor-tools-menu', 'button:not(:disabled)')
+          : { opened: false, surfaceAlpha: 0, contrast: 0 };
+        if (id === "liquid" && editorNormal.opened) {
           const brightMutation = await inspectBrightGradientMutation(
             '.editor-tools-menu',
             'button:not(:disabled)',
@@ -1087,13 +1183,31 @@ async function main() {
           result.brightGradientContrast = brightMutation.contrast;
           result.brightGradientRejected = brightMutation.opened && brightMutation.contrast < 4.5;
         }
-        if (editor.opened) await pressEscape();
+        if (editorNormal.opened) await pressEscape();
         const aiOpened = await clickSelector('.ai-menu-anchor > button');
-        const ai = aiOpened
+        const aiNormal = aiOpened
           ? await inspectMenuSurface('.ai-menu', '.ai-menu-item:not(:disabled):not(.danger)')
           : { opened: false, surfaceAlpha: 0, contrast: 0 };
-        if (ai.opened) await pressEscape();
-        result.overflowMenuSurfaces[id] = { editor, ai };
+        const aiDanger = aiOpened
+          ? await inspectMenuSurface('.ai-menu', '.ai-menu-item.danger:not(:disabled)')
+          : { opened: false, surfaceAlpha: 0, contrast: 0 };
+        const aiDisabled = aiOpened
+          ? await inspectDisabledMutation('.ai-menu', '.ai-menu-item:not(:disabled):not(.danger)')
+          : { opened: false, surfaceAlpha: 0, contrast: 0 };
+        if (aiNormal.opened) await pressEscape();
+        result.overflowMenuSurfaces[id] = {
+          editor: { normal: editorNormal, disabled: editorDisabled },
+          ai: { normal: aiNormal, danger: aiDanger, disabled: aiDisabled },
+        };
+        result.disabledItemsVisuallyDistinct[id] = [
+          [editorNormal, editorDisabled],
+          [aiNormal, aiDisabled],
+        ].every(([normal, disabled]) => (
+          disabled.opened
+          && disabled.cursor === 'default'
+          && disabled.opacity >= 0.99
+          && colorDistance(normal.foreground, disabled.foreground) >= 20
+        ));
       }
 
       if (await clickSelector('.theme-picker-btn')) {
@@ -1252,6 +1366,7 @@ async function main() {
           storedSessions: JSON.parse(localStorage.getItem('tb-ai-sessions') ?? '[]'),
           storedBindings: JSON.parse(localStorage.getItem('tb-ai-file-sessions-v2') ?? '{}'),
           diffPending: ai.diffPending,
+          lastEdits: ai.lastEdits,
         });
       })()`));
       const openSessionProject = async (root, file = 'main.tex') => exec(`(async () => {
@@ -1299,6 +1414,20 @@ async function main() {
       await sleep(250);
 
       const result = {};
+      const bindingSemantics = JSON.parse(await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const bindingsUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiSessionBindings.ts') && new URL(name).search)
+          ?? '/src/store/aiSessionBindings.ts';
+        const { bindingKey } = await import(bindingsUrl);
+        return JSON.stringify({
+          windows: bindingKey('C:\\Work\\Paper', 'Contents\\Abstract.TEX')
+            === bindingKey('c:/work/paper', 'contents/abstract.tex'),
+          posix: bindingKey('/Projects/Paper', 'Contents/Abstract.TEX')
+            !== bindingKey('/Projects/Paper', 'contents/abstract.tex'),
+        });
+      })()`));
+      result.windowsBindingCaseInsensitive = bindingSemantics.windows;
+      result.posixBindingCaseSensitive = bindingSemantics.posix;
       const first = await aiState();
       result.mainCreated = first.activeFile === 'main.tex'
         && first.activeProjectRoot === first.root
@@ -1354,6 +1483,17 @@ async function main() {
       await sleep(200);
       await openFile('main.tex');
       await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const eventUrl = resources.find((name) => new URL(name).pathname.includes('/node_modules/.vite/deps/@tauri-apps_api_event.js'));
+        if (!eventUrl) throw new Error('Tauri event module URL not found');
+        const { emit } = await import(eventUrl);
+        await emit('tb://ai-edit', {
+          file: 'contents/abstract.tex', backup: 'V087_OWNED_BACKUP', diff: '+owned edit',
+        });
+        return true;
+      })()`);
+      await sleep(100);
+      await exec(`(async () => {
         window.__v087ResolveChat?.('async abstract reply');
         await window.__v087AskPromise;
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
@@ -1372,6 +1512,78 @@ async function main() {
         && asyncTarget?.messages.some((message) => message.text === 'async abstract reply')
         && !asyncTarget?.messages.some((message) => message.role === 'assistant' && message.text === '')
         && !afterAsyncSwitch.messages.some((message) => message.text === 'async request belongs to abstract' || message.text === 'async abstract reply');
+      result.aiEditOwnedByRequestContext = afterAsyncSwitch.lastEdits.some((edit) => (
+        edit.backup === 'V087_OWNED_BACKUP'
+        && edit.sessionId === second.sessionId
+        && edit.projectRoot === second.root
+        && edit.requestFile === 'contents/abstract.tex'
+      )) && !await exec(`Boolean(document.querySelector('.ai-generate-actions .btn-danger'))`);
+      const foreignRollbackCalls = await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+          ?? '/src/store/aiStore.ts';
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { useAiStore } = await import(aiUrl);
+        const { api } = await import(apiUrl);
+        window.__v087OwnedRollbackOriginal = api.aiRollback;
+        window.__v087OwnedRollbackCalls = 0;
+        api.aiRollback = async () => {
+          window.__v087OwnedRollbackCalls += 1;
+          return 'contents/abstract.tex';
+        };
+        await useAiStore.getState().rollbackEdit('contents/abstract.tex');
+        return window.__v087OwnedRollbackCalls;
+      })()`);
+      result.foreignRollbackCannotExecute = foreignRollbackCalls === 0;
+      await openFile('contents/abstract.tex');
+      await sleep(100);
+      result.ownerRollbackVisibleOnReturn = await exec(`Boolean(document.querySelector('.ai-generate-actions .btn-danger'))`);
+      await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { api } = await import(apiUrl);
+        api.aiRollback = () => new Promise((resolve) => {
+          window.__v087OwnedRollbackStarted = true;
+          window.__v087ResolveOwnedRollback = resolve;
+        });
+        return true;
+      })()`);
+      if (result.ownerRollbackVisibleOnReturn) {
+        await clickSelector('.ai-generate-actions .btn-danger');
+      }
+      let ownedRollbackStarted = false;
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        ownedRollbackStarted = await exec(`Boolean(window.__v087OwnedRollbackStarted)`);
+        if (ownedRollbackStarted) break;
+        await sleep(50);
+      }
+      await openFile('main.tex');
+      await exec(`(() => {
+        window.__v087ResolveOwnedRollback?.('contents/abstract.tex');
+        return true;
+      })()`);
+      await sleep(300);
+      const afterOwnedRollback = await aiState();
+      const rollbackTarget = afterOwnedRollback.sessions.find((session) => session.id === second.sessionId);
+      result.rollbackMessageStaysWithOwner = ownedRollbackStarted
+        && rollbackTarget?.messages.some((message) => message.text.includes('contents/abstract.tex'))
+        && !afterOwnedRollback.messages.some((message) => message.text.includes('contents/abstract.tex'))
+        && !afterOwnedRollback.lastEdits.some((edit) => edit.backup === 'V087_OWNED_BACKUP');
+      await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { api } = await import(apiUrl);
+        if (window.__v087OwnedRollbackOriginal) api.aiRollback = window.__v087OwnedRollbackOriginal;
+        delete window.__v087OwnedRollbackOriginal;
+        delete window.__v087OwnedRollbackCalls;
+        delete window.__v087OwnedRollbackStarted;
+        delete window.__v087ResolveOwnedRollback;
+        return true;
+      })()`);
+
       await openFile('contents/abstract.tex');
 
       await exec(`(async () => {
@@ -1787,6 +1999,131 @@ async function main() {
         delete window.__v087SecondaryRulePromise;
         return true;
       })()`);
+
+      await openSessionProject(PROJ, 'contents/abstract.tex');
+      await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+          ?? '/src/store/projectStore.ts';
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { useProjectStore } = await import(projectUrl);
+        const { api } = await import(apiUrl);
+        window.__v087ReloadReadOriginal = api.readFile;
+        window.__v087ReloadResolvers = [];
+        window.__v087ReloadCalls = 0;
+        api.readFile = (path) => {
+          if (path === 'contents/abstract.tex' && window.__v087ReloadCalls < 2) {
+            const call = window.__v087ReloadCalls++;
+            return new Promise((resolve) => { window.__v087ReloadResolvers[call] = resolve; });
+          }
+          return window.__v087ReloadReadOriginal(path);
+        };
+        window.__v087ReloadPromises = [
+          useProjectStore.getState().reloadTab('contents/abstract.tex'),
+          useProjectStore.getState().reloadTab('contents/abstract.tex'),
+        ];
+        return true;
+      })()`);
+      await sleep(100);
+      await exec(`(async () => {
+        window.__v087ReloadResolvers[1]?.('V087_NEWER_RELOAD');
+        await window.__v087ReloadPromises[1];
+        window.__v087ReloadResolvers[0]?.('V087_STALE_RELOAD');
+        await window.__v087ReloadPromises[0];
+        return true;
+      })()`);
+      const latestReloadContent = await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+          ?? '/src/store/projectStore.ts';
+        const { useProjectStore } = await import(projectUrl);
+        return useProjectStore.getState().tabs.find((tab) => tab.path === 'contents/abstract.tex')?.content ?? null;
+      })()`);
+      await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+          ?? '/src/store/projectStore.ts';
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { useProjectStore } = await import(projectUrl);
+        const { api } = await import(apiUrl);
+        api.readFile = (path) => path === 'contents/abstract.tex'
+          ? new Promise((resolve) => { window.__v087ResolveDirtyReload = resolve; })
+          : window.__v087ReloadReadOriginal(path);
+        window.__v087DirtyReloadPromise = useProjectStore.getState().reloadTab('contents/abstract.tex');
+        useProjectStore.getState().setTabContent('contents/abstract.tex', 'V087_DIRTY_USER_CONTENT');
+        window.__v087ResolveDirtyReload?.('V087_DISK_AFTER_DIRTY');
+        await window.__v087DirtyReloadPromise;
+        const tab = useProjectStore.getState().tabs.find((candidate) => candidate.path === 'contents/abstract.tex');
+        if (window.__v087ReloadReadOriginal) api.readFile = window.__v087ReloadReadOriginal;
+        return JSON.stringify({ content: tab?.content ?? null, dirty: tab?.dirty ?? false });
+      })()`);
+      const dirtyReloadState = JSON.parse(await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+          ?? '/src/store/projectStore.ts';
+        const { useProjectStore } = await import(projectUrl);
+        const tab = useProjectStore.getState().tabs.find((candidate) => candidate.path === 'contents/abstract.tex');
+        return JSON.stringify({ content: tab?.content ?? null, dirty: tab?.dirty ?? false });
+      })()`));
+      result.reloadTabLatestRequestWinsAndDirtySurvives = latestReloadContent === 'V087_NEWER_RELOAD'
+        && dirtyReloadState.content === 'V087_DIRTY_USER_CONTENT'
+        && dirtyReloadState.dirty === true;
+      await exec(`(() => {
+        delete window.__v087ReloadReadOriginal;
+        delete window.__v087ReloadResolvers;
+        delete window.__v087ReloadCalls;
+        delete window.__v087ReloadPromises;
+        delete window.__v087ResolveDirtyReload;
+        delete window.__v087DirtyReloadPromise;
+        return true;
+      })()`);
+
+      await openFile('main.tex');
+      await openFile('contents/abstract.tex');
+      await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+          ?? '/src/store/aiStore.ts';
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { useAiStore } = await import(aiUrl);
+        const { api } = await import(apiUrl);
+        window.__v087DeletedChatOriginal = api.aiChatStream;
+        api.aiChatStream = () => new Promise((resolve) => { window.__v087ResolveDeletedChat = resolve; });
+        window.__v087DeletedAskPromise = useAiStore.getState().askAi('deleted session request');
+        return true;
+      })()`);
+      await sleep(150);
+      await openFile('main.tex');
+      await callAi(`useAiStore.getState().deleteSession(${JSON.stringify(second.sessionId)});`);
+      await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const eventUrl = resources.find((name) => new URL(name).pathname.includes('/node_modules/.vite/deps/@tauri-apps_api_event.js'));
+        if (!eventUrl) throw new Error('Tauri event module URL not found');
+        const { emit } = await import(eventUrl);
+        await emit('tb://ai-edit', {
+          file: 'contents/abstract.tex', backup: 'V087_DELETED_BACKUP', diff: '+deleted edit',
+        });
+        window.__v087ResolveDeletedChat?.('deleted session completion');
+        await window.__v087DeletedAskPromise;
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { api } = await import(apiUrl);
+        if (window.__v087DeletedChatOriginal) api.aiChatStream = window.__v087DeletedChatOriginal;
+        return true;
+      })()`);
+      const afterDeletedEdit = await aiState();
+      result.deletedSessionEditDoesNotResurrect = !afterDeletedEdit.sessions.some((session) => session.id === second.sessionId)
+        && !afterDeletedEdit.lastEdits.some((edit) => edit.backup === 'V087_DELETED_BACKUP')
+        && !await exec(`Boolean(document.querySelector('.ai-generate-actions .btn-danger'))`);
+      await exec(`(() => {
+        delete window.__v087DeletedChatOriginal;
+        delete window.__v087ResolveDeletedChat;
+        delete window.__v087DeletedAskPromise;
+        return true;
+      })()`);
       return result;
     };
 
@@ -1860,6 +2197,13 @@ async function main() {
           window.__v087ResolveSecondaryCheck?.({ issues: [] });
           if (window.__v087SecondaryRuleFixOriginal) api.fixRuleIssue = window.__v087SecondaryRuleFixOriginal;
           if (window.__v087SecondaryRunCheckOriginal) api.runCheck = window.__v087SecondaryRunCheckOriginal;
+          window.__v087ResolveOwnedRollback?.('contents/abstract.tex');
+          if (window.__v087OwnedRollbackOriginal) api.aiRollback = window.__v087OwnedRollbackOriginal;
+          window.__v087ReloadResolvers?.forEach((resolve) => resolve?.('cleanup'));
+          window.__v087ResolveDirtyReload?.('cleanup');
+          if (window.__v087ReloadReadOriginal) api.readFile = window.__v087ReloadReadOriginal;
+          window.__v087ResolveDeletedChat?.('cleanup');
+          if (window.__v087DeletedChatOriginal) api.aiChatStream = window.__v087DeletedChatOriginal;
           delete window.__v087ResolveDownload;
           delete window.__v087DownloadOriginal;
           delete window.__v087ResolveChat;
@@ -1891,6 +2235,19 @@ async function main() {
           delete window.__v087SecondaryCheckStarted;
           delete window.__v087ResolveSecondaryCheck;
           delete window.__v087SecondaryRulePromise;
+          delete window.__v087OwnedRollbackOriginal;
+          delete window.__v087OwnedRollbackCalls;
+          delete window.__v087OwnedRollbackStarted;
+          delete window.__v087ResolveOwnedRollback;
+          delete window.__v087ReloadReadOriginal;
+          delete window.__v087ReloadResolvers;
+          delete window.__v087ReloadCalls;
+          delete window.__v087ReloadPromises;
+          delete window.__v087ResolveDirtyReload;
+          delete window.__v087DirtyReloadPromise;
+          delete window.__v087DeletedChatOriginal;
+          delete window.__v087ResolveDeletedChat;
+          delete window.__v087DeletedAskPromise;
           const snapshot = ${JSON.stringify(browserStateBefore)};
           localStorage.clear();
           for (const [key, value] of Object.entries(snapshot.storage)) localStorage.setItem(key, value);
@@ -1950,9 +2307,16 @@ async function main() {
         cleanupErrors.push(`CDP close: ${error}`);
       }
       try {
-        await rm(PROJ, { recursive: true, force: true });
+        if (projectOwned) {
+          await rm(PROJ, { recursive: true, force: true });
+          if (projectBackup) await rename(projectBackup, PROJ);
+          projectRestored = projectBackup
+            ? await exists(PROJ) && !await exists(projectBackup)
+            : !await exists(PROJ);
+          injectCleanupFailure("project");
+        }
       } catch (error) {
-        cleanupErrors.push(`project fixture removal: ${error}`);
+        cleanupErrors.push(`project fixture restoration: ${error}`);
       }
       try {
         if (sessionProjectOwned) {
@@ -2026,10 +2390,12 @@ async function main() {
     && Object.values(theme.themeSelections).every(Boolean)
     && Object.values(theme.overflowMenuSurfaces).length === 3
     && Object.values(theme.overflowMenuSurfaces).every((menus) => (
-      Object.values(menus).every((menu) => (
+      [menus.editor.normal, menus.editor.disabled, menus.ai.normal, menus.ai.danger, menus.ai.disabled].every((menu) => (
         menu.opened && menu.surfaceAlpha >= 0.9 && menu.contrast >= 4.5
       ))
     ))
+    && Object.values(theme.disabledItemsVisuallyDistinct).length === 3
+    && Object.values(theme.disabledItemsVisuallyDistinct).every(Boolean)
     && theme.brightGradientRejected
     && theme.outsidePointerPreservesFocus
     && theme.escapeRestoresTriggerFocus
@@ -2049,15 +2415,16 @@ async function main() {
   )));
   const sessionsOk = sessions === true || Object.values(sessions).every(Boolean);
   const sessionProjectStateOk = sessionsExecuted ? sessionProjectRestored : sessionProjectUntouched;
+  const projectFixtureStateOk = projectRestored;
   const browserRestored = cleanupErrors.length === 0
     && JSON.stringify(browserStateAfter) === JSON.stringify(browserStateBefore);
-  failed = !filesOk || !themeOk || !pdfOk || !sessionsOk || !sessionProjectStateOk || !browserRestored;
+  failed = !filesOk || !themeOk || !pdfOk || !sessionsOk || !projectFixtureStateOk || !sessionProjectStateOk || !browserRestored;
   console.log("FILES", JSON.stringify(files));
   console.log("THEME", JSON.stringify(theme));
   console.log("PDF", JSON.stringify(pdf));
   console.log("SESSIONS", JSON.stringify(sessions));
-  console.log("STATE", JSON.stringify({ browserRestored, sessionProjectStateOk, cleanupErrors }));
-  console.log("E2E-DONE", failed ? "FAIL" : "PASS", { suite, filesOk, themeOk, pdfOk, sessionsOk, sessionProjectStateOk, browserRestored });
+  console.log("STATE", JSON.stringify({ browserRestored, projectFixtureStateOk, sessionProjectStateOk, cleanupErrors }));
+  console.log("E2E-DONE", failed ? "FAIL" : "PASS", { suite, filesOk, themeOk, pdfOk, sessionsOk, projectFixtureStateOk, sessionProjectStateOk, browserRestored });
   if (failed) process.exitCode = 1;
 }
 

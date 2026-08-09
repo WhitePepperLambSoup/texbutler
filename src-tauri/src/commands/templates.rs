@@ -679,19 +679,232 @@ fn inspect_merge_conflicts(stage: &Path, destination: &Path) -> Result<Vec<Merge
     )
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ObjectIdentity {
+    volume: u64,
+    index: u64,
+}
+
+#[cfg(unix)]
+fn object_identity(handle: &std::fs::File) -> Option<ObjectIdentity> {
+    use std::os::unix::fs::MetadataExt;
+
+    let metadata = handle.metadata().ok()?;
+    Some(ObjectIdentity {
+        volume: metadata.dev(),
+        index: metadata.ino(),
+    })
+}
+
+#[cfg(windows)]
+fn object_identity(handle: &std::fs::File) -> Option<ObjectIdentity> {
+    use std::ffi::c_void;
+    use std::mem::MaybeUninit;
+    use std::os::windows::io::AsRawHandle;
+
+    #[repr(C)]
+    struct FileTime {
+        low: u32,
+        high: u32,
+    }
+
+    #[repr(C)]
+    struct ByHandleFileInformation {
+        file_attributes: u32,
+        creation_time: FileTime,
+        last_access_time: FileTime,
+        last_write_time: FileTime,
+        volume_serial_number: u32,
+        file_size_high: u32,
+        file_size_low: u32,
+        number_of_links: u32,
+        file_index_high: u32,
+        file_index_low: u32,
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetFileInformationByHandle(
+            file: *mut c_void,
+            information: *mut ByHandleFileInformation,
+        ) -> i32;
+    }
+
+    let mut information = MaybeUninit::<ByHandleFileInformation>::uninit();
+    // SAFETY: `handle` remains alive for the call and Windows writes the full
+    // BY_HANDLE_FILE_INFORMATION value only when the function succeeds.
+    let succeeded = unsafe {
+        GetFileInformationByHandle(handle.as_raw_handle().cast(), information.as_mut_ptr())
+    };
+    if succeeded == 0 {
+        return None;
+    }
+    let information = unsafe { information.assume_init() };
+    Some(ObjectIdentity {
+        volume: u64::from(information.volume_serial_number),
+        index: (u64::from(information.file_index_high) << 32)
+            | u64::from(information.file_index_low),
+    })
+}
+
+#[cfg(not(any(unix, windows)))]
+fn object_identity(_handle: &std::fs::File) -> Option<ObjectIdentity> {
+    None
+}
+
+#[cfg(windows)]
+fn metadata_is_reparse_point(metadata: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+    metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+#[cfg(not(windows))]
+fn metadata_is_reparse_point(_metadata: &std::fs::Metadata) -> bool {
+    false
+}
+
+fn open_directory_handle(path: &Path) -> Result<std::fs::File, String> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        return std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(path)
+            .map_err(|error| format!("could not retain template directory ownership: {error}"));
+    }
+
+    #[cfg(not(windows))]
+    std::fs::File::open(path)
+        .map_err(|error| format!("could not retain template directory ownership: {error}"))
+}
+
+fn open_file_identity_handle(path: &Path) -> Result<std::fs::File, String> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        return std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(path)
+            .map_err(|error| format!("could not inspect template entry identity: {error}"));
+    }
+
+    #[cfg(not(windows))]
+    std::fs::File::open(path)
+        .map_err(|error| format!("could not inspect template entry identity: {error}"))
+}
+
+#[derive(Clone, Copy)]
+enum OwnedObjectKind {
+    File,
+    Directory,
+}
+
+struct OwnedObject {
+    path: PathBuf,
+    // Keeping the original object open prevents its OS identity from being
+    // recycled while rollback decides whether the path still names it.
+    handle: std::fs::File,
+    identity: ObjectIdentity,
+    kind: OwnedObjectKind,
+}
+
+impl OwnedObject {
+    fn from_file(path: PathBuf, handle: std::fs::File) -> Result<Self, String> {
+        Self::from_handle(path, handle, OwnedObjectKind::File)
+    }
+
+    fn from_directory(path: PathBuf) -> Result<Self, String> {
+        let handle = open_directory_handle(&path)?;
+        Self::from_handle(path, handle, OwnedObjectKind::Directory)
+    }
+
+    fn from_handle(
+        path: PathBuf,
+        handle: std::fs::File,
+        kind: OwnedObjectKind,
+    ) -> Result<Self, String> {
+        let metadata = handle
+            .metadata()
+            .map_err(|error| format!("could not identify created template entry: {error}"))?;
+        let expected_type = match kind {
+            OwnedObjectKind::File => metadata.is_file(),
+            OwnedObjectKind::Directory => metadata.is_dir(),
+        };
+        if !expected_type || metadata_is_reparse_point(&metadata) {
+            return Err("created template entry has an unsafe object type".into());
+        }
+        let identity = object_identity(&handle)
+            .ok_or_else(|| "could not identify created template entry".to_string())?;
+        Ok(Self {
+            path,
+            handle,
+            identity,
+            kind,
+        })
+    }
+
+    fn path_still_names_owned_object(&self) -> bool {
+        let Ok(metadata) = std::fs::symlink_metadata(&self.path) else {
+            return false;
+        };
+        if metadata.file_type().is_symlink() || metadata_is_reparse_point(&metadata) {
+            return false;
+        }
+        let expected_type = match self.kind {
+            OwnedObjectKind::File => metadata.is_file(),
+            OwnedObjectKind::Directory => metadata.is_dir(),
+        };
+        if !expected_type {
+            return false;
+        }
+        let current = match self.kind {
+            OwnedObjectKind::File => open_file_identity_handle(&self.path),
+            OwnedObjectKind::Directory => open_directory_handle(&self.path),
+        };
+        current.ok().and_then(|handle| object_identity(&handle)) == Some(self.identity)
+    }
+
+    fn remove_file_if_still_owned(&self) {
+        if self.path_still_names_owned_object() {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+
+    fn remove_empty_directory_if_still_owned(&self) {
+        if self.path_still_names_owned_object() {
+            let _ = std::fs::remove_dir(&self.path);
+        }
+    }
+
+    fn remove_directory_tree_if_still_owned(&self) {
+        if self.path_still_names_owned_object() {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+}
+
 #[derive(Default)]
 struct CreatedEntries {
-    files: Vec<PathBuf>,
-    dirs: Vec<PathBuf>,
+    files: Vec<OwnedObject>,
+    dirs: Vec<OwnedObject>,
 }
 
 impl CreatedEntries {
     fn rollback(&mut self) {
         for file in self.files.iter().rev() {
-            let _ = std::fs::remove_file(file);
+            file.remove_file_if_still_owned();
         }
         for dir in self.dirs.iter().rev() {
-            let _ = std::fs::remove_dir(dir);
+            dir.remove_empty_directory_if_still_owned();
         }
     }
 }
@@ -723,7 +936,13 @@ where
                         created.rollback();
                         return Err(format!("could not create template directory: {error}"));
                     }
-                    created.dirs.push(target);
+                    match OwnedObject::from_directory(target) {
+                        Ok(directory) => created.dirs.push(directory),
+                        Err(error) => {
+                            created.rollback();
+                            return Err(error);
+                        }
+                    }
                 }
                 Err(error) => {
                     created.rollback();
@@ -731,7 +950,7 @@ where
                 }
             }
         } else {
-            let mut target_file = match std::fs::OpenOptions::new()
+            let target_file = match std::fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
                 .open(&target)
@@ -742,9 +961,16 @@ where
                     return Err(format!("could not create template file: {error}"));
                 }
             };
+            let target = match OwnedObject::from_file(target, target_file) {
+                Ok(target) => target,
+                Err(error) => {
+                    created.rollback();
+                    return Err(error);
+                }
+            };
             created.files.push(target);
-            if let Err(error) = copier(&stage.join(&entry.relative), &mut target_file) {
-                drop(target_file);
+            let target_file = &mut created.files.last_mut().expect("just pushed").handle;
+            if let Err(error) = copier(&stage.join(&entry.relative), target_file) {
                 created.rollback();
                 return Err(error);
             }
@@ -777,11 +1003,12 @@ fn join_relative(directory: &str, child: &str) -> String {
 
 struct OwnedImportStage {
     path: PathBuf,
+    owned: OwnedObject,
 }
 
 impl Drop for OwnedImportStage {
     fn drop(&mut self) {
-        remove_created_dir(&self.path);
+        self.owned.remove_directory_tree_if_still_owned();
     }
 }
 
@@ -842,11 +1069,12 @@ fn create_import_stage_from_nonce(
         project.canonical_inside(&stage)?;
         match std::fs::create_dir(&stage) {
             Ok(()) => {
+                let owned = OwnedObject::from_directory(stage.clone())?;
                 if let Err(error) = project.canonical_inside(&stage) {
-                    remove_created_dir(&stage);
+                    owned.remove_empty_directory_if_still_owned();
                     return Err(error);
                 }
-                return Ok(OwnedImportStage { path: stage });
+                return Ok(OwnedImportStage { path: stage, owned });
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                 nonce = nonce
@@ -1726,6 +1954,64 @@ mod tests {
     }
 
     #[test]
+    fn merge_rollback_preserves_file_that_replaced_owned_file() {
+        let root = test_root("merge-replaced-file");
+        let staged = root.join("staged");
+        let destination = root.join("destination");
+        let target = destination.join("paper.tex");
+        let displaced = destination.join("owned-paper.tex");
+        write_fixture(&staged.join("paper.tex"), b"staged\n");
+        std::fs::create_dir_all(&destination).unwrap();
+        let entries = inspect_merge_conflicts(&staged, &destination).unwrap();
+        let injected = "injected after file replacement".to_string();
+
+        let error = merge_staged_tree_with(&staged, &destination, &entries, |_from, to| {
+            std::io::Write::write_all(to, b"owned\n").unwrap();
+            std::fs::rename(&target, &displaced).unwrap();
+            std::fs::write(&target, b"external\n").unwrap();
+            Err(injected.clone())
+        })
+        .unwrap_err();
+
+        assert_eq!(error, injected);
+        assert_eq!(std::fs::read(&target).unwrap(), b"external\n");
+        assert_eq!(std::fs::read(&displaced).unwrap(), b"owned\n");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn merge_rollback_preserves_directory_that_replaced_owned_directory() {
+        let root = test_root("merge-replaced-directory");
+        let staged = root.join("staged");
+        let destination = root.join("destination");
+        let target = destination.join("created-directory");
+        let displaced = destination.join("owned-directory");
+        std::fs::create_dir_all(staged.join("created-directory")).unwrap();
+        write_fixture(&staged.join("later.tex"), b"staged\n");
+        std::fs::create_dir_all(&destination).unwrap();
+        let entries = inspect_merge_conflicts(&staged, &destination).unwrap();
+        let injected = "injected after directory replacement".to_string();
+
+        let error = merge_staged_tree_with(&staged, &destination, &entries, |_from, _to| {
+            std::fs::rename(&target, &displaced).unwrap();
+            std::fs::create_dir(&target).unwrap();
+            Err(injected.clone())
+        })
+        .unwrap_err();
+
+        assert_eq!(error, injected);
+        assert!(
+            target.is_dir(),
+            "replacement directory must survive rollback"
+        );
+        assert!(
+            displaced.is_dir(),
+            "the original directory remains owned by its handle"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn merge_create_race_preserves_file_not_owned_by_import() {
         let root = test_root("merge-create-race");
         let staged = root.join("staged");
@@ -2001,6 +2287,34 @@ mod tests {
         assert!(
             !residue,
             "owned stages must be removed on success and failure"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn owned_stage_drop_preserves_replaced_directory() {
+        let root = test_root("merge-replaced-stage");
+        let project_root = root.join("project");
+        write_fixture(
+            &project_root.join("main.tex"),
+            b"\\documentclass{article}\n",
+        );
+        let project = Project::open(&project_root).unwrap();
+        let stage = create_import_stage_from_nonce(&project, 9_400_000).unwrap();
+        let stage_path = stage.path.clone();
+        let displaced = project.backup_dir().join("displaced-stage");
+        std::fs::rename(&stage_path, &displaced).unwrap();
+        write_fixture(&stage_path.join("external.txt"), b"external\n");
+
+        drop(stage);
+
+        assert_eq!(
+            std::fs::read(stage_path.join("external.txt")).unwrap(),
+            b"external\n"
+        );
+        assert!(
+            displaced.is_dir(),
+            "the original stage remains tied to its handle"
         );
         std::fs::remove_dir_all(root).unwrap();
     }

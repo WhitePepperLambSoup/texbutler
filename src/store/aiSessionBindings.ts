@@ -1,8 +1,12 @@
 export const SCOPED_BINDINGS_KEY = "tb-ai-file-sessions-v2";
 
+function isWindowsProjectRoot(root: string): boolean {
+  return /^[A-Za-z]:(?:\/|$)/.test(root) || root.startsWith("//");
+}
+
 export function normalizeProjectRoot(root: string): string {
   const normalized = root.replace(/\\/g, "/").replace(/\/+$/, "");
-  return /^[A-Za-z]:/.test(normalized) ? normalized.toLowerCase() : normalized;
+  return isWindowsProjectRoot(normalized) ? normalized.toLowerCase() : normalized;
 }
 
 export function normalizeRelativeFile(file: string): string {
@@ -10,7 +14,10 @@ export function normalizeRelativeFile(file: string): string {
 }
 
 export function bindingKey(projectRoot: string, file: string): string {
-  return `${normalizeProjectRoot(projectRoot)}\u0000${normalizeRelativeFile(file)}`;
+  const normalizedRoot = normalizeProjectRoot(projectRoot);
+  const normalizedFile = normalizeRelativeFile(file);
+  const scopedFile = isWindowsProjectRoot(normalizedRoot) ? normalizedFile.toLowerCase() : normalizedFile;
+  return `${normalizedRoot}\u0000${scopedFile}`;
 }
 
 export function loadScopedBindings(): Record<string, string> {

@@ -10,6 +10,10 @@ import { recordRecent } from "./recent";
 
 /** Monotonic openFile request counter (race guard for async tab activation). */
 let openFileSeq = 0;
+/** Invalidates async project-owned work across close/reopen, including same-root ABA switches. */
+let projectGeneration = 0;
+/** Per-project/file reload generation: only the newest disk read may commit. */
+const reloadTabSeq = new Map<string, number>();
 
 export interface Tab {
   path: string;
@@ -72,6 +76,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     // pollute the recent list; info.root is the canonical path even for
     // the file-dialog (no-arg) flow
     recordRecent(info.root);
+    projectGeneration += 1;
     set({
       root: info.root,
       mainFile: info.main_file,
@@ -88,6 +93,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   async createProject(parent, name, template?: string) {
     const info = await api.newProject(parent, name, template);
     recordRecent(info.root); // new projects appear in the recent list too
+    projectGeneration += 1;
     set({
       root: info.root,
       mainFile: info.main_file,
@@ -184,8 +190,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
    *  edits — the disk content will win on their next explicit save. */
   async reloadTab(rel: string) {
     const requestRoot = get().root;
+    const requestGeneration = projectGeneration;
+    const requestKey = `${requestRoot}\u0000${rel}`;
+    const requestSeq = (reloadTabSeq.get(requestKey) ?? 0) + 1;
+    reloadTabSeq.set(requestKey, requestSeq);
     const content = await api.readFile(rel);
-    set((s) => s.root === requestRoot
+    if (reloadTabSeq.get(requestKey) !== requestSeq) return;
+    set((s) => s.root === requestRoot && projectGeneration === requestGeneration
       ? { tabs: s.tabs.map((t) => (t.path === rel && !t.dirty ? { ...t, content, dirty: false } : t)) }
       : s);
   },
@@ -251,6 +262,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   closeProject() {
+    projectGeneration += 1;
     set({
       root: "",
       mainFile: "main.tex",

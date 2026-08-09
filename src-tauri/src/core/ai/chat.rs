@@ -2,7 +2,7 @@
 //! The AI acts as a LaTeX assistant: it can answer questions about the
 //! code, point out pitfalls, or explain errors — without touching files.
 
-use super::provider::{AiSettings, ChatMsg, chat};
+use super::provider::{chat, AiSettings, ChatMsg};
 use crate::core::project::Project;
 
 const SYSTEM_PROMPT: &str = "你是 TeXButler 内置的 LaTeX 写作助手（专业 LaTeX agent），正坐在作者身边，与他协同编写 LaTeX 文档。\
@@ -193,10 +193,16 @@ async fn run_edit_chat<R: ModelRoundSource>(
                             out.push_str(&format!("\n\n✅ 已自动应用 {n} 处修改。编译检查后不满意可在 AI 面板点击“回滚此修改”。"));
                         }
                         if skipped > 0 {
-                            out.push_str(&format!("\nℹ️ {skipped} 处无需修改（内容相同，已跳过）。"));
+                            out.push_str(&format!(
+                                "\nℹ️ {skipped} 处无需修改（内容相同，已跳过）。"
+                            ));
                         }
                         if !failures.is_empty() {
-                            out.push_str(&format!("\n⚠️ {} 处修改未能应用：{}", failures.len(), failures.join("；")));
+                            out.push_str(&format!(
+                                "\n⚠️ {} 处修改未能应用：{}",
+                                failures.len(),
+                                failures.join("；")
+                            ));
                         }
                         // zero calls applied AND nothing was skipped — treat
                         // like a failed edit and retry ONCE with the freshest
@@ -578,10 +584,7 @@ async fn execute_tool_calls(
                 let src = match project.read_file(&rel) {
                     Ok(s) => s,
                     Err(e) => {
-                        failures.push(format!(
-                            "{}({}): 读取失败（{e}）",
-                            call.tool, call.anchor
-                        ));
+                        failures.push(format!("{}({}): 读取失败（{e}）", call.tool, call.anchor));
                         continue;
                     }
                 };
@@ -657,7 +660,10 @@ fn anchor_lines(content: &str, anchor: &str, allow_many: bool) -> Result<Vec<usi
         return Err(format!("未找到锚 `{anchor}`"));
     }
     if !allow_many && hits.len() > 1 {
-        return Err(format!("锚 `{anchor}` 在文件中出现 {} 处，无法确定位置", hits.len()));
+        return Err(format!(
+            "锚 `{anchor}` 在文件中出现 {} 处，无法确定位置",
+            hits.len()
+        ));
     }
     Ok(hits)
 }
@@ -668,7 +674,11 @@ fn anchor_lines(content: &str, anchor: &str, allow_many: bool) -> Result<Vec<usi
 fn compute_tool_call(src: &str, call: &ToolCall) -> Result<String, String> {
     let new_content: String = match call.tool.as_str() {
         "insert_before" | "insert_after" => {
-            let lines: Vec<String> = call.lines.iter().map(|l| l.trim_end().to_string()).collect();
+            let lines: Vec<String> = call
+                .lines
+                .iter()
+                .map(|l| l.trim_end().to_string())
+                .collect();
             if lines.is_empty() {
                 return Err("lines 不能为空".into());
             }
@@ -773,7 +783,9 @@ fn compute_tool_call(src: &str, call: &ToolCall) -> Result<String, String> {
                     }
                 }
                 let hint = match mismatch_line {
-                    Some(n) => format!("（第 {n} 行与文件不一致，请缩短 old 或直接复制文件中的原文）"),
+                    Some(n) => {
+                        format!("（第 {n} 行与文件不一致，请缩短 old 或直接复制文件中的原文）")
+                    }
                     None => String::new(),
                 };
                 return Err(format!(
@@ -898,26 +910,17 @@ async fn apply_edit_reply(
     let Some((diff, summary)) = extract_diff(reply) else {
         return ApplyOutcome::NoDiff(reply.trim().to_string());
     };
-    let rel = diff_file(&diff).unwrap_or_else(|| file.unwrap_or("main.tex").to_string());
-    let rel = project.relative_path(&rel);
-    // Fold path components so `//`, `./`, `.\`, `\` variants all resolve
-    // to the same canonical relative path (`/.texbutler/x` -> `.texbutler/x`);
-    // the folded path is used for BOTH the allowlist check and the actual
-    // read/write so no representation can dodge the protected-path check.
-    let rel_norm = rel.replace('\\', "/");
-    let rel_clean = rel_norm
-        .split('/')
-        .filter(|c| !c.is_empty() && *c != ".")
-        .collect::<Vec<_>>()
-        .join("/");
-    // `..` components are rejected by Project::resolve, but refuse them
-    // here too (defense in depth)
-    if rel_clean.split('/').any(|c| c == "..") {
-        return ApplyOutcome::Failed {
-            rel: rel_clean.clone(),
-            reason: "路径含 `..`".into(),
-        };
-    }
+    let candidate = diff_file(&diff).unwrap_or_else(|| file.unwrap_or("main.tex").to_string());
+    let rel_clean = match crate::core::document_path::resolve_existing_document(project, &candidate)
+    {
+        Ok(rel) => rel,
+        Err(reason) => {
+            return ApplyOutcome::Failed {
+                rel: candidate,
+                reason,
+            };
+        }
+    };
     // allowlist: only document files in the project may be edited by
     // the AI; AI_GUIDE.md / .texbutler / other assets are off-limits
     if !is_editable_doc(&rel_clean) {
@@ -997,7 +1000,8 @@ pub fn is_editable_doc(rel: &str) -> bool {
     // note: GUIDE_FILE is uppercase; compare against its lowercased form so
     // the explicit AI_GUIDE.md protection actually fires (case-insensitive
     // filesystems treat ai_guide.md the same)
-    let is_protected = low == super::guide::GUIDE_FILE.to_lowercase() || low.starts_with(".texbutler/");
+    let is_protected =
+        low == super::guide::GUIDE_FILE.to_lowercase() || low.starts_with(".texbutler/");
     is_doc && !is_protected
 }
 
@@ -1065,8 +1069,12 @@ fn extract_diff(reply: &str) -> Option<(String, String)> {
             end = i;
             break;
         }
-        if !l.starts_with(' ') && !l.starts_with('+') && !l.starts_with('-')
-            && !l.starts_with("@@") && !l.starts_with("+++") && !t.is_empty()
+        if !l.starts_with(' ')
+            && !l.starts_with('+')
+            && !l.starts_with('-')
+            && !l.starts_with("@@")
+            && !l.starts_with("+++")
+            && !t.is_empty()
         {
             end = i;
             break;
@@ -1079,7 +1087,10 @@ fn extract_diff(reply: &str) -> Option<(String, String)> {
 /// Parse the old-side line count from a `@@ -a[,b] +c[,d] @@` header
 /// (defaults to 1 when `,b` is omitted).
 fn hunk_old_lines(header: &str) -> Option<u32> {
-    let h = header.trim_start_matches("@@").trim_end_matches("@@").trim();
+    let h = header
+        .trim_start_matches("@@")
+        .trim_end_matches("@@")
+        .trim();
     let minus = h.split('+').next()?.trim().trim_start_matches('-');
     let (a, b) = match minus.split_once(',') {
         Some((x, y)) => (x, y),
@@ -1116,7 +1127,10 @@ fn build_messages(
     if let Some(sel) = selection {
         let sel = sel.trim();
         if !sel.is_empty() {
-            user.push_str(&format!("【编辑器选区】\n```latex\n{}\n```\n\n", truncate(sel, 4000)));
+            user.push_str(&format!(
+                "【编辑器选区】\n```latex\n{}\n```\n\n",
+                truncate(sel, 4000)
+            ));
         }
     }
     if let Some(f) = file {
@@ -1125,7 +1139,10 @@ fn build_messages(
                 // document summary: class / packages / section tree — a
                 // lightweight "repo map" so the AI knows the project shape
                 // (is Chinese supported? which packages? what sections?)
-                user.push_str(&format!("【文档概要 `{f}`】\n{}\n\n", document_summary(&content)));
+                user.push_str(&format!(
+                    "【文档概要 `{f}`】\n{}\n\n",
+                    document_summary(&content)
+                ));
                 user.push_str(&format!(
                     "【当前文件 `{f}` 的内容（前 {max_file_chars} 字符）】\n```latex\n{}\n```\n\n",
                     truncate(&content, max_file_chars)
@@ -1150,7 +1167,10 @@ fn build_messages(
             content: h.content.clone(),
         });
     }
-    messages.push(ChatMsg { role: "user".into(), content: user });
+    messages.push(ChatMsg {
+        role: "user".into(),
+        content: user,
+    });
     messages
 }
 
@@ -1189,13 +1209,24 @@ fn document_summary(content: &str) -> String {
     let chinese_ok = packages
         .iter()
         .any(|p| p == "ctex" || p == "xeCJK" || p == "CJKutf8" || p == "zhnumber");
-    let mut out = format!("文档类：{}", if doc_class.is_empty() { "未知" } else { &doc_class });
+    let mut out = format!(
+        "文档类：{}",
+        if doc_class.is_empty() {
+            "未知"
+        } else {
+            &doc_class
+        }
+    );
     if !packages.is_empty() {
         out.push_str(&format!("\n已加载宏包：{}", packages.join(", ")));
     }
     out.push_str(&format!(
         "\n中文支持：{}",
-        if chinese_ok { "已有（ctex/xeCJK/CJKutf8）" } else { "无（如需中文请加 \\usepackage{ctex}）" }
+        if chinese_ok {
+            "已有（ctex/xeCJK/CJKutf8）"
+        } else {
+            "无（如需中文请加 \\usepackage{ctex}）"
+        }
     ));
     if !sections.is_empty() {
         // cap the tree (sections may contain user text; keep it short)
@@ -1241,10 +1272,8 @@ mod tests {
     }
 
     fn chat_runner_fixture(label: &str) -> (std::path::PathBuf, Project) {
-        let dir = std::env::temp_dir().join(format!(
-            "tb-chat-runner-{label}-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("tb-chat-runner-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("main.tex"), "a\n").unwrap();
@@ -1263,7 +1292,8 @@ mod tests {
         assert!(s.contains("Physics model"));
         assert!(s.contains("(a) method"));
         // with ctex loaded → Chinese supported
-        let src2 = "\\documentclass{ctexart}\n\\usepackage{ctex}\n\\begin{document}\n\\end{document}\n";
+        let src2 =
+            "\\documentclass{ctexart}\n\\usepackage{ctex}\n\\begin{document}\n\\end{document}\n";
         let s2 = document_summary(src2);
         assert!(s2.contains("ctexart"));
         assert!(s2.contains("中文支持：已有"));
@@ -1350,7 +1380,11 @@ mod tests {
 
         assert_eq!(rounds.seen_messages.len(), 2);
         assert_eq!(project.read_file("main.tex").unwrap(), "b\n");
-        assert_eq!(edits.len(), 1, "mixed first-round edit must not emit on_edit");
+        assert_eq!(
+            edits.len(),
+            1,
+            "mixed first-round edit must not emit on_edit"
+        );
         assert_eq!(edits[0].0, "main.tex");
         assert_eq!(std::fs::read_to_string(&edits[0].1).unwrap(), "a\n");
         assert!(edits[0].2.contains("+b"));
@@ -1527,11 +1561,19 @@ mod tests {
         // object without a marker must NOT execute (double-apply guard)
         let reply3 = "{\"tool\": \"replace\", \"file\": \"a.tex\", \"old\": \"x\", \"new\": \"y\"}\n{\"tool\": \"delete_line\", \"file\": \"a.tex\", \"anchor\": \"z\"}";
         let calls3 = parse_tool_calls(reply3);
-        assert_eq!(calls3.len(), 1, "second bare object must be ignored: {calls3:?}");
+        assert_eq!(
+            calls3.len(),
+            1,
+            "second bare object must be ignored: {calls3:?}"
+        );
         // bare object + marker object: no double-parse of the same call
         let reply4 = "{\"tool\": \"replace\", \"file\": \"a.tex\", \"old\": \"x\", \"new\": \"y\"}\n【工具调用】{\"tool\": \"insert_after\", \"file\": \"a.tex\", \"anchor\": \"b\", \"lines\": [\"c\"]}";
         let calls4 = parse_tool_calls(reply4);
-        assert_eq!(calls4.len(), 2, "bare + marker must yield two distinct calls: {calls4:?}");
+        assert_eq!(
+            calls4.len(),
+            2,
+            "bare + marker must yield two distinct calls: {calls4:?}"
+        );
         assert_eq!(calls4[0].tool, "replace");
         assert_eq!(calls4[1].tool, "insert_after");
         // prose that merely STARTS with { is not a tool batch
@@ -1568,7 +1610,8 @@ mod tests {
             tool: "replace".into(),
             file: "x.tex".into(),
             anchor: String::new(),
-            old: "\\subsection*{(a) Partial derivative method}\n\nWrite $E_s = E_p/(1+kE_p)$ with".into(),
+            old: "\\subsection*{(a) Partial derivative method}\n\nWrite $E_s = E_p/(1+kE_p)$ with"
+                .into(),
             new: "\\subsection*{(a) 偏导数法}\n\n令 $E_s = E_p/(1+kE_p)$，其中".into(),
             lines: vec![],
         };
@@ -1626,13 +1669,27 @@ mod tests {
         let result = compute_tool_call(src, &call).unwrap();
         assert_eq!(result, "  \\section*{Q1}  \\section*{Q1}\n内容\n");
         // unknown tool
-        let bad = ToolCall { tool: "nope".into(), file: "x.tex".into(), anchor: String::new(), old: String::new(), new: String::new(), lines: vec![] };
+        let bad = ToolCall {
+            tool: "nope".into(),
+            file: "x.tex".into(),
+            anchor: String::new(),
+            old: String::new(),
+            new: String::new(),
+            lines: vec![],
+        };
         assert_eq!(
             compute_tool_call(src, &bad).unwrap_err(),
             "未知工具 `nope`；允许的工具：read_file、insert_before、insert_after、replace、delete_line"
         );
         // empty old
-        let bad2 = ToolCall { tool: "replace".into(), file: "x.tex".into(), anchor: String::new(), old: "  ".into(), new: "y".into(), lines: vec![] };
+        let bad2 = ToolCall {
+            tool: "replace".into(),
+            file: "x.tex".into(),
+            anchor: String::new(),
+            old: "  ".into(),
+            new: "y".into(),
+            lines: vec![],
+        };
         assert!(compute_tool_call(src, &bad2).is_err());
     }
 
@@ -1660,7 +1717,11 @@ mod tests {
             "\\begin{abstract}\n摘要内容\n\\end{abstract}\n",
         )
         .unwrap();
-        std::fs::write(dir.join("main.tex"), "\\documentclass{article}\n\\begin{document}\n\\end{document}\n").unwrap();
+        std::fs::write(
+            dir.join("main.tex"),
+            "\\documentclass{article}\n\\begin{document}\n\\end{document}\n",
+        )
+        .unwrap();
         let proj = crate::core::project::Project::open(&dir).unwrap();
         let reply = "【工具调用】{\"tool\": \"replace\", \"file\": \"t/my-latex-project/contents/abstract.tex\", \"old\": \"\\\\begin{abstract}\", \"new\": \"\\\\begin{abstract} 中文摘要：\"}";
         let mut on_edit = |_: &str, _: &str, _: &str| {};
@@ -1675,7 +1736,10 @@ mod tests {
                 assert!(failures.is_empty(), "no failures expected: {failures:?}");
                 // the edit landed on the real abstract.tex
                 let fixed = proj.read_file("contents/abstract.tex").unwrap();
-                assert!(fixed.contains("中文摘要"), "content must be updated: {fixed}");
+                assert!(
+                    fixed.contains("中文摘要"),
+                    "content must be updated: {fixed}"
+                );
             }
             other => panic!("expected Applied, got {other:?}"),
         }
@@ -1689,11 +1753,21 @@ mod tests {
         // absolute-path guard does not wrongly refuse project-internal files
         let dir = std::env::temp_dir().join(format!("tb-e2e-abs-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("solutions.tex"), "\\section*{Question 1}\n\\section*{Question 2}\n").unwrap();
+        std::fs::write(
+            dir.join("solutions.tex"),
+            "\\section*{Question 1}\n\\section*{Question 2}\n",
+        )
+        .unwrap();
         let proj = crate::core::project::Project::open(&dir).unwrap();
-        let abs = dir.join("solutions.tex").to_string_lossy().replace('\\', "/");
+        let abs = dir
+            .join("solutions.tex")
+            .to_string_lossy()
+            .replace('\\', "/");
         let rel = proj.relative_path(&abs);
-        assert_eq!(rel, "solutions.tex", "absolute internal path must normalize");
+        assert_eq!(
+            rel, "solutions.tex",
+            "absolute internal path must normalize"
+        );
         assert!(!rel.contains(':') && !rel.starts_with('/') && !rel.starts_with('\\'));
         // and the full pipeline: parse a tool call with the absolute path
         let reply = format!("【工具调用】{{\"tool\": \"insert_before\", \"file\": \"{abs}\", \"anchor\": \"Question 2\", \"lines\": [\"\\\\newpage\"]}}");
@@ -1716,7 +1790,9 @@ mod tests {
         let calls = parse_tool_calls(reply);
         assert_eq!(calls.len(), 2, "should parse both marker blocks");
         assert_eq!(calls[0].tool, "replace");
-        assert!(calls[0].old.contains("$\\sigma_{\\mathrm{top}}/\\mathrm{top}"));
+        assert!(calls[0]
+            .old
+            .contains("$\\sigma_{\\mathrm{top}}/\\mathrm{top}"));
         assert_eq!(calls[1].new, "\\subsection*{(b) 分步法}");
     }
 
@@ -1733,9 +1809,63 @@ mod tests {
 
     #[test]
     fn extract_diff_stops_at_trailing_prose() {
-        let reply = "--- a/main.tex\n+++ b/main.tex\n@@ -1,2 +1,2 @@\n-a\n+b\n\n- 修改完成，编译试试看。";
+        let reply =
+            "--- a/main.tex\n+++ b/main.tex\n@@ -1,2 +1,2 @@\n-a\n+b\n\n- 修改完成，编译试试看。";
         let (diff, _) = extract_diff(reply).unwrap();
         // the trailing markdown bullet (`- 修改完成...`) must NOT enter the diff
         assert!(!diff.contains("修改完成"));
+    }
+
+    #[test]
+    fn unified_diff_resolves_truncated_path_before_editing() {
+        let dir = std::env::temp_dir().join(format!("tb-diff-resolve-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("contents")).unwrap();
+        std::fs::write(dir.join("main.tex"), "main\n").unwrap();
+        std::fs::write(dir.join("contents/abstract.tex"), "old\n").unwrap();
+        let project = Project::open(&dir).unwrap();
+        let reply = "--- a/t/my-latex-project/contents/abstract.tex\n+++ b/t/my-latex-project/contents/abstract.tex\n@@ -1,1 +1,1 @@\n-old\n+new\n";
+        let mut edited = Vec::new();
+
+        let outcome = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(apply_edit_reply(
+                &project,
+                Some("main.tex"),
+                reply,
+                &mut |rel, _, _| edited.push(rel.to_string()),
+            ));
+
+        assert!(matches!(outcome, ApplyOutcome::Applied(_)));
+        assert_eq!(edited, vec!["contents/abstract.tex"]);
+        assert_eq!(project.read_file("contents/abstract.tex").unwrap(), "new");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unified_diff_reports_ambiguous_ai_path() {
+        let dir = std::env::temp_dir().join(format!("tb-diff-ambiguous-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("a")).unwrap();
+        std::fs::create_dir_all(dir.join("b")).unwrap();
+        std::fs::write(dir.join("main.tex"), "main\n").unwrap();
+        std::fs::write(dir.join("a/abstract.tex"), "old\n").unwrap();
+        std::fs::write(dir.join("b/abstract.tex"), "old\n").unwrap();
+        let project = Project::open(&dir).unwrap();
+        let reply = "--- a/abstract.tex\n+++ b/abstract.tex\n@@ -1,1 +1,1 @@\n-old\n+new\n";
+
+        let outcome = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(apply_edit_reply(&project, None, reply, &mut |_, _, _| {}));
+
+        match outcome {
+            ApplyOutcome::Failed { reason, .. } => assert!(reason.contains("多个"), "{reason}"),
+            _ => panic!("ambiguous AI path must be rejected"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

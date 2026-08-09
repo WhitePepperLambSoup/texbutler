@@ -1,6 +1,6 @@
 //! AI commands: diagnose an issue, run the fix loop, manage provider settings.
 
-use crate::core::ai::{AiDiagnosis, AiSettings, ChatMsg, diagnose, fix_loop, rollback_from_backup};
+use crate::core::ai::{diagnose, fix_loop, rollback_from_backup, AiDiagnosis, AiSettings, ChatMsg};
 use crate::core::{FixReport, Issue, SourceContext};
 use crate::state::AppState;
 use tauri::{AppHandle, Emitter, State};
@@ -43,7 +43,10 @@ pub async fn tb_ai_create_guide(
 ) -> Result<String, String> {
     let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
     if settings.api_key.is_none()
-        && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. })
+        && !matches!(
+            settings.provider,
+            crate::core::ai::ProviderKind::Ollama { .. }
+        )
     {
         return Err("尚未配置 AI API Key。请在“设置”中填写 provider 配置。".into());
     }
@@ -85,7 +88,10 @@ pub async fn tb_ai_translate(
 ) -> Result<String, String> {
     let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
     if settings.api_key.is_none()
-        && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. })
+        && !matches!(
+            settings.provider,
+            crate::core::ai::ProviderKind::Ollama { .. }
+        )
     {
         return Err("尚未配置 AI API Key。请在“设置”中填写 provider 配置。".into());
     }
@@ -106,7 +112,10 @@ pub async fn tb_ai_polish(
 ) -> Result<String, String> {
     let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
     if settings.api_key.is_none()
-        && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. })
+        && !matches!(
+            settings.provider,
+            crate::core::ai::ProviderKind::Ollama { .. }
+        )
     {
         return Err("尚未配置 AI API Key。请在“设置”中填写 provider 配置。".into());
     }
@@ -124,8 +133,14 @@ pub async fn tb_ai_polish(
     crate::core::ai::chat(
         &settings,
         &[
-            crate::core::ai::ChatMsg { role: "system".into(), content: system },
-            crate::core::ai::ChatMsg { role: "user".into(), content: text },
+            crate::core::ai::ChatMsg {
+                role: "system".into(),
+                content: system,
+            },
+            crate::core::ai::ChatMsg {
+                role: "user".into(),
+                content: text,
+            },
         ],
     )
     .await
@@ -154,7 +169,11 @@ pub async fn tb_ai_diagnose(
     let (mut issue, settings) = {
         let last = state.last_result.read().map_err(|e| e.to_string())?;
         let r = last.as_ref().ok_or_else(|| "还没有编译结果".to_string())?;
-        let issue = r.issues.get(issue_index).cloned().ok_or_else(|| "问题索引越界".to_string())?;
+        let issue = r
+            .issues
+            .get(issue_index)
+            .cloned()
+            .ok_or_else(|| "问题索引越界".to_string())?;
         let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
         (issue, settings)
     };
@@ -164,10 +183,18 @@ pub async fn tb_ai_diagnose(
         let proj = proj.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
         issue.file = Some(existing_project_file(proj, f)?);
     }
-    if settings.api_key.is_none() && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. }) {
+    if settings.api_key.is_none()
+        && !matches!(
+            settings.provider,
+            crate::core::ai::ProviderKind::Ollama { .. }
+        )
+    {
         return Err("尚未配置 AI API Key。请在“设置”中填写 provider 配置。".into());
     }
-    let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "diagnose", "status": "start" }));
+    let _ = app.emit(
+        "tb://ai-status",
+        serde_json::json!({ "kind": "diagnose", "status": "start" }),
+    );
 
     let ctx = {
         let default_file = issue.file.clone().unwrap_or_default();
@@ -182,7 +209,10 @@ pub async fn tb_ai_diagnose(
         .map(|p| crate::core::ai::guide::guide_system_fragment(p))
         .unwrap_or_default();
     let result = diagnose(&issue, &ctx, &settings, &guide).await;
-    let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "diagnose", "status": "done" }));
+    let _ = app.emit(
+        "tb://ai-status",
+        serde_json::json!({ "kind": "diagnose", "status": "done" }),
+    );
     Ok(result)
 }
 
@@ -200,13 +230,25 @@ pub async fn tb_ai_fix(
     let (mut issue, settings, proj) = {
         let last = state.last_result.read().map_err(|e| e.to_string())?;
         let r = last.as_ref().ok_or_else(|| "还没有编译结果".to_string())?;
-        let issue = r.issues.get(issue_index).cloned().ok_or_else(|| "问题索引越界".to_string())?;
+        let issue = r
+            .issues
+            .get(issue_index)
+            .cloned()
+            .ok_or_else(|| "问题索引越界".to_string())?;
         let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
         let guard = state.project.read().map_err(|e| e.to_string())?;
-        let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?.clone();
+        let proj = guard
+            .as_ref()
+            .ok_or_else(|| "尚未打开项目".to_string())?
+            .clone();
         (issue, settings, proj)
     };
-    if settings.api_key.is_none() && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. }) {
+    if settings.api_key.is_none()
+        && !matches!(
+            settings.provider,
+            crate::core::ai::ProviderKind::Ollama { .. }
+        )
+    {
         return Err("尚未配置 AI API Key。请在“设置”中填写 provider 配置。".into());
     }
     // External, missing, ambiguous, and unsupported files cannot be fixed.
@@ -214,7 +256,10 @@ pub async fn tb_ai_fix(
         issue.file = Some(existing_project_file(&proj, f)?);
     }
     let apply = apply.unwrap_or(true);
-    let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "fix", "status": "start", "apply": apply }));
+    let _ = app.emit(
+        "tb://ai-status",
+        serde_json::json!({ "kind": "fix", "status": "start", "apply": apply }),
+    );
     let report = fix_loop(&issue, &proj, &settings, max_rounds.unwrap_or(3), apply).await;
     let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "fix", "status": "done", "ok": report.ok, "suggested": report.suggested }));
     Ok(report)
@@ -243,18 +288,30 @@ pub async fn tb_fix_rule_issue(
     let (settings, proj) = {
         let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
         let guard = state.project.read().map_err(|e| e.to_string())?;
-        let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?.clone();
+        let proj = guard
+            .as_ref()
+            .ok_or_else(|| "尚未打开项目".to_string())?
+            .clone();
         (settings, proj)
     };
     let has_key = settings.api_key.is_some()
-        || matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. });
+        || matches!(
+            settings.provider,
+            crate::core::ai::ProviderKind::Ollama { .. }
+        );
     let apply = apply.unwrap_or(true);
     // Deterministic fixes (paragraph gluing etc.) never call the AI, so a
     // missing key is fine for them; only the AI fallback needs one.
     if !has_key && !is_deterministic_rule_issue(&issue) {
-        return Err("尚未配置 AI API Key，且该问题没有确定性修复方案。请在“设置”中填写 provider 配置。".into());
+        return Err(
+            "尚未配置 AI API Key，且该问题没有确定性修复方案。请在“设置”中填写 provider 配置。"
+                .into(),
+        );
     }
-    let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "fix", "status": "start", "apply": apply }));
+    let _ = app.emit(
+        "tb://ai-status",
+        serde_json::json!({ "kind": "fix", "status": "start", "apply": apply }),
+    );
     let report = fix_loop(&issue, &proj, &settings, max_rounds.unwrap_or(3), apply).await;
     let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "fix", "status": "done", "ok": report.ok, "suggested": report.suggested }));
     Ok(report)
@@ -283,26 +340,49 @@ pub async fn tb_ai_chat(
     let (settings, proj) = {
         let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
         let guard = state.project.read().map_err(|e| e.to_string())?;
-        let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?.clone();
+        let proj = guard
+            .as_ref()
+            .ok_or_else(|| "尚未打开项目".to_string())?
+            .clone();
         (settings, proj)
     };
-    if settings.api_key.is_none() && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. }) {
+    if settings.api_key.is_none()
+        && !matches!(
+            settings.provider,
+            crate::core::ai::ProviderKind::Ollama { .. }
+        )
+    {
         return Err("尚未配置 AI API Key。请在“设置”中填写 provider 配置。".into());
     }
     let question = question.trim().to_string();
     if question.is_empty() {
         return Err("问题不能为空".into());
     }
-    let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "chat", "status": "start" }));
-    let answer = crate::core::ai::chat::ask_about_source(&settings, &proj, file.as_deref(), selection.as_deref(), &question)
-        .await
-        .map_err(|e| redact_key(&settings, e));
+    let _ = app.emit(
+        "tb://ai-status",
+        serde_json::json!({ "kind": "chat", "status": "start" }),
+    );
+    let answer = crate::core::ai::chat::ask_about_source(
+        &settings,
+        &proj,
+        file.as_deref(),
+        selection.as_deref(),
+        &question,
+    )
+    .await
+    .map_err(|e| redact_key(&settings, e));
     match &answer {
         Ok(_) => {
-            let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "chat", "status": "done", "ok": true }));
+            let _ = app.emit(
+                "tb://ai-status",
+                serde_json::json!({ "kind": "chat", "status": "done", "ok": true }),
+            );
         }
         Err(_) => {
-            let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "chat", "status": "done", "ok": false }));
+            let _ = app.emit(
+                "tb://ai-status",
+                serde_json::json!({ "kind": "chat", "status": "done", "ok": false }),
+            );
         }
     }
     answer
@@ -323,10 +403,18 @@ pub async fn tb_ai_chat_stream(
     let (settings, proj) = {
         let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
         let guard = state.project.read().map_err(|e| e.to_string())?;
-        let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?.clone();
+        let proj = guard
+            .as_ref()
+            .ok_or_else(|| "尚未打开项目".to_string())?
+            .clone();
         (settings, proj)
     };
-    if settings.api_key.is_none() && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. }) {
+    if settings.api_key.is_none()
+        && !matches!(
+            settings.provider,
+            crate::core::ai::ProviderKind::Ollama { .. }
+        )
+    {
         return Err("尚未配置 AI API Key。请在“设置”中填写 provider 配置。".into());
     }
     let question = question.trim().to_string();
@@ -341,7 +429,10 @@ pub async fn tb_ai_chat_stream(
             .filter(|m| m.role == "user" || m.role == "assistant")
             .collect::<Vec<_>>()
     });
-    let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "chat", "status": "start" }));
+    let _ = app.emit(
+        "tb://ai-status",
+        serde_json::json!({ "kind": "chat", "status": "start" }),
+    );
     let app2 = app.clone();
     let app3 = app.clone();
     use std::sync::atomic::Ordering;
@@ -359,7 +450,10 @@ pub async fn tb_ai_chat_stream(
         },
         move |file, backup, diff| {
             ac2.fetch_add(1, Ordering::SeqCst);
-            let _ = app3.emit("tb://ai-edit", serde_json::json!({ "file": file, "backup": backup, "diff": diff }));
+            let _ = app3.emit(
+                "tb://ai-edit",
+                serde_json::json!({ "file": file, "backup": backup, "diff": diff }),
+            );
         },
     )
     .await
@@ -368,7 +462,10 @@ pub async fn tb_ai_chat_stream(
         Ok(f) => f,
         Err(e) => {
             let _ = app.emit("tb://ai-stream", serde_json::json!({ "error": e }));
-            let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "chat", "status": "done", "ok": false }));
+            let _ = app.emit(
+                "tb://ai-status",
+                serde_json::json!({ "kind": "chat", "status": "done", "ok": false }),
+            );
             return Err(e);
         }
     };
@@ -378,7 +475,11 @@ pub async fn tb_ai_chat_stream(
     // auto-compile and feed failures back for ONE more fixing round
     if applied_count > 0 {
         let engine = state.settings.read().map_err(|e| e.to_string())?.engine;
-        let passes = state.settings.read().map_err(|e| e.to_string())?.texlive_passes;
+        let passes = state
+            .settings
+            .read()
+            .map_err(|e| e.to_string())?
+            .texlive_passes;
         let root = proj.root.clone();
         let main = proj.main_file.clone();
         let p2 = crate::core::project::Project::open(&root).map_err(|e| e.to_string())?;
@@ -389,14 +490,18 @@ pub async fn tb_ai_chat_stream(
         // reset any leftover cancellation from a previous manual compile
         cancel.store(false, std::sync::atomic::Ordering::SeqCst);
         let cr = tauri::async_runtime::spawn_blocking(move || {
-            scheduler.compile(&p2b, std::path::Path::new(&main), &|| cancel.load(std::sync::atomic::Ordering::SeqCst))
+            scheduler.compile(&p2b, std::path::Path::new(&main), &|| {
+                cancel.load(std::sync::atomic::Ordering::SeqCst)
+            })
         })
         .await
-        .unwrap_or_else(|e| crate::core::compiler::CompileResult::failed(
-            log_path,
-            crate::core::compiler::EngineUsed::Tectonic,
-            &format!("编译任务异常终止: {e}"),
-        ));
+        .unwrap_or_else(|e| {
+            crate::core::compiler::CompileResult::failed(
+                log_path,
+                crate::core::compiler::EngineUsed::Tectonic,
+                &format!("编译任务异常终止: {e}"),
+            )
+        });
         // sync the diagnostics panel with the fresh result
         if let Ok(mut guard) = state.last_result.write() {
             *guard = Some(cr.clone());
@@ -440,7 +545,10 @@ pub async fn tb_ai_chat_stream(
                     },
                     move |file, backup, diff| {
                         ac3.fetch_add(1, Ordering::SeqCst);
-                        let _ = app5.emit("tb://ai-edit", serde_json::json!({ "file": file, "backup": backup, "diff": diff }));
+                        let _ = app5.emit(
+                            "tb://ai-edit",
+                            serde_json::json!({ "file": file, "backup": backup, "diff": diff }),
+                        );
                     },
                 )
                 .await
@@ -452,24 +560,36 @@ pub async fn tb_ai_chat_stream(
                         if applied2 > 0 {
                             // verify the fix compiles too
                             let engine2 = state.settings.read().map_err(|e| e.to_string())?.engine;
-                            let passes2 = state.settings.read().map_err(|e| e.to_string())?.texlive_passes;
+                            let passes2 = state
+                                .settings
+                                .read()
+                                .map_err(|e| e.to_string())?
+                                .texlive_passes;
                             let root2 = proj.root.clone();
                             let main2 = proj.main_file.clone();
-                            let p3 = crate::core::project::Project::open(&root2).map_err(|e| e.to_string())?;
+                            let p3 = crate::core::project::Project::open(&root2)
+                                .map_err(|e| e.to_string())?;
                             let log_path3 = p3.log_path();
-                            let scheduler2 = crate::core::compiler::CompilerScheduler::new_with_passes(engine2, passes2);
+                            let scheduler2 =
+                                crate::core::compiler::CompilerScheduler::new_with_passes(
+                                    engine2, passes2,
+                                );
                             let p3b = p3.clone();
                             let cancel3 = state.cancel_flag.clone();
                             cancel3.store(false, std::sync::atomic::Ordering::SeqCst);
                             let cr2 = tauri::async_runtime::spawn_blocking(move || {
-                                scheduler2.compile(&p3b, std::path::Path::new(&main2), &|| cancel3.load(std::sync::atomic::Ordering::SeqCst))
+                                scheduler2.compile(&p3b, std::path::Path::new(&main2), &|| {
+                                    cancel3.load(std::sync::atomic::Ordering::SeqCst)
+                                })
                             })
                             .await
-                            .unwrap_or_else(|e| crate::core::compiler::CompileResult::failed(
-                                log_path3,
-                                crate::core::compiler::EngineUsed::Tectonic,
-                                &format!("编译任务异常终止: {e}"),
-                            ));
+                            .unwrap_or_else(|e| {
+                                crate::core::compiler::CompileResult::failed(
+                                    log_path3,
+                                    crate::core::compiler::EngineUsed::Tectonic,
+                                    &format!("编译任务异常终止: {e}"),
+                                )
+                            });
                             if let Ok(mut guard) = state.last_result.write() {
                                 *guard = Some(cr2.clone());
                             }
@@ -477,7 +597,9 @@ pub async fn tb_ai_chat_stream(
                             if cr2.ok {
                                 full.push_str("\n✅ 修复后自动编译验证通过。");
                             } else {
-                                full.push_str("\n⚠️ 修复后编译仍未通过（可在 AI 面板点击“回滚此修改”）。");
+                                full.push_str(
+                                    "\n⚠️ 修复后编译仍未通过（可在 AI 面板点击“回滚此修改”）。",
+                                );
                             }
                         }
                     }
@@ -489,7 +611,10 @@ pub async fn tb_ai_chat_stream(
         }
     }
     let _ = app.emit("tb://ai-stream", serde_json::json!({ "done": true }));
-    let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "chat", "status": "done", "ok": true }));
+    let _ = app.emit(
+        "tb://ai-status",
+        serde_json::json!({ "kind": "chat", "status": "done", "ok": true }),
+    );
     Ok(full)
 }
 
@@ -497,10 +622,15 @@ pub async fn tb_ai_chat_stream(
 /// directory (newest first). Each snapshot can be restored with
 /// `tb_ai_rollback` (pass its `path`).
 #[tauri::command]
-pub fn tb_ai_snapshots(state: State<'_, AppState>) -> Result<Vec<crate::core::ai::fix_loop::SnapshotInfo>, String> {
+pub fn tb_ai_snapshots(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::core::ai::fix_loop::SnapshotInfo>, String> {
     let proj = {
         let guard = state.project.read().map_err(|e| e.to_string())?;
-        guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?.clone()
+        guard
+            .as_ref()
+            .ok_or_else(|| "尚未打开项目".to_string())?
+            .clone()
     };
     crate::core::ai::fix_loop::list_snapshots(&proj)
 }
@@ -539,11 +669,23 @@ pub async fn tb_check_updates() -> Result<Option<serde_json::Value>, String> {
 fn version_le(a: &str, b: &str) -> bool {
     let pa: Vec<u64> = a
         .split('.')
-        .map(|p| p.chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse().unwrap_or(0))
+        .map(|p| {
+            p.chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect::<String>()
+                .parse()
+                .unwrap_or(0)
+        })
         .collect();
     let pb: Vec<u64> = b
         .split('.')
-        .map(|p| p.chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse().unwrap_or(0))
+        .map(|p| {
+            p.chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect::<String>()
+                .parse()
+                .unwrap_or(0)
+        })
         .collect();
     for i in 0..pa.len().max(pb.len()) {
         let x = pa.get(i).copied().unwrap_or(0);
@@ -558,7 +700,11 @@ fn version_le(a: &str, b: &str) -> bool {
 /// Get the update-check setting.
 #[tauri::command]
 pub fn tb_get_update_check(state: State<'_, AppState>) -> Result<bool, String> {
-    Ok(state.settings.read().map_err(|e| e.to_string())?.check_updates)
+    Ok(state
+        .settings
+        .read()
+        .map_err(|e| e.to_string())?
+        .check_updates)
 }
 
 /// Set the update-check setting (persisted).
@@ -572,30 +718,45 @@ pub fn tb_set_update_check(state: State<'_, AppState>, enabled: bool) -> Result<
 /// Apply a single-file unified-diff patch produced by the AI in suggest
 /// mode (per-hunk manual application). A snapshot is taken before writing
 /// so the change can still be rolled back.
-#[tauri::command]
-pub fn tb_ai_apply_patch(state: State<'_, AppState>, file: String, patch: String) -> Result<String, String> {    let proj = {
-        let guard = state.project.read().map_err(|e| e.to_string())?;
-        guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?.clone()
-    };
-    let rel = proj.relative_path(&file);
-    // same allowlist as the chat-driven edit path: only document files may
-    // be patched, AI_GUIDE.md and .texbutler are protected (a patched
-    // AI_GUIDE.md would be injected into every future prompt)
+fn apply_patch_to_project(
+    proj: &crate::core::project::Project,
+    file: &str,
+    patch: &str,
+) -> Result<String, String> {
+    let rel = crate::core::document_path::resolve_existing_document(proj, file)
+        .map_err(|error| format!("拒绝应用补丁：{error}"))?;
+    // Defense in depth: the resolver already restricts extensions, while
+    // this shared allowlist also protects internal metadata paths.
     if !crate::core::ai::chat::is_editable_doc(&rel) {
         return Err(format!(
             "拒绝应用补丁：`{rel}` 不是可编辑的文档（只允许 .tex/.bib/.sty/.cls，AI_GUIDE.md 与 .texbutler 受保护）"
         ));
     }
     let src = proj.read_file(&rel)?;
-    let new_content = crate::core::ai::fix_loop::apply_unified_diff(&src, &patch)
+    let new_content = crate::core::ai::fix_loop::apply_unified_diff(&src, patch)
         .map_err(|e| format!("补丁无法应用: {e}"))?;
     if new_content == src {
         return Err("补丁没有产生任何修改".into());
     }
-    // snapshot before writing so the hunk stays reversible
-    let _ = crate::core::ai::fix_loop::snapshot(&proj, &rel, &src);
+    let _ = crate::core::ai::fix_loop::snapshot(proj, &rel, &src);
     proj.write_file(&rel, &new_content)?;
     Ok(rel)
+}
+
+#[tauri::command]
+pub fn tb_ai_apply_patch(
+    state: State<'_, AppState>,
+    file: String,
+    patch: String,
+) -> Result<String, String> {
+    let proj = {
+        let guard = state.project.read().map_err(|e| e.to_string())?;
+        guard
+            .as_ref()
+            .ok_or_else(|| "尚未打开项目".to_string())?
+            .clone()
+    };
+    apply_patch_to_project(&proj, &file, &patch)
 }
 
 /// Roll a file back to the snapshot taken before an AI fix was applied
@@ -605,7 +766,10 @@ pub fn tb_ai_apply_patch(state: State<'_, AppState>, file: String, patch: String
 pub fn tb_ai_rollback(state: State<'_, AppState>, backup: String) -> Result<String, String> {
     let proj = {
         let guard = state.project.read().map_err(|e| e.to_string())?;
-        guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?.clone()
+        guard
+            .as_ref()
+            .ok_or_else(|| "尚未打开项目".to_string())?
+            .clone()
     };
     rollback_from_backup(&proj, &backup)
 }
@@ -667,12 +831,14 @@ pub fn tb_ai_set_settings(
 /// AI-generate LaTeX code from a natural-language request (e.g. "生成一个
 /// 三线表"). Returns raw LaTeX code (no markdown fences).
 #[tauri::command]
-pub async fn tb_ai_generate(
-    state: State<'_, AppState>,
-    request: String,
-) -> Result<String, String> {
+pub async fn tb_ai_generate(state: State<'_, AppState>, request: String) -> Result<String, String> {
     let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
-    if settings.api_key.is_none() && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. }) {
+    if settings.api_key.is_none()
+        && !matches!(
+            settings.provider,
+            crate::core::ai::ProviderKind::Ollama { .. }
+        )
+    {
         return Err("尚未配置 AI API Key。请在“设置”中填写 provider 配置。".into());
     }
     let system = "你是 TeXButler 内置的 LaTeX 代码生成助手。只输出可直接编译的 LaTeX 代码（含 \\documentclass 的完整片段或局部片段均可，视请求而定），不要输出 Markdown 代码围栏，不要输出解释文字。中文文档默认使用 ctexart，注意中文 LaTeX 规范：百分号转义 \\%、中文字体不用斜体、表格单元格内用 {\\bfseries ...} 而非 \\textbf。";
@@ -683,7 +849,11 @@ pub async fn tb_ai_generate(
         .project
         .read()
         .map_err(|e| e.to_string())
-        .and_then(|g| g.as_ref().map(|p| p.clone()).ok_or_else(|| "no project".to_string()))
+        .and_then(|g| {
+            g.as_ref()
+                .map(|p| p.clone())
+                .ok_or_else(|| "no project".to_string())
+        })
     {
         let labels: Vec<String> = proj
             .tex_files()
@@ -710,8 +880,14 @@ pub async fn tb_ai_generate(
     let reply = crate::core::ai::chat(
         &settings,
         &[
-            crate::core::ai::ChatMsg { role: "system".into(), content: system.into() },
-            crate::core::ai::ChatMsg { role: "user".into(), content: user },
+            crate::core::ai::ChatMsg {
+                role: "system".into(),
+                content: system.into(),
+            },
+            crate::core::ai::ChatMsg {
+                role: "user".into(),
+                content: user,
+            },
         ],
     )
     .await
@@ -737,16 +913,17 @@ pub async fn tb_ai_generate(
 
 /// Ping the configured provider with a tiny message to verify connectivity.
 #[tauri::command]
-pub async fn tb_ai_test_connection(
-    state: State<'_, AppState>,
-) -> Result<String, String> {
+pub async fn tb_ai_test_connection(state: State<'_, AppState>) -> Result<String, String> {
     let s = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
     if s.api_key.is_none() && !matches!(s.provider, crate::core::ai::ProviderKind::Ollama { .. }) {
         return Err("未配置 api_key".into());
     }
     let reply = crate::core::ai::chat(
         &s,
-        &[ChatMsg { role: "user".into(), content: "请只回复两个字：正常".into() }],
+        &[ChatMsg {
+            role: "user".into(),
+            content: "请只回复两个字：正常".into(),
+        }],
     )
     .await
     .map_err(|e| e.to_string())?;
@@ -757,7 +934,9 @@ fn build_context(state: &State<'_, AppState>, issue: &Issue) -> Option<SourceCon
     let guard = state.project.read().ok()?;
     let proj = guard.as_ref()?;
     let file = match issue.file.as_deref() {
-        Some(candidate) => crate::core::document_path::resolve_existing_document(proj, candidate).ok()?,
+        Some(candidate) => {
+            crate::core::document_path::resolve_existing_document(proj, candidate).ok()?
+        }
         None => proj.main_file.clone(),
     };
     let body = proj.read_file(&file).ok()?;
@@ -773,4 +952,77 @@ pub struct AiSettingsView {
     pub max_tokens: u32,
     pub timeout_secs: u64,
     pub disable_thinking: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn manual_patch_resolves_truncated_ai_path_and_returns_canonical_relative_path() {
+        let root = std::env::temp_dir().join(format!("tb-ai-command-patch-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("contents")).unwrap();
+        std::fs::write(root.join("main.tex"), "main\n").unwrap();
+        std::fs::write(root.join("contents/abstract.tex"), "old\n").unwrap();
+        let project = crate::core::project::Project::open(&root).unwrap();
+
+        let rel = apply_patch_to_project(
+            &project,
+            "t/my-latex-project/contents/abstract.tex",
+            "@@ -1,1 +1,1 @@\n-old\n+new\n",
+        )
+        .unwrap();
+
+        assert_eq!(rel, "contents/abstract.tex");
+        assert_eq!(project.read_file(&rel).unwrap(), "new");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn manual_patch_rejects_ambiguous_external_and_unsupported_ai_paths() {
+        let root =
+            std::env::temp_dir().join(format!("tb-ai-command-refuse-{}", std::process::id()));
+        let outside =
+            std::env::temp_dir().join(format!("tb-ai-command-outside-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+        std::fs::create_dir_all(root.join("a")).unwrap();
+        std::fs::create_dir_all(root.join("b")).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(root.join("main.tex"), "main\n").unwrap();
+        std::fs::write(root.join("a/abstract.tex"), "old\n").unwrap();
+        std::fs::write(root.join("b/abstract.tex"), "old\n").unwrap();
+        std::fs::write(root.join("notes.txt"), "old\n").unwrap();
+        std::fs::write(outside.join("external.tex"), "old\n").unwrap();
+        let project = crate::core::project::Project::open(&root).unwrap();
+        let patch = "@@ -1,1 +1,1 @@\n-old\n+new\n";
+
+        assert!(apply_patch_to_project(&project, "abstract.tex", patch).is_err());
+        assert!(apply_patch_to_project(
+            &project,
+            outside.join("external.tex").to_string_lossy().as_ref(),
+            patch,
+        )
+        .is_err());
+        assert!(apply_patch_to_project(&project, "notes.txt", patch).is_err());
+        assert_eq!(
+            std::fs::read_to_string(root.join("a/abstract.tex")).unwrap(),
+            "old\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join("b/abstract.tex")).unwrap(),
+            "old\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join("notes.txt")).unwrap(),
+            "old\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(outside.join("external.tex")).unwrap(),
+            "old\n"
+        );
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(outside);
+    }
 }

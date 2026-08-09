@@ -1539,6 +1539,26 @@ html[data-theme="light"] .ai-menu {
   color: var(--danger);
 }
 
+html[data-theme="liquid"] .ai-menu-item.danger,
+html[data-theme="dark"] .ai-menu-item.danger {
+  color: #ff8a80;
+}
+
+html[data-theme="light"] .ai-menu-item.danger {
+  color: #b42318;
+}
+
+/* Disabled menu controls remain visibly muted through the dim theme token,
+   without fading the whole element below the 4.5:1 text contrast floor. */
+html[data-theme] .editor-tools-menu .btn-mini:disabled,
+html[data-theme] .ai-menu .ai-menu-item:disabled {
+  color: var(--fg-dim);
+  opacity: 1;
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+}
+
 .ai-menu-separator {
   height: 1px;
   margin: 4px;
