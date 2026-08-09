@@ -88,6 +88,8 @@ interface AiState {
   setSelection: (sel: string | null) => void;
   askAi: (question: string) => Promise<void>;
   rollbackEdit: (file?: string) => Promise<void>;
+  restoreTimelineSnapshot: (path: string) => Promise<string | null>;
+  fixRuleIssueForSession: (issue: Issue, maxRounds?: number, apply?: boolean) => Promise<FixReport | null>;
   testConnection: () => Promise<string>;
   saveSettings: (s: AiSettings) => Promise<void>;
   pushMessage: (m: Omit<AiMessage, "id">) => number;
@@ -325,6 +327,54 @@ export const useAiStore = create<AiState>((set, get) => ({
       appendMessageToRequest(context, { role: "assistant", kind: "error", text: useI18n.getState().t("ai.chatFailed", { e: String(e) }) });
     } finally {
       set({ busy: false, busyKind: null });
+    }
+  },
+
+  async restoreTimelineSnapshot(path) {
+    const context = captureRequestContext();
+    try {
+      const rel = await api.aiRollback(path);
+      if (useProjectStore.getState().root === context.projectRoot) {
+        await useProjectStore.getState().reloadTab(rel);
+      }
+      appendMessageToRequest(context, {
+        role: "system",
+        kind: "plain",
+        text: useI18n.getState().t("ai.timelineRestored", { file: rel }),
+      });
+      return rel;
+    } catch (e) {
+      appendMessageToRequest(context, {
+        role: "assistant",
+        kind: "error",
+        text: useI18n.getState().t("ai.rollbackFailed", { e: String(e) }),
+      });
+      return null;
+    }
+  },
+
+  async fixRuleIssueForSession(issue, maxRounds = 3, apply = true) {
+    const context = captureRequestContext();
+    try {
+      const report = await api.fixRuleIssue(issue, maxRounds, apply);
+      if (useProjectStore.getState().root === context.projectRoot) {
+        const { useCompileStore } = await import("./compileStore");
+        await useCompileStore.getState().runCheck();
+      }
+      appendMessageToRequest(context, {
+        role: "assistant",
+        kind: "fix",
+        text: report.summary,
+        report,
+      });
+      return report;
+    } catch (e) {
+      appendMessageToRequest(context, {
+        role: "assistant",
+        kind: "error",
+        text: String(e),
+      });
+      return null;
     }
   },
 

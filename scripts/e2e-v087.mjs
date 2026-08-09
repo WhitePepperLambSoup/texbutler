@@ -1281,6 +1281,135 @@ async function main() {
         && afterFixReturn.messages.some((message) => message.diff === 'ASYNC_FIX_DIFF')
         && afterFixReturn.diffPending === null;
 
+      await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+          ?? '/src/store/aiStore.ts';
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const i18nUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/i18n/index.ts') && new URL(name).search)
+          ?? '/src/i18n/index.ts';
+        const { useAiStore } = await import(aiUrl);
+        const { api } = await import(apiUrl);
+        const { useI18n } = await import(i18nUrl);
+        window.__v087TimelineRollbackOriginal = api.aiRollback;
+        api.aiRollback = () => new Promise((resolve) => { window.__v087ResolveTimeline = resolve; });
+        const action = useAiStore.getState().restoreTimelineSnapshot;
+        window.__v087TimelinePromise = typeof action === 'function'
+          ? action('timeline-snapshot')
+          : api.aiRollback('timeline-snapshot').then((rel) => {
+              useAiStore.getState().pushMessage({
+                role: 'system', kind: 'plain', text: useI18n.getState().t('ai.timelineRestored', { file: rel }),
+              });
+              return rel;
+            });
+        return true;
+      })()`);
+      await sleep(100);
+      await openFile('main.tex');
+      await exec(`(async () => {
+        window.__v087ResolveTimeline?.('contents/abstract.tex');
+        await window.__v087TimelinePromise;
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { api } = await import(apiUrl);
+        if (window.__v087TimelineRollbackOriginal) api.aiRollback = window.__v087TimelineRollbackOriginal;
+        delete window.__v087TimelineRollbackOriginal;
+        delete window.__v087ResolveTimeline;
+        delete window.__v087TimelinePromise;
+        return true;
+      })()`);
+      const afterTimelineSwitch = await aiState();
+      const timelineTarget = afterTimelineSwitch.sessions.find((session) => session.id === second.sessionId);
+      result.timelineRestoreStaysWithRequestSession = timelineTarget?.messages.some((message) => message.role === 'system' && message.text.includes('contents/abstract.tex'))
+        && !afterTimelineSwitch.messages.some((message) => message.text.includes('contents/abstract.tex'));
+      await openFile('contents/abstract.tex');
+
+      await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+          ?? '/src/store/aiStore.ts';
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const compileUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
+          ?? '/src/store/compileStore.ts';
+        const { useAiStore } = await import(aiUrl);
+        const { api } = await import(apiUrl);
+        const { useCompileStore } = await import(compileUrl);
+        window.__v087RuleFixOriginal = api.fixRuleIssue;
+        window.__v087RunCheckOriginal = useCompileStore.getState().runCheck;
+        useCompileStore.setState({ runCheck: async () => {} });
+        api.fixRuleIssue = () => new Promise((resolve) => { window.__v087ResolveRuleFix = resolve; });
+        const issue = { message: 'ASYNC_RULE_SUCCESS_REQUEST', severity: 'error', file: 'contents/abstract.tex', line: 5 };
+        const action = useAiStore.getState().fixRuleIssueForSession;
+        window.__v087RuleFixPromise = typeof action === 'function'
+          ? action(issue, 3, true)
+          : api.fixRuleIssue(issue, 3, true).then(async (report) => {
+              await useCompileStore.getState().runCheck();
+              useAiStore.getState().pushMessage({ role: 'assistant', kind: 'fix', text: report.summary, report });
+              return report;
+            });
+        return true;
+      })()`);
+      await sleep(100);
+      await openFile('main.tex');
+      await exec(`(async () => {
+        window.__v087ResolveRuleFix?.({ ok: true, rounds: 1, summary: 'ASYNC_RULE_SUCCESS_DONE', diff: 'rule diff' });
+        await window.__v087RuleFixPromise;
+        return true;
+      })()`);
+      const afterRuleSuccess = await aiState();
+      const ruleSuccessTarget = afterRuleSuccess.sessions.find((session) => session.id === second.sessionId);
+      result.ruleFixSuccessStaysWithRequestSession = ruleSuccessTarget?.messages.some((message) => message.text.includes('ASYNC_RULE_SUCCESS_DONE'))
+        && !afterRuleSuccess.messages.some((message) => message.text.includes('ASYNC_RULE_SUCCESS_DONE'));
+      await openFile('contents/abstract.tex');
+      await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+          ?? '/src/store/aiStore.ts';
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { useAiStore } = await import(aiUrl);
+        const { api } = await import(apiUrl);
+        api.fixRuleIssue = () => new Promise((_, reject) => { window.__v087RejectRuleFix = reject; });
+        const issue = { message: 'ASYNC_RULE_ERROR_REQUEST', severity: 'error', file: 'contents/abstract.tex', line: 6 };
+        const action = useAiStore.getState().fixRuleIssueForSession;
+        window.__v087RuleFixPromise = typeof action === 'function'
+          ? action(issue, 3, true)
+          : api.fixRuleIssue(issue, 3, true).catch((error) => {
+              useAiStore.getState().pushMessage({ role: 'assistant', kind: 'error', text: String(error) });
+              return null;
+            });
+        return true;
+      })()`);
+      await sleep(100);
+      await openFile('main.tex');
+      await exec(`(async () => {
+        window.__v087RejectRuleFix?.(new Error('ASYNC_RULE_ERROR_DONE'));
+        await window.__v087RuleFixPromise;
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const compileUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
+          ?? '/src/store/compileStore.ts';
+        const { api } = await import(apiUrl);
+        const { useCompileStore } = await import(compileUrl);
+        if (window.__v087RuleFixOriginal) api.fixRuleIssue = window.__v087RuleFixOriginal;
+        if (window.__v087RunCheckOriginal) useCompileStore.setState({ runCheck: window.__v087RunCheckOriginal });
+        delete window.__v087RuleFixOriginal;
+        delete window.__v087RunCheckOriginal;
+        delete window.__v087ResolveRuleFix;
+        delete window.__v087RejectRuleFix;
+        delete window.__v087RuleFixPromise;
+        return true;
+      })()`);
+      const afterRuleError = await aiState();
+      const ruleErrorTarget = afterRuleError.sessions.find((session) => session.id === second.sessionId);
+      result.ruleFixErrorStaysWithRequestSession = ruleErrorTarget?.messages.some((message) => message.text.includes('ASYNC_RULE_ERROR_DONE'))
+        && !afterRuleError.messages.some((message) => message.text.includes('ASYNC_RULE_ERROR_DONE'));
+      await openFile('contents/abstract.tex');
+
       const sessionCountBeforeProjectSwitch = (await aiState()).sessions.length;
       await openSessionProject(SESSION_PROJ);
       const isolatedMain = await aiState();
@@ -1376,6 +1505,11 @@ async function main() {
           if (window.__v087DiagnoseOriginal) api.aiDiagnose = window.__v087DiagnoseOriginal;
           window.__v087ResolveFix?.({ ok: false, rounds: 0, summary: 'cleanup', diff: null });
           if (window.__v087FixOriginal) api.aiFix = window.__v087FixOriginal;
+          window.__v087ResolveTimeline?.('contents/abstract.tex');
+          if (window.__v087TimelineRollbackOriginal) api.aiRollback = window.__v087TimelineRollbackOriginal;
+          window.__v087ResolveRuleFix?.({ ok: false, rounds: 0, summary: 'cleanup', diff: null });
+          window.__v087RejectRuleFix?.(new Error('cleanup'));
+          if (window.__v087RuleFixOriginal) api.fixRuleIssue = window.__v087RuleFixOriginal;
           delete window.__v087ResolveDownload;
           delete window.__v087DownloadOriginal;
           delete window.__v087ResolveChat;
@@ -1388,6 +1522,13 @@ async function main() {
           delete window.__v087ResolveFix;
           delete window.__v087FixOriginal;
           delete window.__v087FixPromise;
+          delete window.__v087ResolveTimeline;
+          delete window.__v087TimelineRollbackOriginal;
+          delete window.__v087TimelinePromise;
+          delete window.__v087ResolveRuleFix;
+          delete window.__v087RejectRuleFix;
+          delete window.__v087RuleFixOriginal;
+          delete window.__v087RuleFixPromise;
           const snapshot = ${JSON.stringify(browserStateBefore)};
           localStorage.clear();
           for (const [key, value] of Object.entries(snapshot.storage)) localStorage.setItem(key, value);

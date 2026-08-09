@@ -12,7 +12,7 @@ export default function ProblemsPanel() {
   const [tab, setTab] = useState<Tab>("compile");
   const { compileIssues, ruleIssues, runCheck, checkRunning, lastResult } = useCompileStore();
   const { openFile } = useProjectStore();
-  const { diagnoseIssue, fixIssue, busy } = useAiStore();
+  const { diagnoseIssue, fixIssue, fixRuleIssueForSession, busy } = useAiStore();
   const [aiBusyIdx, setAiBusyIdx] = useState<number | null>(null);
   const [logOpen, setLogOpen] = useState(false);
   const [logText, setLogText] = useState("");
@@ -152,26 +152,8 @@ export default function ProblemsPanel() {
                     title={t("problems.ruleFixTitle")}
                     onClick={() => {
                       setAiBusyIdx(i);
-                      void (async () => {
-                        try {
-                          const report = await api.fixRuleIssue(issue, 3, true);
-                          await runCheck();
-                          useAiStore
-                            .getState()
-                            .pushMessage({
-                              role: "assistant",
-                              kind: "fix",
-                              text: report.summary,
-                              report,
-                            });
-                        } catch (e) {
-                          useAiStore
-                            .getState()
-                            .pushMessage({ role: "assistant", kind: "error", text: String(e) });
-                        } finally {
-                          setAiBusyIdx(null);
-                        }
-                      })();
+                      void fixRuleIssueForSession(issue, 3, true)
+                        .finally(() => setAiBusyIdx(null));
                     }}
                   >
                     {aiBusyIdx === i ? "…" : t("problems.ruleFix")}

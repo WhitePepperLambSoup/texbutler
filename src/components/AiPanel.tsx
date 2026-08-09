@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import { useAiStore } from "../store/aiStore";
 import { api } from "../api";
-import { useProjectStore } from "../store/projectStore";
 import { useT } from "../i18n";
 
 /** Minimal markdown-ish rendering for AI messages (bold, inline code, breaks). */
@@ -60,7 +59,7 @@ function DiffHighlight({ diff }: { diff: string }) {
 }
 
 export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
-  const { messages, busy, busyKind, diffPending, acceptDiff, rejectDiff, applyHunk, clearMessages, suggestMode, toggleSuggestMode, pendingSelection, setSelection, askAi, lastEdits, rollbackEdit, sessions, sessionId, newSession, switchSession, renameSession, deleteSession, activeFile } =
+  const { messages, busy, busyKind, diffPending, acceptDiff, rejectDiff, applyHunk, clearMessages, suggestMode, toggleSuggestMode, pendingSelection, setSelection, askAi, lastEdits, rollbackEdit, restoreTimelineSnapshot, sessions, sessionId, newSession, switchSession, renameSession, deleteSession, activeFile } =
     useAiStore();
   const [expandedRaw, setExpandedRaw] = useState<number | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -382,15 +381,8 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
                 <button
                   className="btn-mini btn-primary"
                   onClick={() => {
-                    void api.aiRollback(snap.path).then((rel) => {
-                      useAiStore.getState().pushMessage({
-                        role: "system",
-                        kind: "plain",
-                        text: t("ai.timelineRestored", { file: rel }),
-                      });
-                      const active = useProjectStore.getState().activeTab;
-                      if (active) void useProjectStore.getState().reloadTab(active);
-                      void loadSnapshots();
+                    void restoreTimelineSnapshot(snap.path).then((rel) => {
+                      if (rel) void loadSnapshots();
                     });
                   }}
                 >
