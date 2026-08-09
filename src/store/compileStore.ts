@@ -56,17 +56,16 @@ export const useCompileStore = create<CompileState>((set, get) => ({
       try {
         await Promise.all(dirty.map((t) => ps.saveFile(t.path)));
       } catch (e) {
-        set({
-          running: false,
-          progress: { stage: "error", progress: 0, message: String(e) },
-        });
+        if (stillOwned()) {
+          set({
+            running: false,
+            progress: { stage: "error", progress: 0, message: String(e) },
+          });
+        }
         return;
       }
     }
-    if (!stillOwned()) {
-      set({ running: false, progress: null, startedAt: null, elapsedSec: null });
-      return;
-    }
+    if (!stillOwned()) return;
     let override: string | undefined;
     if (target === "current") {
       override = useProjectStore.getState().activeTab ?? undefined;
@@ -90,9 +89,7 @@ export const useCompileStore = create<CompileState>((set, get) => ({
         });
       }
     }
-    if (!stillOwned()) {
-      set({ running: false, progress: null, startedAt: null, elapsedSec: null });
-    }
+    if (!stillOwned()) return;
   },
 
   cancel() {

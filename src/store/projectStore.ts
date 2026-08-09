@@ -7,6 +7,7 @@ import { useI18n } from "../i18n";
 import { saveFlow } from "../flow";
 import { loadDraft, clearDraft } from "./drafts";
 import { recordRecent } from "./recent";
+import { normalizeProjectRoot } from "./aiSessionBindings";
 
 /** Monotonic openFile request counter (race guard for async tab activation). */
 let openFileSeq = 0;
@@ -114,7 +115,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   async refresh() {
+    const requestRoot = normalizeProjectRoot(get().root);
+    const requestGeneration = projectGeneration;
     const info = await api.projectInfo();
+    if (projectGeneration !== requestGeneration
+      || normalizeProjectRoot(get().root) !== requestRoot
+      || normalizeProjectRoot(info.root) !== requestRoot) {
+      return;
+    }
     set({
       files: info.files,
       pdfPath: info.pdf_url ?? null,
@@ -124,9 +132,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   async loadRefIndex() {
+    const requestRoot = normalizeProjectRoot(get().root);
+    const requestGeneration = projectGeneration;
     try {
       const idx = await api.refIndex();
-      set({ refIndex: idx });
+      if (projectGeneration === requestGeneration
+        && normalizeProjectRoot(get().root) === requestRoot) {
+        set({ refIndex: idx });
+      }
     } catch {
       /* project not open yet */
     }

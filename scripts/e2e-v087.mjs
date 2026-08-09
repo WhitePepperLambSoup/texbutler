@@ -432,10 +432,12 @@ async function main() {
       browserStateBefore = JSON.parse(await exec(`(async () => {
       const storeUrl = performance.getEntriesByType('resource')
         .map((entry) => entry.name)
+        .reverse()
         .find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
         ?? '/src/store/projectStore.ts';
       const i18nUrl = performance.getEntriesByType('resource')
         .map((entry) => entry.name)
+        .reverse()
         .find((name) => new URL(name).pathname.endsWith('/src/i18n/index.ts') && new URL(name).search)
         ?? '/src/i18n/index.ts';
       const { useProjectStore } = await import(storeUrl);
@@ -490,6 +492,7 @@ async function main() {
     inspectLocale = async () => JSON.parse(await exec(`(async () => {
       const i18nUrl = performance.getEntriesByType('resource')
         .map((entry) => entry.name)
+        .reverse()
         .find((name) => new URL(name).pathname.endsWith('/src/i18n/index.ts') && new URL(name).search)
         ?? '/src/i18n/index.ts';
       const { useI18n } = await import(i18nUrl);
@@ -503,6 +506,7 @@ async function main() {
     setLocale = async (lang) => exec(`(async () => {
       const i18nUrl = performance.getEntriesByType('resource')
         .map((entry) => entry.name)
+        .reverse()
         .find((name) => new URL(name).pathname.endsWith('/src/i18n/index.ts') && new URL(name).search)
         ?? '/src/i18n/index.ts';
       const { useI18n } = await import(i18nUrl);
@@ -532,6 +536,7 @@ async function main() {
     const openFixtureProject = async () => exec(`(async () => {
       const storeUrl = performance.getEntriesByType('resource')
         .map((entry) => entry.name)
+        .reverse()
         .find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
         ?? '/src/store/projectStore.ts';
       const { useProjectStore } = await import(storeUrl);
@@ -596,6 +601,7 @@ async function main() {
       const markMarketTemplates = async () => exec(`(async () => {
         const apiUrl = performance.getEntriesByType('resource')
           .map((entry) => entry.name)
+          .reverse()
           .find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { api } = await import(apiUrl);
@@ -608,6 +614,7 @@ async function main() {
       const markUserTemplates = async () => exec(`(async () => {
         const apiUrl = performance.getEntriesByType('resource')
           .map((entry) => entry.name)
+          .reverse()
           .find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { api } = await import(apiUrl);
@@ -624,6 +631,7 @@ async function main() {
             const id = ${JSON.stringify(id)};
             const apiUrl = performance.getEntriesByType('resource')
               .map((entry) => entry.name)
+              .reverse()
               .find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
               ?? '/src/api/index.ts';
             const { api } = await import(apiUrl);
@@ -666,6 +674,7 @@ async function main() {
       const readProjectFile = async (path) => exec(`(async () => {
         const apiUrl = performance.getEntriesByType('resource')
           .map((entry) => entry.name)
+          .reverse()
           .find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { api } = await import(apiUrl);
@@ -683,6 +692,7 @@ async function main() {
       const activateProjectFile = async (path) => exec(`(async () => {
         const storeUrl = performance.getEntriesByType('resource')
           .map((entry) => entry.name)
+          .reverse()
           .find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
           ?? '/src/store/projectStore.ts';
         const { useProjectStore } = await import(storeUrl);
@@ -692,6 +702,7 @@ async function main() {
       const currentActiveTab = async () => exec(`(async () => {
         const storeUrl = performance.getEntriesByType('resource')
           .map((entry) => entry.name)
+          .reverse()
           .find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
           ?? '/src/store/projectStore.ts';
         const { useProjectStore } = await import(storeUrl);
@@ -720,6 +731,7 @@ async function main() {
         if (direct) return '.toolbar-new-file';
         const i18nUrl = performance.getEntriesByType('resource')
           .map((entry) => entry.name)
+          .reverse()
           .find((name) => new URL(name).pathname.endsWith('/src/i18n/index.ts') && new URL(name).search)
           ?? '/src/i18n/index.ts';
         const { useI18n } = await import(i18nUrl);
@@ -915,6 +927,7 @@ async function main() {
       await exec(`(async () => {
         const apiUrl = performance.getEntriesByType('resource')
           .map((entry) => entry.name)
+          .reverse()
           .find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { api } = await import(apiUrl);
@@ -930,6 +943,7 @@ async function main() {
       await exec(`(async () => {
         const apiUrl = performance.getEntriesByType('resource')
           .map((entry) => entry.name)
+          .reverse()
           .find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { api } = await import(apiUrl);
@@ -1329,7 +1343,7 @@ async function main() {
         if (id === "light") {
           const prepared = await exec(`(async () => {
             const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-            const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+            const aiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
               ?? '/src/store/aiStore.ts';
             const { useAiStore } = await import(aiUrl);
             const state = useAiStore.getState();
@@ -1399,7 +1413,7 @@ async function main() {
             } finally {
               result.aiContentStateRestored = JSON.parse(await exec(`(async () => {
                 const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-                const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+                const aiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
                   ?? '/src/store/aiStore.ts';
                 const { useAiStore } = await import(aiUrl);
                 const snapshot = window.__v087AiContrastSnapshot;
@@ -1532,6 +1546,7 @@ async function main() {
         await exec(`(async () => {
           const storeUrl = performance.getEntriesByType('resource')
             .map((entry) => entry.name)
+            .reverse()
             .find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
             ?? '/src/store/projectStore.ts';
           const { useProjectStore } = await import(storeUrl);
@@ -1556,9 +1571,9 @@ async function main() {
     const runSessions = async () => {
       const aiState = async () => JSON.parse(await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+        const aiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
           ?? '/src/store/aiStore.ts';
-        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+        const projectUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
           ?? '/src/store/projectStore.ts';
         const { useAiStore } = await import(aiUrl);
         const { useProjectStore } = await import(projectUrl);
@@ -1581,7 +1596,7 @@ async function main() {
       })()`));
       const openSessionProject = async (root, file = 'main.tex') => exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+        const projectUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
           ?? '/src/store/projectStore.ts';
         const { useProjectStore } = await import(projectUrl);
         await useProjectStore.getState().openProject(${JSON.stringify(root)});
@@ -1590,7 +1605,7 @@ async function main() {
       })()`);
       const openFile = async (file) => exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+        const projectUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
           ?? '/src/store/projectStore.ts';
         const { useProjectStore } = await import(projectUrl);
         await useProjectStore.getState().openFile(${JSON.stringify(file)});
@@ -1598,7 +1613,7 @@ async function main() {
       })()`);
       const closeFile = async (file) => exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+        const projectUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
           ?? '/src/store/projectStore.ts';
         const { useProjectStore } = await import(projectUrl);
         await useProjectStore.getState().closeTab(${JSON.stringify(file)});
@@ -1606,7 +1621,7 @@ async function main() {
       })()`);
       const callAi = async (body) => exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+        const aiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
           ?? '/src/store/aiStore.ts';
         const { useAiStore } = await import(aiUrl);
         ${body}
@@ -1637,9 +1652,9 @@ async function main() {
       result.aiRailOpenedForSessionUi = await ensureAiRailOpen();
       const bindingSemantics = JSON.parse(await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const bindingsUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiSessionBindings.ts') && new URL(name).search)
+        const bindingsUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/aiSessionBindings.ts') && new URL(name).search)
           ?? '/src/store/aiSessionBindings.ts';
-        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+        const aiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
           ?? '/src/store/aiStore.ts';
         const { bindingKey } = await import(bindingsUrl);
         const { aiEditBelongsToScope } = await import(aiUrl);
@@ -1708,9 +1723,9 @@ async function main() {
 
       await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+        const aiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
           ?? '/src/store/aiStore.ts';
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { useAiStore } = await import(aiUrl);
         const { api } = await import(apiUrl);
@@ -1723,7 +1738,7 @@ async function main() {
       await openFile('main.tex');
       await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const eventUrl = resources.find((name) => new URL(name).pathname.includes('/node_modules/.vite/deps/@tauri-apps_api_event.js'));
+        const eventUrl = [...resources].reverse().find((name) => new URL(name).pathname.includes('/node_modules/.vite/deps/@tauri-apps_api_event.js'));
         if (!eventUrl) throw new Error('Tauri event module URL not found');
         const { emit } = await import(eventUrl);
         await emit('tb://ai-edit', {
@@ -1736,7 +1751,7 @@ async function main() {
         window.__v087ResolveChat?.('async abstract reply');
         await window.__v087AskPromise;
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { api } = await import(apiUrl);
         if (window.__v087ChatOriginal) api.aiChatStream = window.__v087ChatOriginal;
@@ -1759,9 +1774,9 @@ async function main() {
       )) && !await exec(`Boolean(document.querySelector('.ai-generate-actions .btn-danger'))`);
       const foreignRollbackCalls = await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+        const aiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
           ?? '/src/store/aiStore.ts';
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { useAiStore } = await import(aiUrl);
         const { api } = await import(apiUrl);
@@ -1784,7 +1799,7 @@ async function main() {
       }
       await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { api } = await import(apiUrl);
         api.aiRollback = () => new Promise((resolve) => {
@@ -1816,7 +1831,7 @@ async function main() {
         && !afterOwnedRollback.lastEdits.some((edit) => edit.backup === 'V087_OWNED_BACKUP');
       await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { api } = await import(apiUrl);
         if (window.__v087OwnedRollbackOriginal) api.aiRollback = window.__v087OwnedRollbackOriginal;
@@ -1831,9 +1846,9 @@ async function main() {
 
       await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+        const aiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
           ?? '/src/store/aiStore.ts';
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { useAiStore } = await import(aiUrl);
         const { api } = await import(apiUrl);
@@ -1861,9 +1876,9 @@ async function main() {
       await openFile('contents/abstract.tex');
       await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+        const aiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
           ?? '/src/store/aiStore.ts';
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { useAiStore } = await import(aiUrl);
         const { api } = await import(apiUrl);
@@ -1879,7 +1894,7 @@ async function main() {
         window.__v087RejectDiagnose?.(new Error('ASYNC_DIAG_ERROR_DONE'));
         await window.__v087DiagnosePromise;
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { api } = await import(apiUrl);
         if (window.__v087DiagnoseOriginal) api.aiDiagnose = window.__v087DiagnoseOriginal;
@@ -1898,9 +1913,9 @@ async function main() {
 
       await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+        const aiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
           ?? '/src/store/aiStore.ts';
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { useAiStore } = await import(aiUrl);
         const { api } = await import(apiUrl);
@@ -1919,7 +1934,7 @@ async function main() {
         });
         await window.__v087FixPromise;
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { api } = await import(apiUrl);
         if (window.__v087FixOriginal) api.aiFix = window.__v087FixOriginal;
@@ -1942,11 +1957,11 @@ async function main() {
 
       await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+        const aiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
           ?? '/src/store/aiStore.ts';
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
-        const i18nUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/i18n/index.ts') && new URL(name).search)
+        const i18nUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/i18n/index.ts') && new URL(name).search)
           ?? '/src/i18n/index.ts';
         const { useAiStore } = await import(aiUrl);
         const { api } = await import(apiUrl);
@@ -1970,7 +1985,7 @@ async function main() {
         window.__v087ResolveTimeline?.('contents/abstract.tex');
         await window.__v087TimelinePromise;
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { api } = await import(apiUrl);
         if (window.__v087TimelineRollbackOriginal) api.aiRollback = window.__v087TimelineRollbackOriginal;
@@ -1987,11 +2002,11 @@ async function main() {
 
       await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+        const aiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
           ?? '/src/store/aiStore.ts';
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
-        const compileUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
+        const compileUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
           ?? '/src/store/compileStore.ts';
         const { useAiStore } = await import(aiUrl);
         const { api } = await import(apiUrl);
@@ -2025,9 +2040,9 @@ async function main() {
       await openFile('contents/abstract.tex');
       await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+        const aiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
           ?? '/src/store/aiStore.ts';
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { useAiStore } = await import(aiUrl);
         const { api } = await import(apiUrl);
@@ -2048,9 +2063,9 @@ async function main() {
         window.__v087RejectRuleFix?.(new Error('ASYNC_RULE_ERROR_DONE'));
         await window.__v087RuleFixPromise;
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
-        const compileUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
+        const compileUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
           ?? '/src/store/compileStore.ts';
         const { api } = await import(apiUrl);
         const { useCompileStore } = await import(compileUrl);
@@ -2106,9 +2121,9 @@ async function main() {
       await openSessionProject(PROJ, 'contents/abstract.tex');
       await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+        const aiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
           ?? '/src/store/aiStore.ts';
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { useAiStore } = await import(aiUrl);
         const { api } = await import(apiUrl);
@@ -2137,7 +2152,7 @@ async function main() {
       await openSessionProject(SESSION_PROJ, 'contents/abstract.tex');
       const secondProjectContentBeforeStaleRead = await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+        const projectUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
           ?? '/src/store/projectStore.ts';
         const { useProjectStore } = await import(projectUrl);
         return useProjectStore.getState().tabs.find((tab) => tab.path === 'contents/abstract.tex')?.content ?? null;
@@ -2146,7 +2161,7 @@ async function main() {
         window.__v087ResolveSecondaryRead?.('STALE_A_TIMELINE_CONTENT');
         await window.__v087SecondaryTimelinePromise;
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { api } = await import(apiUrl);
         if (window.__v087SecondaryRollbackOriginal) api.aiRollback = window.__v087SecondaryRollbackOriginal;
@@ -2161,7 +2176,7 @@ async function main() {
       })()`);
       const secondProjectContentAfterStaleRead = await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+        const projectUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
           ?? '/src/store/projectStore.ts';
         const { useProjectStore } = await import(projectUrl);
         return useProjectStore.getState().tabs.find((tab) => tab.path === 'contents/abstract.tex')?.content ?? null;
@@ -2172,9 +2187,9 @@ async function main() {
       await openSessionProject(PROJ, 'contents/abstract.tex');
       await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+        const aiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
           ?? '/src/store/aiStore.ts';
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { useAiStore } = await import(aiUrl);
         const { api } = await import(apiUrl);
@@ -2205,7 +2220,7 @@ async function main() {
       await openSessionProject(SESSION_PROJ, 'contents/abstract.tex');
       await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const compileUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
+        const compileUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
           ?? '/src/store/compileStore.ts';
         const { useCompileStore } = await import(compileUrl);
         useCompileStore.setState({
@@ -2219,9 +2234,9 @@ async function main() {
       })()`);
       const secondaryRuleState = JSON.parse(await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
-        const compileUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
+        const compileUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
           ?? '/src/store/compileStore.ts';
         const { api } = await import(apiUrl);
         const { useCompileStore } = await import(compileUrl);
@@ -2246,9 +2261,9 @@ async function main() {
       await openSessionProject(PROJ, 'contents/abstract.tex');
       await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+        const projectUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
           ?? '/src/store/projectStore.ts';
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { useProjectStore } = await import(projectUrl);
         const { api } = await import(apiUrl);
@@ -2278,16 +2293,16 @@ async function main() {
       })()`);
       const latestReloadContent = await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+        const projectUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
           ?? '/src/store/projectStore.ts';
         const { useProjectStore } = await import(projectUrl);
         return useProjectStore.getState().tabs.find((tab) => tab.path === 'contents/abstract.tex')?.content ?? null;
       })()`);
       await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+        const projectUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
           ?? '/src/store/projectStore.ts';
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { useProjectStore } = await import(projectUrl);
         const { api } = await import(apiUrl);
@@ -2304,7 +2319,7 @@ async function main() {
       })()`);
       const dirtyReloadState = JSON.parse(await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+        const projectUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
           ?? '/src/store/projectStore.ts';
         const { useProjectStore } = await import(projectUrl);
         const tab = useProjectStore.getState().tabs.find((candidate) => candidate.path === 'contents/abstract.tex');
@@ -2327,9 +2342,9 @@ async function main() {
       await openFile('contents/abstract.tex');
       await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+        const aiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
           ?? '/src/store/aiStore.ts';
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { useAiStore } = await import(aiUrl);
         const { api } = await import(apiUrl);
@@ -2343,7 +2358,7 @@ async function main() {
       await callAi(`useAiStore.getState().deleteSession(${JSON.stringify(second.sessionId)});`);
       await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const eventUrl = resources.find((name) => new URL(name).pathname.includes('/node_modules/.vite/deps/@tauri-apps_api_event.js'));
+        const eventUrl = [...resources].reverse().find((name) => new URL(name).pathname.includes('/node_modules/.vite/deps/@tauri-apps_api_event.js'));
         if (!eventUrl) throw new Error('Tauri event module URL not found');
         const { emit } = await import(eventUrl);
         await emit('tb://ai-edit', {
@@ -2351,7 +2366,7 @@ async function main() {
         });
         window.__v087ResolveDeletedChat?.('deleted session completion');
         await window.__v087DeletedAskPromise;
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { api } = await import(apiUrl);
         if (window.__v087DeletedChatOriginal) api.aiChatStream = window.__v087DeletedChatOriginal;
@@ -2367,7 +2382,7 @@ async function main() {
         delete window.__v087DeletedAskPromise;
         return true;
       })()`);
-      result.staleCompileCompletionReleasesNewProject = await exec(`(async () => {
+      result.staleCompileCompletionDoesNotClobberNewCompile = await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
         const compileUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
           ?? '/src/store/compileStore.ts';
@@ -2376,25 +2391,34 @@ async function main() {
         const { useCompileStore } = await import(compileUrl);
         const { api } = await import(apiUrl);
         window.__v087CompileOriginal = api.compile;
-        window.__v087CompileStarted = false;
+        window.__v087CompileResolvers = [];
         api.compile = () => new Promise((resolve) => {
-          window.__v087CompileStarted = true;
-          window.__v087ResolveCompile = resolve;
+          window.__v087CompileResolvers.push(resolve);
         });
         useCompileStore.setState({ running: false, progress: null, startedAt: null });
-        window.__v087CompilePromise = useCompileStore.getState().compile('main');
+        window.__v087CompilePromiseA = useCompileStore.getState().compile('main');
         return true;
       })()`);
       for (let attempt = 0; attempt < 40; attempt += 1) {
-        if (await exec(`Boolean(window.__v087CompileStarted)`)) break;
+        if (await exec(`window.__v087CompileResolvers?.length >= 1`)) break;
         await sleep(50);
       }
       const compileOwnerBeforeSwitch = (await aiState()).root;
       const compileOtherProject = compileOwnerBeforeSwitch === PROJ ? SESSION_PROJ : PROJ;
       await openSessionProject(compileOtherProject);
-      result.staleCompileCompletionReleasesNewProject = await exec(`(async () => {
-        window.__v087ResolveCompile?.();
-        await window.__v087CompilePromise;
+      await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const compileUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
+          ?? '/src/store/compileStore.ts';
+        const { useCompileStore } = await import(compileUrl);
+        window.__v087CompilePromiseB = useCompileStore.getState().compile('main');
+        return true;
+      })()`);
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        if (await exec(`window.__v087CompileResolvers?.length >= 2`)) break;
+        await sleep(50);
+      }
+      result.staleCompileCompletionDoesNotClobberNewCompile = await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
         const compileUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
           ?? '/src/store/compileStore.ts';
@@ -2402,13 +2426,25 @@ async function main() {
           ?? '/src/api/index.ts';
         const { useCompileStore } = await import(compileUrl);
         const { api } = await import(apiUrl);
+        const before = useCompileStore.getState();
+        const expectedStartedAt = before.startedAt;
+        const expectedMessage = before.progress?.message;
+        window.__v087CompileResolvers?.[0]?.();
+        await window.__v087CompilePromiseA;
+        const after = useCompileStore.getState();
+        const preserved = before.running === true
+          && after.running === true
+          && after.startedAt === expectedStartedAt
+          && after.progress?.message === expectedMessage;
+        window.__v087CompileResolvers?.[1]?.();
+        await window.__v087CompilePromiseB;
         if (window.__v087CompileOriginal) api.compile = window.__v087CompileOriginal;
-        const released = useCompileStore.getState().running === false;
+        useCompileStore.setState({ running: false, progress: null, startedAt: null, elapsedSec: null });
         delete window.__v087CompileOriginal;
-        delete window.__v087CompileStarted;
-        delete window.__v087ResolveCompile;
-        delete window.__v087CompilePromise;
-        return released;
+        delete window.__v087CompileResolvers;
+        delete window.__v087CompilePromiseA;
+        delete window.__v087CompilePromiseB;
+        return preserved;
       })()`);
       result.projectSwitchClearsCompileState = await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
@@ -2447,6 +2483,136 @@ async function main() {
           && compile.ruleIssues.length === 0
           && compile.startedAt === null
           && compile.elapsedSec === null;
+      })()`);
+      result.staleProjectRefreshRejectedAfterProjectSwitch = await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const projectUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+          ?? '/src/store/projectStore.ts';
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { useProjectStore } = await import(projectUrl);
+        const { api } = await import(apiUrl);
+        const owner = useProjectStore.getState();
+        window.__v087RefreshOwner = {
+          root: owner.root,
+          generation: owner.backendGeneration ?? 777,
+        };
+        window.__v087ProjectInfoOriginal = api.projectInfo;
+        api.projectInfo = () => new Promise((resolve) => {
+          window.__v087ResolveProjectInfo = resolve;
+        });
+        window.__v087StaleRefreshPromise = useProjectStore.getState().refresh();
+        return true;
+      })()`);
+      await openSessionProject(compileOtherProject);
+      await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const projectUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+          ?? '/src/store/projectStore.ts';
+        const compileUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
+          ?? '/src/store/compileStore.ts';
+        const { useProjectStore } = await import(projectUrl);
+        const { useCompileStore } = await import(compileUrl);
+        const project = useProjectStore.getState();
+        window.__v087RefreshExpected = {
+          root: project.root,
+          generation: project.backendGeneration,
+          files: JSON.stringify(project.files),
+          pdfPath: project.pdfPath,
+        };
+        useCompileStore.setState({
+          running: true,
+          progress: { stage: 'run', progress: 0.3, message: 'CURRENT_PROJECT_COMPILE' },
+          startedAt: 4242,
+          elapsedSec: null,
+        });
+        window.__v087ResolveProjectInfo?.({
+          root: window.__v087RefreshOwner.root,
+          generation: window.__v087RefreshOwner.generation,
+          main_file: 'main.tex',
+          files: [{ path: 'STALE_REFRESH.tex', name: 'STALE_REFRESH.tex', is_dir: false, children: [] }],
+          pdf_url: 'C:/STALE_REFRESH.pdf',
+        });
+        await window.__v087StaleRefreshPromise;
+        return true;
+      })()`);
+      result.staleProjectRefreshRejectedAfterProjectSwitch = await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const projectUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+          ?? '/src/store/projectStore.ts';
+        const compileUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
+          ?? '/src/store/compileStore.ts';
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { useProjectStore } = await import(projectUrl);
+        const { useCompileStore } = await import(compileUrl);
+        const { api } = await import(apiUrl);
+        const project = useProjectStore.getState();
+        const compile = useCompileStore.getState();
+        const expected = window.__v087RefreshExpected;
+        const rejected = project.root === expected.root
+          && project.backendGeneration === expected.generation
+          && JSON.stringify(project.files) === expected.files
+          && project.pdfPath === expected.pdfPath
+          && compile.running === true
+          && compile.progress?.message === 'CURRENT_PROJECT_COMPILE'
+          && compile.startedAt === 4242;
+        if (window.__v087ProjectInfoOriginal) api.projectInfo = window.__v087ProjectInfoOriginal;
+        useCompileStore.setState({ running: false, progress: null, startedAt: null, elapsedSec: null });
+        delete window.__v087RefreshOwner;
+        delete window.__v087RefreshExpected;
+        delete window.__v087ProjectInfoOriginal;
+        delete window.__v087ResolveProjectInfo;
+        delete window.__v087StaleRefreshPromise;
+        return rejected;
+      })()`);
+      result.staleRefIndexRejectedAfterProjectSwitch = await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const projectUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+          ?? '/src/store/projectStore.ts';
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { useProjectStore } = await import(projectUrl);
+        const { api } = await import(apiUrl);
+        window.__v087RefIndexOriginal = api.refIndex;
+        window.__v087RefIndexCalls = 0;
+        api.refIndex = () => {
+          window.__v087RefIndexCalls += 1;
+          if (window.__v087RefIndexCalls > 1) return window.__v087RefIndexOriginal();
+          return new Promise((resolve) => {
+            window.__v087ResolveRefIndex = resolve;
+          });
+        };
+        window.__v087StaleRefPromise = useProjectStore.getState().loadRefIndex();
+        return true;
+      })()`);
+      await openSessionProject(compileOwnerBeforeSwitch);
+      await sleep(200);
+      result.staleRefIndexRejectedAfterProjectSwitch = await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const projectUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+          ?? '/src/store/projectStore.ts';
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { useProjectStore } = await import(projectUrl);
+        const { api } = await import(apiUrl);
+        const expectedRoot = useProjectStore.getState().root;
+        const expectedIndex = JSON.stringify(useProjectStore.getState().refIndex);
+        window.__v087ResolveRefIndex?.({
+          labels: [{ key: 'STALE_REF_INDEX', file: 'stale.tex', line: 1 }],
+          bib: [],
+        });
+        await window.__v087StaleRefPromise;
+        const project = useProjectStore.getState();
+        const rejected = project.root === expectedRoot
+          && JSON.stringify(project.refIndex) === expectedIndex
+          && !project.refIndex.labels.some((label) => label.key === 'STALE_REF_INDEX');
+        if (window.__v087RefIndexOriginal) api.refIndex = window.__v087RefIndexOriginal;
+        delete window.__v087RefIndexOriginal;
+        delete window.__v087RefIndexCalls;
+        delete window.__v087ResolveRefIndex;
+        delete window.__v087StaleRefPromise;
+        return rejected;
       })()`);
       result.staleCompileProgressRejectedAfterProjectSwitch = await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
@@ -2569,6 +2735,7 @@ async function main() {
         await exec(`(async () => {
           const apiUrl = performance.getEntriesByType('resource')
             .map((entry) => entry.name)
+            .reverse()
             .find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
             ?? '/src/api/index.ts';
           const { api } = await import(apiUrl);
@@ -2654,10 +2821,12 @@ async function main() {
           const snapshot = ${JSON.stringify(browserStateBefore)};
           const storeUrl = performance.getEntriesByType('resource')
             .map((entry) => entry.name)
+            .reverse()
             .find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
             ?? '/src/store/projectStore.ts';
           const i18nUrl = performance.getEntriesByType('resource')
             .map((entry) => entry.name)
+            .reverse()
             .find((name) => new URL(name).pathname.endsWith('/src/i18n/index.ts') && new URL(name).search)
             ?? '/src/i18n/index.ts';
           const { useProjectStore } = await import(storeUrl);
