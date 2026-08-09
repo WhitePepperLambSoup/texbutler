@@ -1,5 +1,6 @@
 // e2e: v0.8.7 new-file workflow — toolbar/tree parity and template center.
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { access, lstat, mkdir, readFile, readdir, rename, rm, rmdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,27 +15,83 @@ const suite = process.argv[2] ?? "all";
 const sessionsExecuted = suite === "sessions" || suite === "all";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-if (!new Set(["files", "theme", "pdf", "sessions", "all", "cleanup-fault"]).has(suite)) {
+if (!new Set(["files", "theme", "pdf", "sessions", "all", "cleanup-fault", "backup-self-test"]).has(suite)) {
   throw new Error(`unknown suite: ${suite}`);
 }
 
 const exists = async (path) => access(path).then(() => true, () => false);
+const BACKUP_OWNERSHIP = Symbol("v087-backup-ownership");
+
+function defaultBackupToken() {
+  return `${process.pid}-${Date.now()}-${randomUUID()}`;
+}
+
+async function reserveOwnedBackup(target, tokenFactory = defaultBackupToken) {
+  for (let attempt = 0; attempt < 64; attempt += 1) {
+    const token = String(tokenFactory()).replace(/[^A-Za-z0-9._-]/g, "-");
+    const container = `${target}.e2e-v087-backup-${token}`;
+    try {
+      await mkdir(container);
+      return {
+        [BACKUP_OWNERSHIP]: true,
+        target,
+        container,
+        backup: join(container, "payload"),
+        moved: false,
+      };
+    } catch (error) {
+      if (error?.code === "EEXIST") continue;
+      throw error;
+    }
+  }
+  throw new Error(`could not reserve an exclusive backup for ${target}`);
+}
+
+async function moveTargetToOwnedBackup(target, tokenFactory = defaultBackupToken) {
+  if (!await exists(target)) return null;
+  const owned = await reserveOwnedBackup(target, tokenFactory);
+  try {
+    await rename(target, owned.backup);
+    owned.moved = true;
+    return owned;
+  } catch (error) {
+    await rmdir(owned.container).catch(() => {});
+    throw error;
+  }
+}
+
+async function restoreOwnedBackup(owned, removeOwnedTarget = false) {
+  if (!owned?.[BACKUP_OWNERSHIP] || !owned.moved) return false;
+  if (!await exists(owned.backup)) {
+    throw new Error(`owned backup payload is missing for ${owned.target}`);
+  }
+  if (await exists(owned.target)) {
+    if (!removeOwnedTarget) {
+      throw new Error(`refusing to replace an unowned target at ${owned.target}`);
+    }
+    await rm(owned.target, { recursive: true, force: true });
+  }
+  await rename(owned.backup, owned.target);
+  owned.moved = false;
+  await rmdir(owned.container);
+  return true;
+}
 
 async function installTemplateFixtures(snapshot) {
   if (!USER_TEMPLATE_ROOT) {
     throw new Error("APPDATA is required for state-preserving template fixtures");
   }
-  const nonce = process.env.V087_FIXTURE_NONCE ?? `${process.pid}-${Date.now()}`;
+  const requestedNonce = process.env.V087_FIXTURE_NONCE;
+  const tokenFactory = requestedNonce ? () => requestedNonce : defaultBackupToken;
   const userDir = join(USER_TEMPLATE_ROOT, "article");
   const userFile = join(USER_TEMPLATE_ROOT, "article.tex");
   await mkdir(USER_TEMPLATE_ROOT, { recursive: true });
   for (const target of [userDir, userFile]) {
-    if (!await exists(target)) continue;
-    const backup = `${target}.e2e-v087-backup-${nonce}`;
-    await rename(target, backup);
-    snapshot.entries.push({ target, backup });
+    const owned = await moveTargetToOwnedBackup(target, tokenFactory);
+    if (owned) snapshot.entries.push(owned);
   }
-  await mkdir(userDir, { recursive: true });
+  await mkdir(userDir);
+  snapshot.createdTargets.push(userDir);
   await writeFile(join(userDir, "main.tex"), "\\documentclass{article}\n% V087_USER_COLLISION\n", "utf8");
   await writeFile(join(userDir, "user-only.txt"), "V087_USER_COLLISION\n", "utf8");
 }
@@ -71,8 +128,65 @@ async function writePathSnapshot(path, snapshot) {
   throw new Error(`cannot restore unsupported path type at ${path}`);
 }
 
+async function runBackupOwnershipSelfTest() {
+  const root = `${PROJ}-backup-self-test-${process.pid}-${randomUUID()}`;
+  const cases = [
+    { label: "project", target: join(root, "project"), directory: true },
+    { label: "appdata", target: join(root, "appdata-template-root"), directory: true },
+    { label: "template", target: join(root, "article.tex"), directory: false },
+  ];
+  const result = {};
+  try {
+    await mkdir(root, { recursive: true });
+    for (const item of cases) {
+      if (item.directory) {
+        await mkdir(item.target, { recursive: true });
+        await writeFile(join(item.target, "current.txt"), `${item.label}-current\n`, "utf8");
+      } else {
+        await writeFile(item.target, `${item.label}-current\n`, "utf8");
+      }
+      const before = await snapshotPath(item.target);
+      const staleToken = `stale-${item.label}`;
+      const staleContainer = `${item.target}.e2e-v087-backup-${staleToken}`;
+      const stalePayload = join(staleContainer, "payload");
+      await mkdir(staleContainer);
+      if (item.directory) {
+        await mkdir(stalePayload);
+        await writeFile(join(stalePayload, "stale.txt"), `${item.label}-stale\n`, "utf8");
+      } else {
+        await writeFile(stalePayload, `${item.label}-stale\n`, "utf8");
+      }
+      const staleBefore = await snapshotPath(staleContainer);
+      let tokenAttempt = 0;
+      const owned = await moveTargetToOwnedBackup(item.target, () => {
+        tokenAttempt += 1;
+        return tokenAttempt === 1 ? staleToken : `owned-${item.label}-${randomUUID()}`;
+      });
+      const fakeStale = {
+        target: item.target,
+        container: staleContainer,
+        backup: stalePayload,
+        moved: true,
+      };
+      const unownedIgnored = !await restoreOwnedBackup(fakeStale, true);
+      await restoreOwnedBackup(owned, false);
+      result[item.label] = {
+        stalePreserved: JSON.stringify(await snapshotPath(staleContainer)) === JSON.stringify(staleBefore),
+        currentPreserved: JSON.stringify(await snapshotPath(item.target)) === JSON.stringify(before),
+        unownedIgnored,
+        ownedReservationReleased: !await exists(owned.container),
+      };
+    }
+    const passed = Object.values(result).every((item) => Object.values(item).every(Boolean));
+    console.log("BACKUP-SELF-TEST", JSON.stringify(result));
+    if (!passed) process.exitCode = 1;
+  } finally {
+    await rm(root, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 async function runSyntheticRootProbes() {
-  const probeBase = `${PROJ}-root-probe-${process.pid}`;
+  const probeBase = `${PROJ}-root-probe-${process.pid}-${randomUUID()}`;
   const absentRoot = join(probeBase, "absent");
   const existingRoot = join(probeBase, "existing");
   const failingRoot = join(probeBase, "failing");
@@ -80,16 +194,28 @@ async function runSyntheticRootProbes() {
   try {
     await mkdir(join(absentRoot, "article"), { recursive: true });
     await writeFile(join(absentRoot, "article", "main.tex"), "fixture", "utf8");
-    await restoreTemplateFixtures({ userRootExisted: false, entries: [] }, absentRoot);
+    await restoreTemplateFixtures({
+      userRootExisted: false,
+      entries: [],
+      createdTargets: [join(absentRoot, "article")],
+    }, absentRoot);
 
     await mkdir(join(existingRoot, "article"), { recursive: true });
     await writeFile(join(existingRoot, "keep.txt"), "keep", "utf8");
-    await restoreTemplateFixtures({ userRootExisted: true, entries: [] }, existingRoot);
+    await restoreTemplateFixtures({
+      userRootExisted: true,
+      entries: [],
+      createdTargets: [join(existingRoot, "article")],
+    }, existingRoot);
 
     await mkdir(join(failingRoot, "article"), { recursive: true });
     try {
       await restoreTemplateFixtures(
-        { userRootExisted: false, entries: [] },
+        {
+          userRootExisted: false,
+          entries: [],
+          createdTargets: [join(failingRoot, "article")],
+        },
         failingRoot,
         async (target, options) => {
           await rm(target, options);
@@ -114,11 +240,11 @@ async function runSyntheticRootProbes() {
 
 async function runCleanupFaultProbe() {
   if (!USER_TEMPLATE_ROOT) throw new Error("APPDATA is required for cleanup fault injection");
-  const nonce = `cleanup-fault-${process.pid}`;
+  const nonce = `cleanup-fault-${process.pid}-${randomUUID()}`;
   const userDir = join(USER_TEMPLATE_ROOT, "article");
   const userFile = join(USER_TEMPLATE_ROOT, "article.tex");
-  const userDirBackup = `${userDir}.e2e-v087-backup-${nonce}`;
-  const userFileBackup = `${userFile}.e2e-v087-backup-${nonce}`;
+  const userDirBackupContainer = `${userDir}.e2e-v087-backup-${nonce}`;
+  const userFileBackupContainer = `${userFile}.e2e-v087-backup-${nonce}`;
   const rootExisted = await exists(USER_TEMPLATE_ROOT);
   const before = {
     userDir: await snapshotPath(userDir),
@@ -130,7 +256,7 @@ async function runCleanupFaultProbe() {
     await writeFile(join(PROJ, "preexisting-sentinel.txt"), "V087_PREEXISTING_PROJECT\n", "utf8");
   }
   const childProjectBefore = await snapshotPath(PROJ);
-  const projectBackup = `${PROJ}.e2e-v087-backup-${nonce}`;
+  const projectBackupContainer = `${PROJ}.e2e-v087-backup-${nonce}`;
   let child;
   let after;
   let finalProject;
@@ -148,34 +274,25 @@ async function runCleanupFaultProbe() {
     after = {
       userDir: await snapshotPath(userDir),
       userFile: await snapshotPath(userFile),
-      userDirBackup: await snapshotPath(userDirBackup),
-      userFileBackup: await snapshotPath(userFileBackup),
+      userDirBackup: await snapshotPath(userDirBackupContainer),
+      userFileBackup: await snapshotPath(userFileBackupContainer),
       userRootExists: await exists(USER_TEMPLATE_ROOT),
       project: await snapshotPath(PROJ),
-      projectBackup: await snapshotPath(projectBackup),
+      projectBackup: await snapshotPath(projectBackupContainer),
     };
   } finally {
-    if (await exists(projectBackup)) {
-      await rm(PROJ, { recursive: true, force: true }).catch(() => {});
-      await rename(projectBackup, PROJ);
-    }
-    for (const [target, backup, original] of [
-      [userDir, userDirBackup, before.userDir],
-      [userFile, userFileBackup, before.userFile],
+    for (const [target, original] of [
+      [userDir, before.userDir],
+      [userFile, before.userFile],
+      [PROJ, before.project],
     ]) {
-      if (await exists(backup)) {
+      const current = await snapshotPath(target);
+      if (JSON.stringify(current) !== JSON.stringify(original)) {
         await rm(target, { recursive: true, force: true }).catch(() => {});
-        await rename(backup, target);
-      } else if (original === null) {
-        await rm(target, { recursive: true, force: true }).catch(() => {});
+        await writePathSnapshot(target, original);
       }
     }
     if (!rootExisted) await rm(USER_TEMPLATE_ROOT).catch(() => {});
-    const currentProject = await snapshotPath(PROJ);
-    if (JSON.stringify(currentProject) !== JSON.stringify(before.project)) {
-      await rm(PROJ, { recursive: true, force: true }).catch(() => {});
-      await writePathSnapshot(PROJ, before.project);
-    }
     finalProject = await snapshotPath(PROJ);
   }
   const combinedOutput = `${child?.stdout ?? ""}\n${child?.stderr ?? ""}`;
@@ -215,10 +332,11 @@ async function restoreTemplateFixtures(
   removeRoot = rmdir,
 ) {
   if (!snapshot || !templateRoot) return;
-  await remove(join(templateRoot, "article"), { recursive: true, force: true });
-  await remove(join(templateRoot, "article.tex"), { force: true });
-  for (const { target, backup } of [...snapshot.entries].reverse()) {
-    await rename(backup, target);
+  for (const target of [...(snapshot.createdTargets ?? [])].reverse()) {
+    await remove(target, { recursive: true, force: true });
+  }
+  for (const owned of [...snapshot.entries].reverse()) {
+    await restoreOwnedBackup(owned, false);
   }
   if (!snapshot.userRootExisted) await removeRoot(templateRoot);
 }
@@ -342,34 +460,32 @@ async function main() {
       templateFixtures = {
         userRootExisted: await exists(USER_TEMPLATE_ROOT),
         entries: [],
+        createdTargets: [],
       };
       await installTemplateFixtures(templateFixtures);
       if (sessionsExecuted) {
-        if (await exists(SESSION_PROJ)) {
-          const backup = `${SESSION_PROJ}.e2e-v087-backup-${process.pid}-${Date.now()}`;
-          await rename(SESSION_PROJ, backup);
-          sessionProjectBackup = backup;
-        }
+        sessionProjectBackup = await moveTargetToOwnedBackup(SESSION_PROJ);
+        await mkdir(SESSION_PROJ);
         sessionProjectOwned = true;
-        await mkdir(`${SESSION_PROJ}/contents`, { recursive: true });
+        await mkdir(`${SESSION_PROJ}/contents`);
         await writeFile(`${SESSION_PROJ}/main.tex`, "\\documentclass{article}\nSynthetic session fixture.\n", "utf8");
         await writeFile(`${SESSION_PROJ}/contents/abstract.tex`, "Synthetic abstract fixture.\n", "utf8");
       }
       sessionProjectUntouched = !sessionProjectOwned;
-      if (await exists(PROJ)) {
-        const nonce = process.env.V087_FIXTURE_NONCE ?? `${process.pid}-${Date.now()}`;
-        projectBackup = `${PROJ}.e2e-v087-backup-${nonce}`;
-        await rename(PROJ, projectBackup);
-      }
+      const requestedNonce = process.env.V087_FIXTURE_NONCE;
+      projectBackup = await moveTargetToOwnedBackup(
+        PROJ,
+        requestedNonce ? () => requestedNonce : defaultBackupToken,
+      );
+      await mkdir(PROJ);
       projectOwned = true;
-      await mkdir(PROJ, { recursive: true });
       await writeFile(FILE, "\\documentclass{article}\n\\begin{document}\nE2E fixture.\n\\end{document}\n", "utf8");
-      await mkdir(`${PROJ}/contents`, { recursive: true });
+      await mkdir(`${PROJ}/contents`);
       await writeFile(`${PROJ}/contents/abstract.tex`, "Abstract fixture.\n", "utf8");
       await writeFile(`${PROJ}/contents/anchor.tex`, "Anchor fixture.\n", "utf8");
-      await mkdir(`${PROJ}/contents/user-zone`, { recursive: true });
+      await mkdir(`${PROJ}/contents/user-zone`);
       await writeFile(`${PROJ}/contents/user-zone/anchor.tex`, "User zone.\n", "utf8");
-      await mkdir(`${PROJ}/contents/market-zone`, { recursive: true });
+      await mkdir(`${PROJ}/contents/market-zone`);
       await writeFile(`${PROJ}/contents/market-zone/anchor.tex`, "Market zone.\n", "utf8");
     inspectLocale = async () => JSON.parse(await exec(`(async () => {
       const i18nUrl = performance.getEntriesByType('resource')
@@ -880,6 +996,8 @@ async function main() {
         themeSelections: { liquid: false, dark: false, light: false },
         overflowMenuSurfaces: {},
         disabledItemsVisuallyDistinct: {},
+        aiContentContrast: {},
+        aiContentStateRestored: false,
         brightGradientRejected: false,
         brightGradientContrast: 0,
         outsidePointerPreservesFocus: false,
@@ -1208,6 +1326,98 @@ async function main() {
           && disabled.opacity >= 0.99
           && colorDistance(normal.foreground, disabled.foreground) >= 20
         ));
+        if (id === "light") {
+          const prepared = await exec(`(async () => {
+            const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+            const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+              ?? '/src/store/aiStore.ts';
+            const { useAiStore } = await import(aiUrl);
+            const state = useAiStore.getState();
+            window.__v087AiContrastSnapshot = {
+              messages: state.messages,
+              lastEdits: state.lastEdits,
+              diffPending: state.diffPending,
+              activeProjectRoot: state.activeProjectRoot,
+              activeFile: state.activeFile,
+            };
+            const root = state.activeProjectRoot || ${JSON.stringify(PROJ)};
+            const file = state.activeFile || 'main.tex';
+            useAiStore.setState({
+              messages: [
+                { id: 870001, role: 'assistant', kind: 'plain', text: 'V087_ASSISTANT_NORMAL' },
+                { id: 870002, role: 'assistant', kind: 'plain', text: '**V087_ASSISTANT_STRONG**' },
+                { id: 870003, role: 'assistant', kind: 'plain', text: '\`V087_ASSISTANT_CODE\`' },
+                { id: 870004, role: 'system', kind: 'plain', text: 'V087_SYSTEM_NORMAL' },
+                { id: 870005, role: 'system', kind: 'plain', text: '**V087_SYSTEM_STRONG**' },
+                { id: 870006, role: 'system', kind: 'plain', text: '\`V087_SYSTEM_CODE\`' },
+                { id: 870007, role: 'assistant', kind: 'plain', text: 'V087_DIFF_OWNER', applied: true },
+              ],
+              lastEdits: [{
+                file,
+                backup: 'V087_CONTRAST_BACKUP',
+                diff: '+V087_ADDED_CONTENT\\n-V087_DELETED_CONTENT',
+                sessionId: state.sessionId,
+                projectRoot: root,
+                requestFile: file,
+              }],
+              diffPending: null,
+              activeProjectRoot: root,
+              activeFile: file,
+            });
+            return true;
+          })()`);
+          if (prepared) {
+            await sleep(100);
+            await exec(`(() => {
+              const mark = (text, value) => {
+                const node = [...document.querySelectorAll('.ai-msg')]
+                  .find((candidate) => candidate.textContent?.includes(text));
+                if (node) node.setAttribute('data-v087-ai-contrast', value);
+              };
+              mark('V087_ASSISTANT_NORMAL', 'assistant-normal');
+              mark('V087_ASSISTANT_STRONG', 'assistant-strong');
+              mark('V087_ASSISTANT_CODE', 'assistant-code');
+              mark('V087_SYSTEM_NORMAL', 'system-normal');
+              mark('V087_SYSTEM_STRONG', 'system-strong');
+              mark('V087_SYSTEM_CODE', 'system-code');
+              mark('V087_DIFF_OWNER', 'diff-owner');
+              document.querySelector('[data-v087-ai-contrast="diff-owner"] .diff-view')
+                ?.setAttribute('data-v087-ai-diff', 'true');
+              return true;
+            })()`);
+            try {
+              result.aiContentContrast = {
+                assistantNormal: await inspectMenuSurface('[data-v087-ai-contrast="assistant-normal"]', '.ai-text'),
+                assistantStrong: await inspectMenuSurface('[data-v087-ai-contrast="assistant-strong"]', '.ai-text b, .ai-text strong'),
+                assistantCode: await inspectMenuSurface('[data-v087-ai-contrast="assistant-code"]', '.ai-text code'),
+                systemNormal: await inspectMenuSurface('[data-v087-ai-contrast="system-normal"]', '.ai-text'),
+                systemStrong: await inspectMenuSurface('[data-v087-ai-contrast="system-strong"]', '.ai-text b, .ai-text strong'),
+                systemCode: await inspectMenuSurface('[data-v087-ai-contrast="system-code"]', '.ai-text code'),
+                diffAdded: await inspectMenuSurface('[data-v087-ai-diff="true"]', '.diff-line.add'),
+                diffDeleted: await inspectMenuSurface('[data-v087-ai-diff="true"]', '.diff-line.del'),
+              };
+            } finally {
+              result.aiContentStateRestored = JSON.parse(await exec(`(async () => {
+                const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+                const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+                  ?? '/src/store/aiStore.ts';
+                const { useAiStore } = await import(aiUrl);
+                const snapshot = window.__v087AiContrastSnapshot;
+                if (!snapshot) return JSON.stringify(false);
+                useAiStore.setState(snapshot);
+                delete window.__v087AiContrastSnapshot;
+                const restored = useAiStore.getState();
+                return JSON.stringify(
+                  restored.messages === snapshot.messages
+                    && restored.lastEdits === snapshot.lastEdits
+                    && restored.diffPending === snapshot.diffPending
+                    && restored.activeProjectRoot === snapshot.activeProjectRoot
+                    && restored.activeFile === snapshot.activeFile
+                );
+              })()`));
+            }
+          }
+        }
       }
 
       if (await clickSelector('.theme-picker-btn')) {
@@ -1418,16 +1628,34 @@ async function main() {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
         const bindingsUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiSessionBindings.ts') && new URL(name).search)
           ?? '/src/store/aiSessionBindings.ts';
+        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+          ?? '/src/store/aiStore.ts';
         const { bindingKey } = await import(bindingsUrl);
+        const { aiEditBelongsToScope } = await import(aiUrl);
+        const edit = {
+          file: 'Contents/Abstract.TEX',
+          backup: 'case-probe',
+          diff: '+case probe',
+          sessionId: 'case-session',
+          projectRoot: 'C:\\\\Work\\\\Paper',
+          requestFile: 'Contents\\\\Abstract.TEX',
+        };
         return JSON.stringify({
-          windows: bindingKey('C:\\Work\\Paper', 'Contents\\Abstract.TEX')
+          windows: bindingKey('C:\\\\Work\\\\Paper', 'Contents\\\\Abstract.TEX')
             === bindingKey('c:/work/paper', 'contents/abstract.tex'),
           posix: bindingKey('/Projects/Paper', 'Contents/Abstract.TEX')
             !== bindingKey('/Projects/Paper', 'contents/abstract.tex'),
+          windowsEditScope: aiEditBelongsToScope(
+            edit,
+            'case-session',
+            'c:/work/paper',
+            'contents/abstract.tex',
+          ),
         });
       })()`));
       result.windowsBindingCaseInsensitive = bindingSemantics.windows;
       result.posixBindingCaseSensitive = bindingSemantics.posix;
+      result.windowsEditScopeCaseInsensitive = bindingSemantics.windowsEditScope;
       const first = await aiState();
       result.mainCreated = first.activeFile === 'main.tex'
         && first.activeProjectRoot === first.root
@@ -2307,11 +2535,11 @@ async function main() {
         cleanupErrors.push(`CDP close: ${error}`);
       }
       try {
-        if (projectOwned) {
-          await rm(PROJ, { recursive: true, force: true });
-          if (projectBackup) await rename(projectBackup, PROJ);
+        if (projectOwned || projectBackup) {
+          if (projectBackup) await restoreOwnedBackup(projectBackup, projectOwned);
+          else await rm(PROJ, { recursive: true, force: true });
           projectRestored = projectBackup
-            ? await exists(PROJ) && !await exists(projectBackup)
+            ? await exists(PROJ) && !await exists(projectBackup.container)
             : !await exists(PROJ);
           injectCleanupFailure("project");
         }
@@ -2319,11 +2547,11 @@ async function main() {
         cleanupErrors.push(`project fixture restoration: ${error}`);
       }
       try {
-        if (sessionProjectOwned) {
-          await rm(SESSION_PROJ, { recursive: true, force: true });
-          if (sessionProjectBackup) await rename(sessionProjectBackup, SESSION_PROJ);
+        if (sessionProjectOwned || sessionProjectBackup) {
+          if (sessionProjectBackup) await restoreOwnedBackup(sessionProjectBackup, sessionProjectOwned);
+          else await rm(SESSION_PROJ, { recursive: true, force: true });
           sessionProjectRestored = sessionProjectBackup
-            ? await exists(SESSION_PROJ) && !await exists(sessionProjectBackup)
+            ? await exists(SESSION_PROJ) && !await exists(sessionProjectBackup.container)
             : !await exists(SESSION_PROJ);
           if (process.env.V087_SESSION_RESTORE_FALSE === "1") sessionProjectRestored = false;
         }
@@ -2396,6 +2624,11 @@ async function main() {
     ))
     && Object.values(theme.disabledItemsVisuallyDistinct).length === 3
     && Object.values(theme.disabledItemsVisuallyDistinct).every(Boolean)
+    && Object.values(theme.aiContentContrast).length === 8
+    && Object.values(theme.aiContentContrast).every((snapshot) => (
+      snapshot.opened && snapshot.contrast >= 4.5
+    ))
+    && theme.aiContentStateRestored
     && theme.brightGradientRejected
     && theme.outsidePointerPreservesFocus
     && theme.escapeRestoresTriggerFocus
@@ -2428,7 +2661,12 @@ async function main() {
   if (failed) process.exitCode = 1;
 }
 
-if (suite === "cleanup-fault") {
+if (suite === "backup-self-test") {
+  runBackupOwnershipSelfTest().catch((error) => {
+    console.error("BACKUP-SELF-TEST-FAIL", error);
+    process.exit(1);
+  });
+} else if (suite === "cleanup-fault") {
   runCleanupFaultProbe().catch((error) => {
     console.error("CLEANUP-FAULT-FAIL", error);
     process.exit(1);

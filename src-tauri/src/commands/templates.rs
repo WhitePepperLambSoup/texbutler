@@ -784,6 +784,174 @@ fn open_directory_handle(path: &Path) -> Result<std::fs::File, String> {
         .map_err(|error| format!("could not retain template directory ownership: {error}"))
 }
 
+#[cfg(windows)]
+fn create_directory_handle_with_share(
+    path: &Path,
+    share_delete: bool,
+) -> std::io::Result<std::fs::File> {
+    use std::ffi::c_void;
+    use std::os::windows::ffi::OsStrExt;
+    use std::os::windows::io::{AsRawHandle, FromRawHandle};
+
+    #[repr(C)]
+    struct UnicodeString {
+        length: u16,
+        maximum_length: u16,
+        buffer: *mut u16,
+    }
+
+    #[repr(C)]
+    struct ObjectAttributes {
+        length: u32,
+        root_directory: *mut c_void,
+        object_name: *mut UnicodeString,
+        attributes: u32,
+        security_descriptor: *mut c_void,
+        security_quality_of_service: *mut c_void,
+    }
+
+    #[repr(C)]
+    struct IoStatusBlock {
+        status_or_pointer: *mut c_void,
+        information: usize,
+    }
+
+    #[link(name = "ntdll")]
+    extern "system" {
+        fn NtCreateFile(
+            file_handle: *mut *mut c_void,
+            desired_access: u32,
+            object_attributes: *mut ObjectAttributes,
+            io_status_block: *mut IoStatusBlock,
+            allocation_size: *mut i64,
+            file_attributes: u32,
+            share_access: u32,
+            create_disposition: u32,
+            create_options: u32,
+            ea_buffer: *mut c_void,
+            ea_length: u32,
+        ) -> i32;
+        fn RtlNtStatusToDosError(status: i32) -> u32;
+    }
+
+    const DELETE: u32 = 0x0001_0000;
+    const FILE_LIST_DIRECTORY: u32 = 0x0000_0001;
+    const FILE_READ_ATTRIBUTES: u32 = 0x0000_0080;
+    const SYNCHRONIZE: u32 = 0x0010_0000;
+    const FILE_SHARE_READ: u32 = 0x0000_0001;
+    const FILE_SHARE_WRITE: u32 = 0x0000_0002;
+    const FILE_SHARE_DELETE: u32 = 0x0000_0004;
+    const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x0000_0010;
+    const FILE_CREATE: u32 = 0x0000_0002;
+    const FILE_DIRECTORY_FILE: u32 = 0x0000_0001;
+    const FILE_SYNCHRONOUS_IO_NONALERT: u32 = 0x0000_0020;
+    const FILE_OPEN_FOR_BACKUP_INTENT: u32 = 0x0000_4000;
+    const FILE_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+    const OBJ_CASE_INSENSITIVE: u32 = 0x0000_0040;
+
+    let parent_path = path.parent().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "directory has no parent")
+    })?;
+    let file_name = path.file_name().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "directory has no name")
+    })?;
+    let parent = open_directory_handle(parent_path).map_err(std::io::Error::other)?;
+    let mut name: Vec<u16> = file_name.encode_wide().collect();
+    let byte_len = name
+        .len()
+        .checked_mul(std::mem::size_of::<u16>())
+        .and_then(|length| u16::try_from(length).ok())
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "directory name is too long",
+            )
+        })?;
+    let mut unicode = UnicodeString {
+        length: byte_len,
+        maximum_length: byte_len,
+        buffer: name.as_mut_ptr(),
+    };
+    let mut attributes = ObjectAttributes {
+        length: std::mem::size_of::<ObjectAttributes>() as u32,
+        root_directory: parent.as_raw_handle().cast(),
+        object_name: &mut unicode,
+        attributes: OBJ_CASE_INSENSITIVE,
+        security_descriptor: std::ptr::null_mut(),
+        security_quality_of_service: std::ptr::null_mut(),
+    };
+    let mut status_block = IoStatusBlock {
+        status_or_pointer: std::ptr::null_mut(),
+        information: 0,
+    };
+    let mut raw_handle = std::ptr::null_mut();
+    // SAFETY: all pointers reference initialized values for the duration of
+    // the synchronous call. NtCreateFile returns an owned handle on success.
+    let status = unsafe {
+        NtCreateFile(
+            &mut raw_handle,
+            DELETE | FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+            &mut attributes,
+            &mut status_block,
+            std::ptr::null_mut(),
+            FILE_ATTRIBUTE_DIRECTORY,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | if share_delete { FILE_SHARE_DELETE } else { 0 },
+            FILE_CREATE,
+            FILE_DIRECTORY_FILE
+                | FILE_SYNCHRONOUS_IO_NONALERT
+                | FILE_OPEN_FOR_BACKUP_INTENT
+                | FILE_OPEN_REPARSE_POINT,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if status < 0 {
+        // SAFETY: converting an NTSTATUS to its Win32 error code has no side
+        // effects and accepts every status value.
+        let error = unsafe { RtlNtStatusToDosError(status) };
+        return Err(std::io::Error::from_raw_os_error(error as i32));
+    }
+    // SAFETY: successful NtCreateFile returned a unique owned HANDLE.
+    Ok(unsafe { std::fs::File::from_raw_handle(raw_handle.cast()) })
+}
+
+#[cfg(windows)]
+fn create_directory_handle(path: &Path) -> std::io::Result<std::fs::File> {
+    create_directory_handle_with_share(path, true)
+}
+
+#[cfg(not(windows))]
+fn create_directory_handle(path: &Path) -> std::io::Result<std::fs::File> {
+    std::fs::create_dir(path)?;
+    std::fs::File::open(path)
+}
+
+fn create_file_handle(path: &Path) -> std::io::Result<std::fs::File> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        const DELETE: u32 = 0x0001_0000;
+        const GENERIC_WRITE: u32 = 0x4000_0000;
+        const FILE_READ_ATTRIBUTES: u32 = 0x0000_0080;
+        const FILE_SHARE_READ: u32 = 0x0000_0001;
+        const FILE_SHARE_WRITE: u32 = 0x0000_0002;
+        const FILE_SHARE_DELETE: u32 = 0x0000_0004;
+        return std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .access_mode(GENERIC_WRITE | DELETE | FILE_READ_ATTRIBUTES)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+            .open(path);
+    }
+
+    #[cfg(not(windows))]
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+}
+
 fn open_file_identity_handle(path: &Path) -> Result<std::fs::File, String> {
     #[cfg(windows)]
     {
@@ -808,6 +976,176 @@ enum OwnedObjectKind {
     Directory,
 }
 
+#[cfg(windows)]
+fn delete_owned_handle(handle: &std::fs::File) -> bool {
+    use std::ffi::c_void;
+    use std::os::windows::io::AsRawHandle;
+
+    #[repr(C)]
+    struct FileDispositionInfo {
+        delete_file: i32,
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn SetFileInformationByHandle(
+            file: *mut c_void,
+            information_class: u32,
+            information: *const c_void,
+            information_size: u32,
+        ) -> i32;
+    }
+
+    const FILE_DISPOSITION_INFO: u32 = 4;
+    const FILE_DISPOSITION_INFO_EX: u32 = 21;
+    const FILE_DISPOSITION_FLAG_DELETE: u32 = 0x0000_0001;
+    const FILE_DISPOSITION_FLAG_POSIX_SEMANTICS: u32 = 0x0000_0002;
+    const FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE: u32 = 0x0000_0010;
+
+    let flags = FILE_DISPOSITION_FLAG_DELETE
+        | FILE_DISPOSITION_FLAG_POSIX_SEMANTICS
+        | FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE;
+    // SAFETY: both information buffers have the exact layout and size required
+    // by SetFileInformationByHandle and the owned handle remains valid.
+    let ex_succeeded = unsafe {
+        SetFileInformationByHandle(
+            handle.as_raw_handle().cast(),
+            FILE_DISPOSITION_INFO_EX,
+            (&flags as *const u32).cast(),
+            std::mem::size_of::<u32>() as u32,
+        )
+    };
+    if ex_succeeded != 0 {
+        return true;
+    }
+    let legacy = FileDispositionInfo { delete_file: 1 };
+    unsafe {
+        SetFileInformationByHandle(
+            handle.as_raw_handle().cast(),
+            FILE_DISPOSITION_INFO,
+            (&legacy as *const FileDispositionInfo).cast(),
+            std::mem::size_of::<FileDispositionInfo>() as u32,
+        ) != 0
+    }
+}
+
+#[cfg(windows)]
+fn rename_owned_handle(handle: &std::fs::File, target: &Path) -> Result<(), std::io::Error> {
+    use std::ffi::c_void;
+    use std::os::windows::ffi::OsStrExt;
+    use std::os::windows::io::AsRawHandle;
+
+    #[repr(C)]
+    struct FileRenameInfoLayout {
+        flags: u32,
+        root_directory: *mut c_void,
+        file_name_length: u32,
+        file_name: [u16; 1],
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn SetFileInformationByHandle(
+            file: *mut c_void,
+            information_class: u32,
+            information: *const c_void,
+            information_size: u32,
+        ) -> i32;
+    }
+
+    const FILE_RENAME_INFO: u32 = 3;
+    let mut name: Vec<u16> = target.as_os_str().encode_wide().collect();
+    let name_bytes = match name.len().checked_mul(std::mem::size_of::<u16>()) {
+        Some(length) => length,
+        None => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "rename target name is too long",
+            ))
+        }
+    };
+    let name_offset = std::mem::offset_of!(FileRenameInfoLayout, file_name);
+    name.push(0);
+    let buffer_name_bytes = match name.len().checked_mul(std::mem::size_of::<u16>()) {
+        Some(length) => length,
+        None => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "rename target name is too long",
+            ))
+        }
+    };
+    let total = match name_offset.checked_add(buffer_name_bytes) {
+        Some(length) if length <= u32::MAX as usize => length,
+        _ => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "rename information is too large",
+            ))
+        }
+    };
+    let mut information = vec![0u8; total];
+    // SAFETY: offsets come from the repr(C) layout above; the destination
+    // buffer is sized for the fixed fields plus the complete UTF-16 name.
+    unsafe {
+        let base = information.as_mut_ptr();
+        (base.add(std::mem::offset_of!(FileRenameInfoLayout, flags)) as *mut u32).write(0);
+        (base.add(std::mem::offset_of!(FileRenameInfoLayout, root_directory)) as *mut *mut c_void)
+            .write(std::ptr::null_mut());
+        (base.add(std::mem::offset_of!(FileRenameInfoLayout, file_name_length)) as *mut u32)
+            .write(name_bytes as u32);
+        std::ptr::copy_nonoverlapping(name.as_ptr(), base.add(name_offset).cast(), name.len());
+        let succeeded = SetFileInformationByHandle(
+            handle.as_raw_handle().cast(),
+            FILE_RENAME_INFO,
+            information.as_ptr().cast(),
+            total as u32,
+        );
+        if succeeded != 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
+    }
+}
+
+#[cfg(windows)]
+fn create_owned_cleanup_container(path: &Path) -> Option<(OwnedObject, PathBuf)> {
+    let parent = path.parent()?;
+    loop {
+        let nonce = NEXT_IMPORT_TEMP.fetch_add(1, Ordering::Relaxed);
+        let container = parent.join(format!(".texbutler-cleanup-{}-{nonce}", std::process::id()));
+        match create_directory_handle_with_share(&container, false) {
+            Ok(handle) => {
+                let owned = OwnedObject::from_new_handle_with_identity(
+                    container.clone(),
+                    handle,
+                    OwnedObjectKind::Directory,
+                    object_identity,
+                )
+                .ok()?;
+                return Some((owned, container.join("owned")));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(_) => return None,
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn create_cleanup_container(path: &Path) -> Option<(PathBuf, PathBuf)> {
+    let parent = path.parent()?;
+    loop {
+        let nonce = NEXT_IMPORT_TEMP.fetch_add(1, Ordering::Relaxed);
+        let container = parent.join(format!(".texbutler-cleanup-{}-{nonce}", std::process::id()));
+        match std::fs::create_dir(&container) {
+            Ok(()) => return Some((container.clone(), container.join("owned"))),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(_) => return None,
+        }
+    }
+}
+
 struct OwnedObject {
     path: PathBuf,
     // Keeping the original object open prevents its OS identity from being
@@ -818,38 +1156,38 @@ struct OwnedObject {
 }
 
 impl OwnedObject {
-    fn from_file(path: PathBuf, handle: std::fs::File) -> Result<Self, String> {
-        Self::from_handle(path, handle, OwnedObjectKind::File)
-    }
-
-    fn from_directory(path: PathBuf) -> Result<Self, String> {
-        let handle = open_directory_handle(&path)?;
-        Self::from_handle(path, handle, OwnedObjectKind::Directory)
-    }
-
-    fn from_handle(
+    fn from_new_handle_with_identity(
         path: PathBuf,
         handle: std::fs::File,
         kind: OwnedObjectKind,
+        identify: fn(&std::fs::File) -> Option<ObjectIdentity>,
     ) -> Result<Self, String> {
-        let metadata = handle
+        let result = handle
             .metadata()
-            .map_err(|error| format!("could not identify created template entry: {error}"))?;
-        let expected_type = match kind {
-            OwnedObjectKind::File => metadata.is_file(),
-            OwnedObjectKind::Directory => metadata.is_dir(),
-        };
-        if !expected_type || metadata_is_reparse_point(&metadata) {
-            return Err("created template entry has an unsafe object type".into());
+            .map_err(|error| format!("could not identify created template entry: {error}"))
+            .and_then(|metadata| {
+                let expected_type = match kind {
+                    OwnedObjectKind::File => metadata.is_file(),
+                    OwnedObjectKind::Directory => metadata.is_dir(),
+                };
+                if !expected_type || metadata_is_reparse_point(&metadata) {
+                    return Err("created template entry has an unsafe object type".into());
+                }
+                identify(&handle)
+                    .ok_or_else(|| "could not identify created template entry".to_string())
+            });
+        match result {
+            Ok(identity) => Ok(Self {
+                path,
+                handle,
+                identity,
+                kind,
+            }),
+            Err(error) => {
+                cleanup_unidentified_created_object(path, handle, kind);
+                Err(error)
+            }
         }
-        let identity = object_identity(&handle)
-            .ok_or_else(|| "could not identify created template entry".to_string())?;
-        Ok(Self {
-            path,
-            handle,
-            identity,
-            kind,
-        })
     }
 
     fn path_still_names_owned_object(&self) -> bool {
@@ -873,23 +1211,175 @@ impl OwnedObject {
         current.ok().and_then(|handle| object_identity(&handle)) == Some(self.identity)
     }
 
-    fn remove_file_if_still_owned(&self) {
-        if self.path_still_names_owned_object() {
-            let _ = std::fs::remove_file(&self.path);
-        }
+    fn remove_file_if_still_owned(self) {
+        self.remove_file_if_owned_with(|| {});
     }
 
-    fn remove_empty_directory_if_still_owned(&self) {
-        if self.path_still_names_owned_object() {
-            let _ = std::fs::remove_dir(&self.path);
+    fn remove_file_if_owned_with<F>(self, before_remove: F)
+    where
+        F: FnOnce(),
+    {
+        let path_was_owned = self.path_still_names_owned_object();
+        before_remove();
+        #[cfg(windows)]
+        {
+            let _ = path_was_owned;
+            let _ = delete_owned_handle(&self.handle);
+            return;
         }
+        #[cfg(not(windows))]
+        self.remove_via_portable_quarantine(path_was_owned, false);
     }
 
-    fn remove_directory_tree_if_still_owned(&self) {
-        if self.path_still_names_owned_object() {
-            let _ = std::fs::remove_dir_all(&self.path);
+    fn remove_empty_directory_if_still_owned(self) {
+        self.remove_empty_directory_if_owned_with(|| {});
+    }
+
+    fn remove_empty_directory_if_owned_with<F>(self, before_remove: F)
+    where
+        F: FnOnce(),
+    {
+        let path_was_owned = self.path_still_names_owned_object();
+        before_remove();
+        #[cfg(windows)]
+        {
+            let _ = path_was_owned;
+            let _ = delete_owned_handle(&self.handle);
+            return;
+        }
+        #[cfg(not(windows))]
+        self.remove_via_portable_quarantine(path_was_owned, false);
+    }
+
+    fn remove_directory_tree_if_still_owned(self) {
+        self.remove_directory_tree_if_owned_with(|| {});
+    }
+
+    fn remove_directory_tree_if_owned_with<F>(self, before_remove: F)
+    where
+        F: FnOnce(),
+    {
+        let path_was_owned = self.path_still_names_owned_object();
+        before_remove();
+        #[cfg(windows)]
+        {
+            let _ = path_was_owned;
+            let Some((container, quarantined)) = create_owned_cleanup_container(&self.path) else {
+                return;
+            };
+            if rename_owned_handle(&self.handle, &quarantined).is_err() {
+                container.remove_empty_directory_if_still_owned();
+                return;
+            }
+            drop(self.handle);
+            let _ = std::fs::remove_dir_all(&quarantined);
+            container.remove_empty_directory_if_still_owned();
+            return;
+        }
+        #[cfg(not(windows))]
+        self.remove_via_portable_quarantine(path_was_owned, true);
+    }
+
+    #[cfg(not(windows))]
+    fn remove_via_portable_quarantine(self, path_was_owned: bool, recursive: bool) {
+        if !path_was_owned {
+            return;
+        }
+        let Some((container, quarantined)) = create_cleanup_container(&self.path) else {
+            return;
+        };
+        if std::fs::rename(&self.path, &quarantined).is_err() {
+            let _ = std::fs::remove_dir(&container);
+            return;
+        }
+        let current = match self.kind {
+            OwnedObjectKind::File => open_file_identity_handle(&quarantined),
+            OwnedObjectKind::Directory => open_directory_handle(&quarantined),
+        };
+        if current.ok().and_then(|handle| object_identity(&handle)) != Some(self.identity) {
+            if !self.path.exists() {
+                let _ = std::fs::rename(&quarantined, &self.path);
+            }
+            let _ = std::fs::remove_dir(&container);
+            return;
+        }
+        drop(self.handle);
+        if recursive {
+            let _ = std::fs::remove_dir_all(&quarantined);
+        } else {
+            match self.kind {
+                OwnedObjectKind::File => {
+                    let _ = std::fs::remove_file(&quarantined);
+                }
+                OwnedObjectKind::Directory => {
+                    let _ = std::fs::remove_dir(&quarantined);
+                }
+            }
+        }
+        let _ = std::fs::remove_dir(&container);
+    }
+}
+
+fn cleanup_unidentified_created_object(
+    path: PathBuf,
+    handle: std::fs::File,
+    kind: OwnedObjectKind,
+) {
+    #[cfg(windows)]
+    {
+        let _ = (&path, kind);
+        let _ = delete_owned_handle(&handle);
+        return;
+    }
+    #[cfg(not(windows))]
+    if let Some(identity) = object_identity(&handle) {
+        let owned = OwnedObject {
+            path,
+            handle,
+            identity,
+            kind,
+        };
+        match kind {
+            OwnedObjectKind::File => owned.remove_file_if_still_owned(),
+            OwnedObjectKind::Directory => owned.remove_empty_directory_if_still_owned(),
         }
     }
+}
+
+fn create_owned_file_with_identity(
+    path: &Path,
+    identify: fn(&std::fs::File) -> Option<ObjectIdentity>,
+) -> Result<OwnedObject, String> {
+    let handle = create_file_handle(path)
+        .map_err(|error| format!("could not create template file: {error}"))?;
+    OwnedObject::from_new_handle_with_identity(
+        path.to_path_buf(),
+        handle,
+        OwnedObjectKind::File,
+        identify,
+    )
+}
+
+fn create_owned_file(path: &Path) -> Result<OwnedObject, String> {
+    create_owned_file_with_identity(path, object_identity)
+}
+
+fn create_owned_directory_with_identity(
+    path: &Path,
+    identify: fn(&std::fs::File) -> Option<ObjectIdentity>,
+) -> Result<OwnedObject, String> {
+    let handle = create_directory_handle(path)
+        .map_err(|error| format!("could not create template directory: {error}"))?;
+    OwnedObject::from_new_handle_with_identity(
+        path.to_path_buf(),
+        handle,
+        OwnedObjectKind::Directory,
+        identify,
+    )
+}
+
+fn create_owned_directory(path: &Path) -> Result<OwnedObject, String> {
+    create_owned_directory_with_identity(path, object_identity)
 }
 
 #[derive(Default)]
@@ -900,10 +1390,10 @@ struct CreatedEntries {
 
 impl CreatedEntries {
     fn rollback(&mut self) {
-        for file in self.files.iter().rev() {
+        while let Some(file) = self.files.pop() {
             file.remove_file_if_still_owned();
         }
-        for dir in self.dirs.iter().rev() {
+        while let Some(dir) = self.dirs.pop() {
             dir.remove_empty_directory_if_still_owned();
         }
     }
@@ -932,11 +1422,7 @@ where
                     ));
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    if let Err(error) = std::fs::create_dir(&target) {
-                        created.rollback();
-                        return Err(format!("could not create template directory: {error}"));
-                    }
-                    match OwnedObject::from_directory(target) {
+                    match create_owned_directory(&target) {
                         Ok(directory) => created.dirs.push(directory),
                         Err(error) => {
                             created.rollback();
@@ -950,18 +1436,7 @@ where
                 }
             }
         } else {
-            let target_file = match std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&target)
-            {
-                Ok(file) => file,
-                Err(error) => {
-                    created.rollback();
-                    return Err(format!("could not create template file: {error}"));
-                }
-            };
-            let target = match OwnedObject::from_file(target, target_file) {
+            let target = match create_owned_file(&target) {
                 Ok(target) => target,
                 Err(error) => {
                     created.rollback();
@@ -1003,12 +1478,14 @@ fn join_relative(directory: &str, child: &str) -> String {
 
 struct OwnedImportStage {
     path: PathBuf,
-    owned: OwnedObject,
+    owned: Option<OwnedObject>,
 }
 
 impl Drop for OwnedImportStage {
     fn drop(&mut self) {
-        self.owned.remove_directory_tree_if_still_owned();
+        if let Some(owned) = self.owned.take() {
+            owned.remove_directory_tree_if_still_owned();
+        }
     }
 }
 
@@ -1058,6 +1535,14 @@ fn create_import_stage_from_nonce(
     project: &Project,
     starting_nonce: u64,
 ) -> Result<OwnedImportStage, String> {
+    create_import_stage_from_nonce_with_identity(project, starting_nonce, object_identity)
+}
+
+fn create_import_stage_from_nonce_with_identity(
+    project: &Project,
+    starting_nonce: u64,
+    identify: fn(&std::fs::File) -> Option<ObjectIdentity>,
+) -> Result<OwnedImportStage, String> {
     let metadata_dir = project.root.join(".texbutler");
     ensure_real_import_directory(project, &metadata_dir, "metadata directory")?;
     let backup_dir = project.backup_dir();
@@ -1067,14 +1552,22 @@ fn create_import_stage_from_nonce(
     loop {
         let stage = backup_dir.join(format!("import-stage-{}-{nonce}", std::process::id()));
         project.canonical_inside(&stage)?;
-        match std::fs::create_dir(&stage) {
-            Ok(()) => {
-                let owned = OwnedObject::from_directory(stage.clone())?;
+        match create_directory_handle(&stage) {
+            Ok(handle) => {
+                let owned = OwnedObject::from_new_handle_with_identity(
+                    stage.clone(),
+                    handle,
+                    OwnedObjectKind::Directory,
+                    identify,
+                )?;
                 if let Err(error) = project.canonical_inside(&stage) {
                     owned.remove_empty_directory_if_still_owned();
                     return Err(error);
                 }
-                return Ok(OwnedImportStage { path: stage, owned });
+                return Ok(OwnedImportStage {
+                    path: stage,
+                    owned: Some(owned),
+                });
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                 nonce = nonce
@@ -1975,7 +2468,24 @@ mod tests {
 
         assert_eq!(error, injected);
         assert_eq!(std::fs::read(&target).unwrap(), b"external\n");
-        assert_eq!(std::fs::read(&displaced).unwrap(), b"owned\n");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn owned_file_removal_preserves_replacement_created_after_verification() {
+        let root = test_root("owned-file-post-verification-replacement");
+        let target = root.join("owned.tex");
+        let displaced = root.join("displaced.tex");
+        std::fs::create_dir_all(&root).unwrap();
+        let mut owned = create_owned_file(&target).unwrap();
+        std::io::Write::write_all(&mut owned.handle, b"owned\n").unwrap();
+
+        owned.remove_file_if_owned_with(|| {
+            std::fs::rename(&target, &displaced).unwrap();
+            std::fs::write(&target, b"replacement\n").unwrap();
+        });
+
+        assert_eq!(std::fs::read(&target).unwrap(), b"replacement\n");
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -2004,9 +2514,59 @@ mod tests {
             target.is_dir(),
             "replacement directory must survive rollback"
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn owned_stage_removal_preserves_replacement_created_after_verification() {
+        let root = test_root("owned-stage-post-verification-replacement");
+        let target = root.join("stage");
+        let displaced = root.join("displaced-stage");
+        let owned = create_owned_directory(&target).unwrap();
+        write_fixture(&target.join("owned.txt"), b"owned\n");
+
+        owned.remove_directory_tree_if_owned_with(|| {
+            std::fs::rename(&target, &displaced).unwrap();
+            write_fixture(&target.join("external.txt"), b"external\n");
+        });
+
+        assert_eq!(
+            std::fs::read(target.join("external.txt")).unwrap(),
+            b"external\n"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn missing_identity(_handle: &std::fs::File) -> Option<ObjectIdentity> {
+        None
+    }
+
+    #[test]
+    fn identity_acquisition_failure_cleans_new_file_and_directory() {
+        let root = test_root("identity-failure-cleanup");
+        let file = root.join("created.tex");
+        let directory = root.join("created-directory");
+        std::fs::create_dir_all(&root).unwrap();
+
+        let file_error = match create_owned_file_with_identity(&file, missing_identity) {
+            Ok(_) => panic!("file identity acquisition must fail"),
+            Err(error) => error,
+        };
+        let directory_error =
+            match create_owned_directory_with_identity(&directory, missing_identity) {
+                Ok(_) => panic!("directory identity acquisition must fail"),
+                Err(error) => error,
+            };
+
+        assert_eq!(file_error, "could not identify created template entry");
+        assert_eq!(directory_error, "could not identify created template entry");
         assert!(
-            displaced.is_dir(),
-            "the original directory remains owned by its handle"
+            !file.exists(),
+            "failed file acquisition must not leave residue"
+        );
+        assert!(
+            !directory.exists(),
+            "failed directory acquisition must not leave residue"
         );
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -2312,9 +2872,33 @@ mod tests {
             std::fs::read(stage_path.join("external.txt")).unwrap(),
             b"external\n"
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn stage_identity_acquisition_failure_removes_created_stage() {
+        let root = test_root("stage-identity-failure");
+        let project_root = root.join("project");
+        write_fixture(
+            &project_root.join("main.tex"),
+            b"\\documentclass{article}\n",
+        );
+        let project = Project::open(&project_root).unwrap();
+        let nonce = 9_500_000 + NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed);
+        let stage_path = project
+            .backup_dir()
+            .join(format!("import-stage-{}-{nonce}", std::process::id()));
+
+        let error =
+            match create_import_stage_from_nonce_with_identity(&project, nonce, missing_identity) {
+                Ok(_) => panic!("stage identity acquisition must fail"),
+                Err(error) => error,
+            };
+
+        assert_eq!(error, "could not identify created template entry");
         assert!(
-            displaced.is_dir(),
-            "the original stage remains tied to its handle"
+            !stage_path.exists(),
+            "failed stage acquisition must clean up"
         );
         std::fs::remove_dir_all(root).unwrap();
     }

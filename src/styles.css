@@ -416,6 +416,7 @@ html[data-theme="light"] .ai-msg.ai-user {
 html[data-theme="light"] .ai-msg.ai-assistant,
 html[data-theme="light"] .ai-msg.ai-system {
   background: #ffffff;
+  color: #1f1f1f;
 }
 
 html[data-theme="light"] .log-viewer,
@@ -1613,16 +1614,19 @@ html[data-theme] .ai-menu .ai-menu-item:disabled {
 .ai-assistant,
 .ai-system {
   background: var(--bg3);
+  color: var(--fg);
   align-self: flex-start;
   max-width: 95%;
 }
 
-.ai-text b {
-  color: #fff;
+.ai-text b,
+.ai-text strong {
+  color: inherit;
 }
 
 .ai-text code {
   background: #1a1a1a;
+  color: #f0f6fc;
   padding: 0 4px;
   border-radius: 3px;
   font-family: Consolas, monospace;
@@ -1630,6 +1634,7 @@ html[data-theme] .ai-menu .ai-menu-item:disabled {
 
 .ai-diff {
   background: #1a1a1a;
+  color: #f0f6fc;
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 8px;
@@ -2448,8 +2453,10 @@ html[data-theme] .ai-menu .ai-menu-item:disabled {
   white-space: pre-wrap;
   word-break: break-all;
 }
-.diff-line.add { background: rgba(46, 160, 67, 0.16); color: #3fb950; }
-.diff-line.del { background: rgba(248, 81, 73, 0.14); color: #f85149; }
+.diff-line.add { background: rgba(46, 160, 67, 0.18); color: #7ee787; }
+.diff-line.del { background: rgba(248, 81, 73, 0.18); color: #ff7b72; }
+html[data-theme="light"] .diff-line.add { background: #dafbe1; color: #116329; }
+html[data-theme="light"] .diff-line.del { background: #ffebe9; color: #82071e; }
 .diff-line.hunk { background: var(--bg2); color: var(--accent2); }
 .diff-line.head { background: var(--bg2); color: var(--fg-dim); }
 .diff-line.ctx { color: var(--fg-dim); }

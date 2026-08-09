@@ -6,6 +6,7 @@ import {
   bindingKey,
   defaultSessionName,
   loadScopedBindings,
+  normalizeProjectRoot,
   persistScopedBindings,
 } from "./aiSessionBindings";
 
@@ -144,8 +145,17 @@ function captureRequestContext(): AiRequestContext {
 
 function requestContextIsActive(state: AiState, context: AiRequestContext): boolean {
   return state.sessionId === context.sessionId
-    && state.activeProjectRoot === context.projectRoot
-    && state.activeFile === context.file;
+    && aiScopeKey(state.activeProjectRoot, state.activeFile)
+      === aiScopeKey(context.projectRoot, context.file);
+}
+
+function aiScopeKey(projectRoot: string, file: string | null): string {
+  const root = normalizeProjectRoot(projectRoot);
+  return file === null ? `${root}\u0000` : bindingKey(root, file);
+}
+
+function projectRootsMatch(first: string, second: string): boolean {
+  return normalizeProjectRoot(first) === normalizeProjectRoot(second);
 }
 
 export function aiEditBelongsToScope(
@@ -155,8 +165,7 @@ export function aiEditBelongsToScope(
   file: string | null,
 ): boolean {
   return edit.sessionId === sessionId
-    && edit.projectRoot === projectRoot
-    && edit.requestFile === file;
+    && aiScopeKey(edit.projectRoot, edit.requestFile) === aiScopeKey(projectRoot, file);
 }
 
 function requestContextStillExists(state: AiState, context: AiRequestContext): boolean {
@@ -306,13 +315,13 @@ export const useAiStore = create<AiState>((set, get) => ({
         // in that same file (dirty), keep their unsaved edits — an AI edit
         // must never silently discard what the user is writing.
         const project = useProjectStore.getState();
-        const tab = project.root === context.projectRoot
+        const tab = projectRootsMatch(project.root, context.projectRoot)
           ? project.tabs.find((candidate) => candidate.path === file)
           : undefined;
         if (tab && !tab.dirty) {
           void project.reloadTab(file);
         }
-        if (project.root === context.projectRoot) void useCompileStoreRefresh();
+        if (projectRootsMatch(project.root, context.projectRoot)) void useCompileStoreRefresh();
       }
     });
     // WAIT for the listeners to be registered before firing the request —
@@ -361,7 +370,7 @@ export const useAiStore = create<AiState>((set, get) => ({
     set({ busy: true, busyKind: "fix" });
     try {
       await api.aiRollback(edit.backup);
-      if (useProjectStore.getState().root === context.projectRoot) {
+      if (projectRootsMatch(useProjectStore.getState().root, context.projectRoot)) {
         await useProjectStore.getState().reloadTab(edit.file);
       }
       useAiStore.setState((s) => ({
@@ -370,7 +379,7 @@ export const useAiStore = create<AiState>((set, get) => ({
         )),
       }));
       // refresh the rule-issue list so it no longer shows stale entries
-      if (useProjectStore.getState().root === context.projectRoot) await useCompileStoreRefresh();
+      if (projectRootsMatch(useProjectStore.getState().root, context.projectRoot)) await useCompileStoreRefresh();
       appendMessageToRequest(context, { role: "assistant", kind: "plain", text: useI18n.getState().t("ai.editRolledBack", { file: edit.file }) });
     } catch (e) {
       appendMessageToRequest(context, { role: "assistant", kind: "error", text: useI18n.getState().t("ai.chatFailed", { e: String(e) }) });
@@ -383,7 +392,7 @@ export const useAiStore = create<AiState>((set, get) => ({
     const context = captureRequestContext();
     try {
       const rel = await api.aiRollback(path);
-      if (useProjectStore.getState().root === context.projectRoot) {
+      if (projectRootsMatch(useProjectStore.getState().root, context.projectRoot)) {
         await useProjectStore.getState().reloadTab(rel);
       }
       appendMessageToRequest(context, {
@@ -406,7 +415,7 @@ export const useAiStore = create<AiState>((set, get) => ({
     const context = captureRequestContext();
     try {
       const report = await api.fixRuleIssue(issue, maxRounds, apply);
-      if (useProjectStore.getState().root === context.projectRoot) {
+      if (projectRootsMatch(useProjectStore.getState().root, context.projectRoot)) {
         const { useCompileStore } = await import("./compileStore");
         await useCompileStore.getState().runCheck();
       }
