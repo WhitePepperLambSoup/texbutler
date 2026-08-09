@@ -1,6 +1,6 @@
 // e2e: v0.8.7 new-file workflow — toolbar/tree parity and template center.
 import { spawnSync } from "node:child_process";
-import { access, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { access, lstat, mkdir, readFile, readdir, rename, rm, rmdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -53,6 +53,47 @@ async function snapshotPath(path) {
   }
 }
 
+async function runSyntheticRootProbes() {
+  const probeBase = `${PROJ}-root-probe-${process.pid}`;
+  const absentRoot = join(probeBase, "absent");
+  const existingRoot = join(probeBase, "existing");
+  const failingRoot = join(probeBase, "failing");
+  let failurePropagated = false;
+  try {
+    await mkdir(join(absentRoot, "article"), { recursive: true });
+    await writeFile(join(absentRoot, "article", "main.tex"), "fixture", "utf8");
+    await restoreTemplateFixtures({ userRootExisted: false, entries: [] }, absentRoot);
+
+    await mkdir(join(existingRoot, "article"), { recursive: true });
+    await writeFile(join(existingRoot, "keep.txt"), "keep", "utf8");
+    await restoreTemplateFixtures({ userRootExisted: true, entries: [] }, existingRoot);
+
+    await mkdir(join(failingRoot, "article"), { recursive: true });
+    try {
+      await restoreTemplateFixtures(
+        { userRootExisted: false, entries: [] },
+        failingRoot,
+        async (target, options) => {
+          await rm(target, options);
+        },
+        async () => { throw new Error("synthetic template root removal failure"); },
+      );
+    } catch (error) {
+      failurePropagated = String(error).includes("synthetic template root removal failure");
+    }
+
+    return {
+      absentRootRestored: !await exists(absentRoot),
+      existingRootRestored: await exists(existingRoot)
+        && await readFile(join(existingRoot, "keep.txt"), "utf8") === "keep"
+        && !await exists(join(existingRoot, "article")),
+      removalFailurePropagated: failurePropagated,
+    };
+  } finally {
+    await rm(probeBase, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 async function runCleanupFaultProbe() {
   if (!USER_TEMPLATE_ROOT) throw new Error("APPDATA is required for cleanup fault injection");
   const nonce = `cleanup-fault-${process.pid}`;
@@ -84,6 +125,7 @@ async function runCleanupFaultProbe() {
       userFile: await snapshotPath(userFile),
       userDirBackup: await snapshotPath(userDirBackup),
       userFileBackup: await snapshotPath(userFileBackup),
+      userRootExists: await exists(USER_TEMPLATE_ROOT),
       projectExists: await exists(PROJ),
     };
   } finally {
@@ -102,19 +144,24 @@ async function runCleanupFaultProbe() {
     if (!rootExisted) await rm(USER_TEMPLATE_ROOT).catch(() => {});
   }
   const combinedOutput = `${child?.stdout ?? ""}\n${child?.stderr ?? ""}`;
+  const synthetic = await runSyntheticRootProbes();
   const result = {
     childReportedFailure: child?.status !== 0 && combinedOutput.includes("E2E-FAIL")
       && combinedOutput.includes("injected cleanup failure: locale"),
     appDataRestored: JSON.stringify(after?.userDir) === JSON.stringify(before.userDir)
       && JSON.stringify(after?.userFile) === JSON.stringify(before.userFile)
-      && after?.userDirBackup === null && after?.userFileBackup === null,
+      && after?.userDirBackup === null && after?.userFileBackup === null
+      && after?.userRootExists === rootExisted,
     projectFixtureRemoved: after?.projectExists === false,
+    synthetic,
     childStatus: child?.status ?? null,
     childSignal: child?.signal ?? null,
     childError: child?.error ? String(child.error) : null,
   };
+  if (!result.childReportedFailure) result.childOutput = combinedOutput.slice(-2000);
   console.log("CLEANUP-FAULT", JSON.stringify(result));
-  if (!result.childReportedFailure || !result.appDataRestored || !result.projectFixtureRemoved) process.exitCode = 1;
+  if (!result.childReportedFailure || !result.appDataRestored || !result.projectFixtureRemoved
+    || !Object.values(result.synthetic).every(Boolean)) process.exitCode = 1;
 }
 
 function injectCleanupFailure(stage) {
@@ -123,14 +170,19 @@ function injectCleanupFailure(stage) {
   }
 }
 
-async function restoreTemplateFixtures(snapshot) {
-  if (!snapshot || !USER_TEMPLATE_ROOT) return;
-  await rm(join(USER_TEMPLATE_ROOT, "article"), { recursive: true, force: true });
-  await rm(join(USER_TEMPLATE_ROOT, "article.tex"), { force: true });
+async function restoreTemplateFixtures(
+  snapshot,
+  templateRoot = USER_TEMPLATE_ROOT,
+  remove = rm,
+  removeRoot = rmdir,
+) {
+  if (!snapshot || !templateRoot) return;
+  await remove(join(templateRoot, "article"), { recursive: true, force: true });
+  await remove(join(templateRoot, "article.tex"), { force: true });
   for (const { target, backup } of [...snapshot.entries].reverse()) {
     await rename(backup, target);
   }
-  if (!snapshot.userRootExisted) await rm(USER_TEMPLATE_ROOT).catch(() => {});
+  if (!snapshot.userRootExisted) await removeRoot(templateRoot);
 }
 
 async function cdp() {
