@@ -2,6 +2,12 @@ import { create } from "zustand";
 import { api, onEvent, events, type AiDiagnosis, type AiSettings, type FixReport, type Issue } from "../api";
 import { useI18n } from "../i18n";
 import { useProjectStore } from "./projectStore";
+import {
+  bindingKey,
+  defaultSessionName,
+  loadScopedBindings,
+  persistScopedBindings,
+} from "./aiSessionBindings";
 
 export interface AiMessage {
   id: number;
@@ -25,7 +31,6 @@ export interface AiSession {
 }
 
 const SESSIONS_KEY = "tb-ai-sessions";
-const FILE_SESSIONS_KEY = "tb-ai-file-sessions";
 
 function loadSessions(): AiSession[] {
   try {
@@ -38,31 +43,16 @@ function loadSessions(): AiSession[] {
   }
 }
 
-function loadFileSessions(): Record<string, string | null> {
-  try {
-    const raw = localStorage.getItem(FILE_SESSIONS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? (parsed as Record<string, string | null>) : {};
-  } catch {
-    return {};
-  }
-}
-
-function persistFileSessions(map: Record<string, string | null>) {
-  try {
-    localStorage.setItem(FILE_SESSIONS_KEY, JSON.stringify(map));
-  } catch {
-    /* storage full / unavailable — best-effort */
-  }
-}
-
 function persistSessions(sessions: AiSession[]) {
   try {
     localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
   } catch {
     /* storage full / unavailable — sessions are best-effort */
   }
+}
+
+function createSessionId(): string {
+  return `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
 interface AiState {
@@ -81,8 +71,10 @@ interface AiState {
   sessions: AiSession[];
   /** Id of the active conversation; null = unsaved scratch chat. */
   sessionId: string | null;
-  /** Per-file conversation bindings (rel path → session id). */
-  fileSessions: Record<string, string | null>;
+  /** Per-project/file conversation bindings (scoped key → session id). */
+  fileSessions: Record<string, string>;
+  /** The project root associated with activeFile. */
+  activeProjectRoot: string;
   /** The editor file currently bound to the AI panel. */
   activeFile: string | null;
 
@@ -103,7 +95,7 @@ interface AiState {
   /** Start a fresh named conversation (the old one stays persisted). */
   newSession: () => void;
   switchSession: (id: string | null) => void;
-  attachFile: (file: string | null) => void;
+  attachFile: (projectRoot: string, file: string | null) => void;
   recordFileBinding: () => void;
   renameSession: (id: string, name: string) => void;
   deleteSession: (id: string) => void;
@@ -135,7 +127,8 @@ export const useAiStore = create<AiState>((set, get) => ({
   lastEdits: [],
   sessions: loadSessions(),
   sessionId: null,
-  fileSessions: loadFileSessions(),
+  fileSessions: loadScopedBindings(),
+  activeProjectRoot: "",
   activeFile: null,
 
   setSelection(sel) {
@@ -150,17 +143,44 @@ export const useAiStore = create<AiState>((set, get) => ({
     const st = useProjectStore.getState();
     get().recordFileBinding();
     get().pushMessage({ role: "user", kind: "plain", text: q });
+    const requestSessionId = get().sessionId;
+    const requestProjectRoot = get().activeProjectRoot;
+    const requestFile = get().activeFile;
+    const requestSelection = get().pendingSelection;
+    const history = get().messages.slice(-12)
+      .filter((m) => (m.role === "user" || m.role === "assistant") && m.kind === "plain")
+      .map((m) => ({ role: m.role, content: (m.text || "").slice(0, 3000) }));
     // streaming answer: collect tb://ai-stream deltas into a live message
     let streamed = "";
     const msgId = get().pushMessage({ role: "assistant", kind: "plain", text: "" });
+    const updateRequestMessage = (update: (message: AiMessage) => AiMessage, persist: boolean) => {
+      const state = get();
+      if (requestSessionId) {
+        let targetMessages: AiMessage[] | null = null;
+        const sessions = state.sessions.map((session) => {
+          if (session.id !== requestSessionId) return session;
+          targetMessages = session.messages.map((message) => message.id === msgId ? update(message) : message);
+          return { ...session, messages: targetMessages, updatedAt: Date.now() };
+        });
+        set({
+          sessions,
+          ...(state.sessionId === requestSessionId && targetMessages ? { messages: [...targetMessages] } : {}),
+        });
+        if (persist) persistSessions(sessions);
+        return;
+      }
+      // Scratch replies have no durable home. Update them only while the
+      // exact scratch context that started the request is still active.
+      if (state.sessionId === null
+        && state.activeProjectRoot === requestProjectRoot
+        && state.activeFile === requestFile) {
+        set({ messages: state.messages.map((message) => message.id === msgId ? update(message) : message) });
+      }
+    };
     const listenP = onEvent<{ delta?: string; done?: boolean; error?: string }>("tb://ai-stream", (payload) => {
       if (typeof payload.delta === "string") {
         streamed += payload.delta;
-        useAiStore.setState((s) => ({
-          messages: s.messages.map((m) =>
-            m.id === msgId ? { ...m, text: streamed } : m,
-          ),
-        }));
+        updateRequestMessage((message) => ({ ...message, text: streamed }), false);
       }
     });
     // collaborative edit: AI applied a diff to the project; remember the
@@ -195,33 +215,17 @@ export const useAiStore = create<AiState>((set, get) => ({
     let unListenEdit: (() => void) | undefined;
     try {
       ([unListen, unListenEdit] = await Promise.all([listenP, listenEditP]));
-      // conversation history: send the recent user/assistant turns so the
-      // AI remembers what it did earlier (capped for context budget)
-      const history = get().messages.slice(-12)
-        .filter((m) => (m.role === "user" || m.role === "assistant") && m.kind === "plain")
-        .map((m) => ({ role: m.role, content: (m.text || "").slice(0, 3000) }));
-      const answer = await api.aiChatStream(q, st.activeTab, get().pendingSelection, history);
+      const answer = await api.aiChatStream(q, st.activeTab, requestSelection, history);
       // finalize the live message with the complete answer; mark it as
       // applied only when the AI edited files THIS round (a leftover
       // lastEdit from a previous round must not flag a plain chat reply)
-      useAiStore.setState((s) => ({
-        messages: s.messages.map((m) =>
-          m.id === msgId ? { ...m, text: answer, applied: editedThisRound } : m,
-        ),
-      }));
-      // persist the finalized streamed answer into the active session
-      const { sessions, sessionId } = useAiStore.getState();
-      if (sessionId) {
-        const next = sessions.map((s) =>
-          s.id === sessionId
-            ? { ...s, messages: useAiStore.getState().messages, updatedAt: Date.now() }
-            : s,
-        );
-        useAiStore.setState({ sessions: next });
-        persistSessions(next);
-      }
+      updateRequestMessage(
+        (message) => ({ ...message, text: answer, applied: editedThisRound }),
+        true,
+      );
     } catch (e) {
-      get().pushMessage({ role: "assistant", kind: "error", text: useI18n.getState().t("ai.chatFailed", { e: String(e) }) });
+      const errorText = useI18n.getState().t("ai.chatFailed", { e: String(e) });
+      updateRequestMessage((message) => ({ ...message, kind: "error", text: errorText }), true);
     } finally {
       unListen?.();
       unListenEdit?.();
@@ -307,50 +311,97 @@ export const useAiStore = create<AiState>((set, get) => ({
   },
 
   newSession() {
-    const id = `s${Date.now().toString(36)}`;
+    const id = createSessionId();
     const session: AiSession = { id, name: useI18n.getState().t("ai.sessionNew"), messages: [], updatedAt: Date.now() };
-    const next = [session, ...get().sessions];
-    set({ sessions: next, sessionId: id, messages: [], diffPending: null });
-    persistSessions(next);
+    const state = get();
+    const sessions = [session, ...state.sessions];
+    const scoped = Boolean(state.activeProjectRoot && state.activeFile && /\.tex$/i.test(state.activeFile));
+    const fileSessions = scoped
+      ? { ...state.fileSessions, [bindingKey(state.activeProjectRoot, state.activeFile!)]: id }
+      : state.fileSessions;
+    set({ sessions, fileSessions, sessionId: id, messages: [], diffPending: null });
+    persistSessions(sessions);
+    if (scoped) persistScopedBindings(fileSessions);
   },
 
   switchSession(id) {
-    const s = get().sessions.find((x) => x.id === id);
+    const state = get();
+    const session = state.sessions.find((candidate) => candidate.id === id);
+    const selectedId = session?.id ?? null;
+    const fileSessions = { ...state.fileSessions };
+    const scoped = Boolean(state.activeProjectRoot && state.activeFile && /\.tex$/i.test(state.activeFile));
+    if (scoped) {
+      const key = bindingKey(state.activeProjectRoot, state.activeFile!);
+      if (selectedId) fileSessions[key] = selectedId;
+      else delete fileSessions[key];
+    }
     set({
-      sessionId: id,
-      messages: s ? [...s.messages] : [],
+      sessionId: selectedId,
+      messages: session ? [...session.messages] : [],
       diffPending: null,
+      fileSessions,
     });
+    if (scoped) persistScopedBindings(fileSessions);
   },
 
   /** Per-file conversations: switching the active editor tab auto-switches
    *  the AI conversation to the one bound to that file. The binding is
    *  remembered on every message sent while the file is active. */
-  attachFile(file: string | null) {
-    const { fileSessions, sessionId, activeFile } = get();
-    if (activeFile !== file) {
-      // remember the outgoing binding, then restore the incoming one
-      const next = { ...fileSessions };
-      if (activeFile != null && sessionId != null) {
-        next[activeFile] = sessionId;
-      }
-      const bound = file != null ? next[file] ?? null : null;
-      set({ fileSessions: next, activeFile: file });
-      persistFileSessions(next);
-      if (file != null && bound != null) {
-        get().switchSession(bound);
-      }
+  attachFile(projectRoot, file) {
+    const scoped = Boolean(projectRoot && file && /\.tex$/i.test(file));
+    if (!scoped) {
+      set({
+        activeProjectRoot: projectRoot,
+        activeFile: file,
+        sessionId: null,
+        messages: [],
+        diffPending: null,
+      });
+      return;
     }
+    const key = bindingKey(projectRoot, file!);
+    const state = get();
+    const boundId = state.fileSessions[key];
+    const bound = state.sessions.find((session) => session.id === boundId);
+    if (bound) {
+      set({
+        activeProjectRoot: projectRoot,
+        activeFile: file,
+        sessionId: bound.id,
+        messages: [...bound.messages],
+        diffPending: null,
+      });
+      return;
+    }
+    const session: AiSession = {
+      id: createSessionId(),
+      name: defaultSessionName(file!),
+      messages: [],
+      updatedAt: Date.now(),
+    };
+    const sessions = [session, ...state.sessions];
+    const fileSessions = { ...state.fileSessions, [key]: session.id };
+    set({
+      activeProjectRoot: projectRoot,
+      activeFile: file,
+      sessions,
+      fileSessions,
+      sessionId: session.id,
+      messages: [],
+      diffPending: null,
+    });
+    persistSessions(sessions);
+    persistScopedBindings(fileSessions);
   },
 
   /** Called when a message is sent: bind the active conversation to the
    *  active file so switching back restores it. */
   recordFileBinding() {
-    const { fileSessions, sessionId, activeFile } = get();
-    if (activeFile == null || sessionId == null) return;
-    const next = { ...fileSessions, [activeFile]: sessionId };
+    const { activeProjectRoot, activeFile, fileSessions, sessionId } = get();
+    if (!activeProjectRoot || !activeFile || !/\.tex$/i.test(activeFile) || sessionId == null) return;
+    const next = { ...fileSessions, [bindingKey(activeProjectRoot, activeFile)]: sessionId };
     set({ fileSessions: next });
-    persistFileSessions(next);
+    persistScopedBindings(next);
   },
 
   renameSession(id, name) {
@@ -382,7 +433,7 @@ export const useAiStore = create<AiState>((set, get) => ({
       fileSessions: fs,
     });
     persistSessions(next);
-    if (changed) persistFileSessions(fs);
+    if (changed) persistScopedBindings(fs);
   },
 
   async diagnoseIssue(issue, index) {
@@ -525,7 +576,18 @@ export const useAiStore = create<AiState>((set, get) => ({
   },
 
   clearMessages() {
-    set({ messages: [], diffPending: null });
+    const { sessions, sessionId } = get();
+    if (!sessionId) {
+      set({ messages: [], diffPending: null });
+      return;
+    }
+    const next = sessions.map((session) => (
+      session.id === sessionId
+        ? { ...session, messages: [], updatedAt: Date.now() }
+        : session
+    ));
+    set({ sessions: next, messages: [], diffPending: null });
+    persistSessions(next);
   },
 }));
 

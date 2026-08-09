@@ -334,11 +334,16 @@ export default function App() {
     };
     window.addEventListener("tb:file-saved", onSaved);
     window.addEventListener("keydown", onKey);
-    // per-file AI conversations: switching the editor tab auto-switches
-    // the AI conversation bound to that file
+    // Project/file-scoped AI conversations: root and tab must be observed
+    // together so an old tab is never rebound under a newly opened root.
+    const attachCurrentAiFile = () => {
+      const project = useProjectStore.getState();
+      useAiStore.getState().attachFile(project.root, project.activeTab);
+    };
+    attachCurrentAiFile();
     const unsubTab = useProjectStore.subscribe((s, prev) => {
-      if (s.activeTab !== prev.activeTab) {
-        useAiStore.getState().attachFile(s.activeTab);
+      if (s.root !== prev.root || s.activeTab !== prev.activeTab) {
+        useAiStore.getState().attachFile(s.root, s.activeTab);
       }
     });
     // narrow windows: auto-collapse the AI rail so fixed-width panels never

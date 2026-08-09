@@ -77,10 +77,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       mainFile: info.main_file,
       files: info.files,
       pdfPath: info.pdf_url ?? null,
+      tabs: [],
+      activeTab: null,
     });
     saveFlow({ lastProject: info.root });
-    // keep tabs from a previous project? no — reset, then auto-open main
-    set({ tabs: [], activeTab: null });
     await get().openFile(info.main_file);
     void get().loadRefIndex();
   },

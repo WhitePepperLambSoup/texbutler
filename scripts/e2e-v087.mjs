@@ -6,13 +6,14 @@ import { fileURLToPath } from "node:url";
 
 const CDP_PORT = 9336;
 const PROJ = "D:/reasonix program/idea/tex/.worktrees/codex-fix-ui-ai-layout/assets/e2e/v087-check";
+const SESSION_PROJ = `${PROJ}-sessions`;
 const FILE = `${PROJ}/main.tex`;
 const APP_DATA = process.env.APPDATA;
 const USER_TEMPLATE_ROOT = APP_DATA ? join(APP_DATA, "texbutler", "templates") : null;
 const suite = process.argv[2] ?? "all";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-if (!new Set(["files", "theme", "pdf", "all", "cleanup-fault"]).has(suite)) {
+if (!new Set(["files", "theme", "pdf", "sessions", "all", "cleanup-fault"]).has(suite)) {
   throw new Error(`unknown suite: ${suite}`);
 }
 
@@ -232,6 +233,7 @@ async function main() {
   let files = true;
   let theme = true;
   let pdf = true;
+  let sessions = true;
   let failed = false;
   let inspectLocale;
   let setLocale;
@@ -243,6 +245,9 @@ async function main() {
   let templateFixtures;
   let browserStateBefore;
   let browserStateAfter;
+  let sessionProjectBackup = null;
+  let sessionProjectOwned = false;
+  let sessionProjectRestored = true;
   const cleanupErrors = [];
   try {
     try {
@@ -298,10 +303,20 @@ async function main() {
         entries: [],
       };
       await installTemplateFixtures(templateFixtures);
+      if (await exists(SESSION_PROJ)) {
+        const backup = `${SESSION_PROJ}.e2e-v087-backup-${process.pid}-${Date.now()}`;
+        await rename(SESSION_PROJ, backup);
+        sessionProjectBackup = backup;
+      }
+      sessionProjectOwned = true;
+      await mkdir(`${SESSION_PROJ}/contents`, { recursive: true });
+      await writeFile(`${SESSION_PROJ}/main.tex`, "\\documentclass{article}\nSynthetic session fixture.\n", "utf8");
+      await writeFile(`${SESSION_PROJ}/contents/abstract.tex`, "Synthetic abstract fixture.\n", "utf8");
       await rm(PROJ, { recursive: true, force: true });
       await mkdir(PROJ, { recursive: true });
       await writeFile(FILE, "\\documentclass{article}\n\\begin{document}\nE2E fixture.\n\\end{document}\n", "utf8");
       await mkdir(`${PROJ}/contents`, { recursive: true });
+      await writeFile(`${PROJ}/contents/abstract.tex`, "Abstract fixture.\n", "utf8");
       await writeFile(`${PROJ}/contents/anchor.tex`, "Anchor fixture.\n", "utf8");
       await mkdir(`${PROJ}/contents/user-zone`, { recursive: true });
       await writeFile(`${PROJ}/contents/user-zone/anchor.tex`, "User zone.\n", "utf8");
@@ -362,7 +377,7 @@ async function main() {
 
     await openFixtureProject();
     await sleep(350);
-    if (suite !== "theme" && suite !== "pdf") {
+    if (suite !== "theme" && suite !== "pdf" && suite !== "sessions") {
       localeBefore = await inspectLocale();
       testLocaleBaseline = localeBefore.lang === "en" ? "zh" : "en";
       await setLocale(testLocaleBaseline);
@@ -1005,9 +1020,190 @@ async function main() {
       return result;
     };
 
-    files = suite === "theme" || suite === "pdf" ? true : await runFiles();
-    theme = suite === "files" || suite === "pdf" ? true : await runTheme();
-    pdf = suite === "files" || suite === "theme" ? true : await runPdf();
+    const runSessions = async () => {
+      const aiState = async () => JSON.parse(await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+          ?? '/src/store/aiStore.ts';
+        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+          ?? '/src/store/projectStore.ts';
+        const { useAiStore } = await import(aiUrl);
+        const { useProjectStore } = await import(projectUrl);
+        const ai = useAiStore.getState();
+        const project = useProjectStore.getState();
+        return JSON.stringify({
+          root: project.root,
+          activeTab: project.activeTab,
+          activeProjectRoot: ai.activeProjectRoot,
+          activeFile: ai.activeFile,
+          sessionId: ai.sessionId,
+          sessions: ai.sessions,
+          messages: ai.messages,
+          fileSessions: ai.fileSessions,
+          storedSessions: JSON.parse(localStorage.getItem('tb-ai-sessions') ?? '[]'),
+          storedBindings: JSON.parse(localStorage.getItem('tb-ai-file-sessions-v2') ?? '{}'),
+        });
+      })()`));
+      const openSessionProject = async (root, file = 'main.tex') => exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+          ?? '/src/store/projectStore.ts';
+        const { useProjectStore } = await import(projectUrl);
+        await useProjectStore.getState().openProject(${JSON.stringify(root)});
+        if (${JSON.stringify(file)} !== 'main.tex') await useProjectStore.getState().openFile(${JSON.stringify(file)});
+        return true;
+      })()`);
+      const openFile = async (file) => exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+          ?? '/src/store/projectStore.ts';
+        const { useProjectStore } = await import(projectUrl);
+        await useProjectStore.getState().openFile(${JSON.stringify(file)});
+        return true;
+      })()`);
+      const closeFile = async (file) => exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+          ?? '/src/store/projectStore.ts';
+        const { useProjectStore } = await import(projectUrl);
+        await useProjectStore.getState().closeTab(${JSON.stringify(file)});
+        return true;
+      })()`);
+      const callAi = async (body) => exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+          ?? '/src/store/aiStore.ts';
+        const { useAiStore } = await import(aiUrl);
+        ${body}
+        return true;
+      })()`);
+
+      await exec(`(() => {
+        localStorage.removeItem('tb-ai-sessions');
+        localStorage.removeItem('tb-ai-file-sessions-v2');
+        return true;
+      })()`);
+      await client.send("Page.reload", { ignoreCache: true });
+      await sleep(1200);
+      await openSessionProject(PROJ);
+      await sleep(250);
+
+      const result = {};
+      const first = await aiState();
+      result.mainCreated = first.activeFile === 'main.tex'
+        && first.activeProjectRoot === first.root
+        && first.sessionId !== null
+        && first.sessions.length === 1;
+
+      await openFile('contents/abstract.tex');
+      const second = await aiState();
+      result.secondCreatedWithoutClosingFirst = second.sessionId !== first.sessionId
+        && second.sessions.some((session) => session.id === first.sessionId)
+        && second.sessions.some((session) => session.id === second.sessionId);
+
+      await callAi(`useAiStore.getState().pushMessage({ role: 'user', kind: 'plain', text: 'abstract conversation survives restart' });`);
+      await openFile('main.tex');
+      await openFile('contents/abstract.tex');
+      const switched = await aiState();
+      result.switchRestoresMessage = switched.sessionId === second.sessionId
+        && switched.messages.some((message) => message.text === 'abstract conversation survives restart');
+
+      await closeFile('contents/abstract.tex');
+      await openFile('contents/abstract.tex');
+      const afterClose = await aiState();
+      result.closeTabKeepsSession = afterClose.sessionId === second.sessionId
+        && afterClose.messages.some((message) => message.text === 'abstract conversation survives restart');
+
+      await callAi(`useAiStore.getState().clearMessages();`);
+      const cleared = await aiState();
+      const persistedCleared = cleared.storedSessions.find((session) => session.id === second.sessionId);
+      result.clearPersists = cleared.messages.length === 0
+        && persistedCleared?.messages?.length === 0;
+      await callAi(`useAiStore.getState().pushMessage({ role: 'user', kind: 'plain', text: 'abstract conversation survives restart' });`);
+
+      await client.send("Page.reload", { ignoreCache: true });
+      await sleep(1200);
+      await openSessionProject(PROJ, 'contents/abstract.tex');
+      const restarted = await aiState();
+      result.reloadRestoresSameSession = restarted.sessionId === second.sessionId
+        && restarted.messages.some((message) => message.text === 'abstract conversation survives restart');
+
+      await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+          ?? '/src/store/aiStore.ts';
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { useAiStore } = await import(aiUrl);
+        const { api } = await import(apiUrl);
+        window.__v087ChatOriginal = api.aiChatStream;
+        api.aiChatStream = () => new Promise((resolve) => { window.__v087ResolveChat = resolve; });
+        window.__v087AskPromise = useAiStore.getState().askAi('async request belongs to abstract');
+        return true;
+      })()`);
+      await sleep(200);
+      await openFile('main.tex');
+      await exec(`(async () => {
+        window.__v087ResolveChat?.('async abstract reply');
+        await window.__v087AskPromise;
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { api } = await import(apiUrl);
+        if (window.__v087ChatOriginal) api.aiChatStream = window.__v087ChatOriginal;
+        delete window.__v087ChatOriginal;
+        delete window.__v087ResolveChat;
+        delete window.__v087AskPromise;
+        return true;
+      })()`);
+      const afterAsyncSwitch = await aiState();
+      const asyncTarget = afterAsyncSwitch.sessions.find((session) => session.id === second.sessionId);
+      result.asyncReplyStaysWithRequestSession = asyncTarget?.messages.some((message) => message.text === 'async request belongs to abstract')
+        && asyncTarget?.messages.some((message) => message.text === 'async abstract reply')
+        && !asyncTarget?.messages.some((message) => message.role === 'assistant' && message.text === '')
+        && !afterAsyncSwitch.messages.some((message) => message.text === 'async request belongs to abstract' || message.text === 'async abstract reply');
+      await openFile('contents/abstract.tex');
+
+      const sessionCountBeforeProjectSwitch = (await aiState()).sessions.length;
+      await openSessionProject(SESSION_PROJ);
+      const isolatedMain = await aiState();
+      const normalizedSecondRoot = SESSION_PROJ.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+      const secondAbstractKey = `${normalizedSecondRoot}\u0000contents/abstract.tex`;
+      result.projectSwitchIsAtomic = isolatedMain.activeFile === 'main.tex'
+        && isolatedMain.sessions.length === sessionCountBeforeProjectSwitch + 1
+        && !Object.hasOwn(isolatedMain.fileSessions, secondAbstractKey);
+      await openFile('contents/abstract.tex');
+      const isolated = await aiState();
+      result.sameRelativePathIsolatedByProject = isolated.sessionId !== second.sessionId
+        && isolated.activeProjectRoot === isolated.root;
+
+      await callAi(`useAiStore.getState().newSession();`);
+      const manual = await aiState();
+      await callAi(`useAiStore.getState().switchSession(${JSON.stringify(isolated.sessionId)});`);
+      const reboundManual = await aiState();
+      result.switchSessionRebindsCurrentFile = manual.sessionId !== isolated.sessionId
+        && reboundManual.sessionId === isolated.sessionId
+        && reboundManual.storedBindings[secondAbstractKey] === isolated.sessionId;
+      const isolatedSessionCount = reboundManual.sessions.length;
+      await callAi(`useAiStore.getState().attachFile(${JSON.stringify(SESSION_PROJ)}, 'notes.md');`);
+      const scratch = await aiState();
+      result.nonTexUsesScratchWithoutDeletingHistory = scratch.sessionId === null
+        && scratch.messages.length === 0
+        && scratch.sessions.length === isolatedSessionCount;
+      await callAi(`useAiStore.getState().attachFile(${JSON.stringify(SESSION_PROJ)}, 'contents/abstract.tex');`);
+      const rebound = await aiState();
+      await callAi(`useAiStore.getState().deleteSession(${JSON.stringify(isolated.sessionId)});`);
+      const deleted = await aiState();
+      result.deleteClearsAllBindings = rebound.sessionId === isolated.sessionId
+        && !Object.values(deleted.fileSessions).includes(isolated.sessionId)
+        && !Object.values(deleted.storedBindings).includes(isolated.sessionId);
+      return result;
+    };
+
+    files = ["theme", "pdf", "sessions"].includes(suite) ? true : await runFiles();
+    theme = ["files", "pdf", "sessions"].includes(suite) ? true : await runTheme();
+    pdf = ["files", "theme", "sessions"].includes(suite) ? true : await runPdf();
+    sessions = ["files", "theme", "pdf"].includes(suite) ? true : await runSessions();
     if (files !== true) await setLocale(testLocaleBaseline);
     } finally {
       try {
@@ -1056,8 +1252,13 @@ async function main() {
           const { api } = await import(apiUrl);
           window.__v087ResolveDownload?.('fixture');
           if (window.__v087DownloadOriginal) api.downloadTemplate = window.__v087DownloadOriginal;
+          window.__v087ResolveChat?.('fixture');
+          if (window.__v087ChatOriginal) api.aiChatStream = window.__v087ChatOriginal;
           delete window.__v087ResolveDownload;
           delete window.__v087DownloadOriginal;
+          delete window.__v087ResolveChat;
+          delete window.__v087ChatOriginal;
+          delete window.__v087AskPromise;
           const snapshot = ${JSON.stringify(browserStateBefore)};
           localStorage.clear();
           for (const [key, value] of Object.entries(snapshot.storage)) localStorage.setItem(key, value);
@@ -1120,6 +1321,17 @@ async function main() {
         await rm(PROJ, { recursive: true, force: true });
       } catch (error) {
         cleanupErrors.push(`project fixture removal: ${error}`);
+      }
+      try {
+        if (sessionProjectOwned) {
+          await rm(SESSION_PROJ, { recursive: true, force: true });
+          if (sessionProjectBackup) await rename(sessionProjectBackup, SESSION_PROJ);
+          sessionProjectRestored = sessionProjectBackup
+            ? await exists(SESSION_PROJ) && !await exists(sessionProjectBackup)
+            : !await exists(SESSION_PROJ);
+        }
+      } catch (error) {
+        cleanupErrors.push(`session project restoration: ${error}`);
       }
     }
   } finally {
@@ -1195,14 +1407,19 @@ async function main() {
     && snapshot.populated.frameVisible
     && snapshot.widthPreserved
   )));
+  const sessionsOk = sessions === true || (
+    Object.values(sessions).every(Boolean)
+    && sessionProjectRestored
+  );
   const browserRestored = cleanupErrors.length === 0
     && JSON.stringify(browserStateAfter) === JSON.stringify(browserStateBefore);
-  failed = !filesOk || !themeOk || !pdfOk || !browserRestored;
+  failed = !filesOk || !themeOk || !pdfOk || !sessionsOk || !browserRestored;
   console.log("FILES", JSON.stringify(files));
   console.log("THEME", JSON.stringify(theme));
   console.log("PDF", JSON.stringify(pdf));
+  console.log("SESSIONS", JSON.stringify(sessions));
   console.log("STATE", JSON.stringify({ browserRestored, cleanupErrors }));
-  console.log("E2E-DONE", failed ? "FAIL" : "PASS", { suite, filesOk, themeOk, pdfOk, browserRestored });
+  console.log("E2E-DONE", failed ? "FAIL" : "PASS", { suite, filesOk, themeOk, pdfOk, sessionsOk, browserRestored });
   if (failed) process.exitCode = 1;
 }
 

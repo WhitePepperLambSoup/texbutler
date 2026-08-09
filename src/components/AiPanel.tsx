@@ -143,10 +143,7 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
           <select
             className="session-select"
             value={sessionId ?? ""}
-            onChange={(e) => {
-              switchSession(e.target.value || null);
-              useAiStore.getState().recordFileBinding();
-            }}
+            onChange={(e) => switchSession(e.target.value || null)}
             title={t("ai.sessionTitle")}
             disabled={busy}
           >
