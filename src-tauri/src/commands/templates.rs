@@ -487,6 +487,281 @@ pub fn detect_main_document(root: &Path) -> Result<String, String> {
         .ok_or_else(|| "template has no .tex document containing \\documentclass".to_string())
 }
 
+fn stage_resolved_template(source: ResolvedTemplate<'_>, stage: &Path) -> Result<(), String> {
+    match source {
+        ResolvedTemplate::Directory(directory) => copy_tree_checked(
+            directory,
+            stage,
+            &[".git", ".texbutler", "target", "node_modules"],
+        ),
+        ResolvedTemplate::SingleFile(file) => {
+            let metadata = std::fs::symlink_metadata(file)
+                .map_err(|error| format!("could not inspect template file: {error}"))?;
+            if metadata.file_type().is_symlink() || !metadata.is_file() {
+                return Err(format!(
+                    "template source is not a safe file: {}",
+                    file.display()
+                ));
+            }
+            std::fs::copy(file, stage.join("main.tex"))
+                .map(|_| ())
+                .map_err(|error| format!("could not copy template file: {error}"))
+        }
+        ResolvedTemplate::Embedded(directory) => extract_embedded_dir(directory, stage),
+        ResolvedTemplate::Builtin(body) => std::fs::write(stage.join("main.tex"), body)
+            .map_err(|error| format!("could not write built-in template: {error}")),
+    }
+}
+
+fn normalize_existing_project_dir(project: &Project, raw: &str) -> Result<String, String> {
+    let raw = raw.trim();
+    if raw.contains(':') {
+        return Err("invalid template import directory".into());
+    }
+    let normalized = if raw.is_empty() || raw == "." {
+        String::new()
+    } else {
+        let path = Path::new(raw);
+        if path.is_absolute()
+            || path.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir
+                        | std::path::Component::RootDir
+                        | std::path::Component::Prefix(_)
+                )
+            })
+        {
+            return Err("invalid template import directory".into());
+        }
+        path.to_string_lossy().replace('\\', "/")
+    };
+
+    let destination = project
+        .resolve(&normalized)
+        .ok_or_else(|| "template import directory escapes the project".to_string())?;
+    project.canonical_inside(&destination)?;
+    let metadata = std::fs::symlink_metadata(&destination)
+        .map_err(|error| format!("could not inspect template import directory: {error}"))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(format!(
+            "template import destination is not a directory: {}",
+            destination.display()
+        ));
+    }
+    Ok(normalized)
+}
+
+#[derive(Debug)]
+struct MergeEntry {
+    relative: PathBuf,
+    is_dir: bool,
+}
+
+fn inspect_merge_conflicts(stage: &Path, destination: &Path) -> Result<Vec<MergeEntry>, String> {
+    fn inspect(
+        stage: &Path,
+        destination: &Path,
+        relative: &Path,
+        entries: &mut Vec<MergeEntry>,
+        conflicts: &mut Vec<String>,
+    ) -> Result<(), String> {
+        let source_dir = stage.join(relative);
+        let mut children = std::fs::read_dir(&source_dir)
+            .map_err(|error| format!("could not inspect staged template: {error}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("could not inspect staged template: {error}"))?;
+        children.sort_by_key(|entry| entry.file_name());
+
+        for child in children {
+            let child_relative = relative.join(child.file_name());
+            let source = child.path();
+            let source_metadata = std::fs::symlink_metadata(&source)
+                .map_err(|error| format!("could not inspect staged template: {error}"))?;
+            if source_metadata.file_type().is_symlink() {
+                return Err(format!(
+                    "template may not contain symbolic links: {}",
+                    source.display()
+                ));
+            }
+            let is_dir = source_metadata.is_dir();
+            if !is_dir && !source_metadata.is_file() {
+                return Err(format!(
+                    "template contains an unsupported file: {}",
+                    source.display()
+                ));
+            }
+
+            let target = destination.join(&child_relative);
+            match std::fs::symlink_metadata(&target) {
+                Ok(target_metadata) => {
+                    let reusable_directory = is_dir
+                        && target_metadata.is_dir()
+                        && !target_metadata.file_type().is_symlink();
+                    if !reusable_directory {
+                        conflicts.push(child_relative.to_string_lossy().replace('\\', "/"));
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    return Err(format!("could not inspect template destination: {error}"))
+                }
+            }
+            entries.push(MergeEntry {
+                relative: child_relative.clone(),
+                is_dir,
+            });
+            if is_dir {
+                inspect(stage, destination, &child_relative, entries, conflicts)?;
+            }
+        }
+        Ok(())
+    }
+
+    let mut entries = Vec::new();
+    let mut conflicts = Vec::new();
+    inspect(
+        stage,
+        destination,
+        Path::new(""),
+        &mut entries,
+        &mut conflicts,
+    )?;
+    if conflicts.is_empty() {
+        Ok(entries)
+    } else {
+        Err(format!(
+            "template import conflicts with existing entries: {}",
+            conflicts.join(", ")
+        ))
+    }
+}
+
+#[derive(Default)]
+struct CreatedEntries {
+    files: Vec<PathBuf>,
+    dirs: Vec<PathBuf>,
+}
+
+impl CreatedEntries {
+    fn rollback(&mut self) {
+        for file in self.files.iter().rev() {
+            let _ = std::fs::remove_file(file);
+        }
+        for dir in self.dirs.iter().rev() {
+            let _ = std::fs::remove_dir(dir);
+        }
+    }
+}
+
+fn merge_staged_tree_with<F>(
+    stage: &Path,
+    destination: &Path,
+    entries: &[MergeEntry],
+    mut copier: F,
+) -> Result<(), String>
+where
+    F: FnMut(&Path, &mut std::fs::File) -> Result<(), String>,
+{
+    let mut created = CreatedEntries::default();
+    for entry in entries {
+        let target = destination.join(&entry.relative);
+        if entry.is_dir {
+            match std::fs::symlink_metadata(&target) {
+                Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+                Ok(_) => {
+                    created.rollback();
+                    return Err(format!(
+                        "template import destination changed during import: {}",
+                        entry.relative.display()
+                    ));
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    if let Err(error) = std::fs::create_dir(&target) {
+                        created.rollback();
+                        return Err(format!("could not create template directory: {error}"));
+                    }
+                    created.dirs.push(target);
+                }
+                Err(error) => {
+                    created.rollback();
+                    return Err(format!("could not inspect template destination: {error}"));
+                }
+            }
+        } else {
+            let mut target_file = match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&target)
+            {
+                Ok(file) => file,
+                Err(error) => {
+                    created.rollback();
+                    return Err(format!("could not create template file: {error}"));
+                }
+            };
+            created.files.push(target);
+            if let Err(error) = copier(&stage.join(&entry.relative), &mut target_file) {
+                drop(target_file);
+                created.rollback();
+                return Err(error);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn merge_staged_tree(
+    stage: &Path,
+    destination: &Path,
+    entries: &[MergeEntry],
+) -> Result<(), String> {
+    merge_staged_tree_with(stage, destination, entries, |source, target| {
+        let mut source = std::fs::File::open(source)
+            .map_err(|error| format!("could not open staged template file: {error}"))?;
+        std::io::copy(&mut source, target)
+            .map(|_| ())
+            .map_err(|error| format!("could not copy template file: {error}"))
+    })
+}
+
+fn join_relative(directory: &str, child: &str) -> String {
+    if directory.is_empty() {
+        child.to_string()
+    } else {
+        format!("{directory}/{child}")
+    }
+}
+
+pub fn merge_resolved_template(
+    project: &Project,
+    destination_dir: &str,
+    source: ResolvedTemplate<'_>,
+) -> Result<ImportedTemplate, String> {
+    let destination_dir = normalize_existing_project_dir(project, destination_dir)?;
+    let destination = project
+        .resolve(&destination_dir)
+        .ok_or_else(|| "template import directory escapes the project".to_string())?;
+    let stage = project.backup_dir().join(format!(
+        "import-stage-{}-{}",
+        std::process::id(),
+        NEXT_IMPORT_TEMP.fetch_add(1, Ordering::Relaxed),
+    ));
+    let result = (|| {
+        std::fs::create_dir_all(&stage).map_err(|error| error.to_string())?;
+        stage_resolved_template(source, &stage)?;
+        let main_inside = detect_main_document(&stage)?;
+        let entries = inspect_merge_conflicts(&stage, &destination)?;
+        merge_staged_tree(&stage, &destination, &entries)?;
+        Ok(ImportedTemplate {
+            target_dir: destination_dir.clone(),
+            main_file: join_relative(&destination_dir, &main_inside),
+        })
+    })();
+    remove_created_dir(&stage);
+    result
+}
+
 pub fn import_resolved_template(
     project: &Project,
     target_dir: &str,
@@ -808,7 +1083,7 @@ pub fn tb_import_project_template(
             let directory = template_root.join(&id);
             let legacy = template_root.join(format!("{id}.tex"));
             let resolved = resolve_user_template(&directory, &legacy)?;
-            import_resolved_template(&project, &target_dir, resolved)
+            merge_resolved_template(&project, &target_dir, resolved)
         }
         TemplateSource::Market => {
             let id = template_id.trim();
@@ -817,7 +1092,7 @@ pub fn tb_import_project_template(
             }
             let downloaded = market_download_dir().join(id);
             let resolved = resolve_market_template(id, &downloaded)?;
-            import_resolved_template(&project, &target_dir, resolved)
+            merge_resolved_template(&project, &target_dir, resolved)
         }
     }
 }
@@ -1220,6 +1495,121 @@ mod tests {
         )
         .is_err());
         assert!(!project_root.join("dangling/target").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn merge_imports_into_existing_directory_and_reuses_subdirectories() {
+        let root = test_root("merge-current");
+        let project_root = root.join("project");
+        let source_root = root.join("source");
+        write_fixture(
+            &project_root.join("main.tex"),
+            b"\\documentclass{article}\n",
+        );
+        write_fixture(&project_root.join("contents/existing.tex"), b"keep\n");
+        write_fixture(&source_root.join("paper.tex"), b"\\documentclass{report}\n");
+        write_fixture(&source_root.join("contents/new.tex"), b"new\n");
+        let project = Project::open(&project_root).unwrap();
+
+        let imported =
+            merge_resolved_template(&project, "", ResolvedTemplate::Directory(&source_root))
+                .unwrap();
+
+        assert_eq!(imported.target_dir, "");
+        assert_eq!(imported.main_file, "paper.tex");
+        assert_eq!(
+            std::fs::read(project_root.join("contents/existing.tex")).unwrap(),
+            b"keep\n"
+        );
+        assert_eq!(
+            std::fs::read(project_root.join("contents/new.tex")).unwrap(),
+            b"new\n"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn merge_conflict_writes_nothing() {
+        let root = test_root("merge-conflict");
+        let project_root = root.join("project");
+        let source_root = root.join("source");
+        write_fixture(
+            &project_root.join("main.tex"),
+            b"\\documentclass{article}\n",
+        );
+        write_fixture(&project_root.join("contents/keep.tex"), b"original\n");
+        write_fixture(&source_root.join("paper.tex"), b"\\documentclass{report}\n");
+        write_fixture(&source_root.join("contents/keep.tex"), b"replacement\n");
+        write_fixture(
+            &source_root.join("created-before-conflict.tex"),
+            b"must-not-appear\n",
+        );
+        let project = Project::open(&project_root).unwrap();
+
+        let error =
+            merge_resolved_template(&project, "", ResolvedTemplate::Directory(&source_root))
+                .unwrap_err();
+        assert!(error.contains("contents/keep.tex"));
+        assert_eq!(
+            std::fs::read(project_root.join("contents/keep.tex")).unwrap(),
+            b"original\n"
+        );
+        assert!(!project_root.join("created-before-conflict.tex").exists());
+        assert!(!project_root.join("paper.tex").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn merge_copy_failure_rolls_back_only_entries_it_created() {
+        let root = test_root("merge-copy-failure");
+        let staged = root.join("staged");
+        let destination = root.join("destination");
+        write_fixture(&staged.join("created/file.tex"), b"new\n");
+        write_fixture(&staged.join("existing/new.tex"), b"new\n");
+        std::fs::create_dir_all(destination.join("existing")).unwrap();
+        let entries = inspect_merge_conflicts(&staged, &destination).unwrap();
+        let injected = "injected copy failure".to_string();
+
+        let error = merge_staged_tree_with(&staged, &destination, &entries, |from, to| {
+            if from.ends_with("new.tex") {
+                return Err(injected.clone());
+            }
+            let mut from = std::fs::File::open(from).unwrap();
+            std::io::copy(&mut from, to)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        })
+        .unwrap_err();
+
+        assert_eq!(error, injected);
+        assert!(destination.join("existing").is_dir());
+        assert!(!destination.join("existing/new.tex").exists());
+        assert!(!destination.join("created/file.tex").exists());
+        assert!(!destination.join("created").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn merge_create_race_preserves_file_not_owned_by_import() {
+        let root = test_root("merge-create-race");
+        let staged = root.join("staged");
+        let destination = root.join("destination");
+        write_fixture(&staged.join("paper.tex"), b"new\n");
+        std::fs::create_dir_all(&destination).unwrap();
+        let entries = inspect_merge_conflicts(&staged, &destination).unwrap();
+        std::fs::write(destination.join("paper.tex"), b"external\n").unwrap();
+
+        let error = merge_staged_tree_with(&staged, &destination, &entries, |_from, _to| {
+            panic!("copier must not run without exclusive ownership")
+        })
+        .unwrap_err();
+
+        assert!(error.contains("could not create template file"));
+        assert_eq!(
+            std::fs::read(destination.join("paper.tex")).unwrap(),
+            b"external\n"
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 }

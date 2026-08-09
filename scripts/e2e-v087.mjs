@@ -301,6 +301,12 @@ async function main() {
       await rm(PROJ, { recursive: true, force: true });
       await mkdir(PROJ, { recursive: true });
       await writeFile(FILE, "\\documentclass{article}\n\\begin{document}\nE2E fixture.\n\\end{document}\n", "utf8");
+      await mkdir(`${PROJ}/contents`, { recursive: true });
+      await writeFile(`${PROJ}/contents/anchor.tex`, "Anchor fixture.\n", "utf8");
+      await mkdir(`${PROJ}/contents/user-zone`, { recursive: true });
+      await writeFile(`${PROJ}/contents/user-zone/anchor.tex`, "User zone.\n", "utf8");
+      await mkdir(`${PROJ}/contents/market-zone`, { recursive: true });
+      await writeFile(`${PROJ}/contents/market-zone/anchor.tex`, "Market zone.\n", "utf8");
     inspectLocale = async () => JSON.parse(await exec(`(async () => {
       const i18nUrl = performance.getEntriesByType('resource')
         .map((entry) => entry.name)
@@ -369,7 +375,12 @@ async function main() {
         sameModalContract: false,
         tabs: [],
         basicHasSixSeeds: false,
-        importTargetGuidance: { en: false, zh: false },
+        destination: { editablePathInputs: -1, shown: "" },
+        destinationHasNoEditablePath: false,
+        destinationShowsRoot: false,
+        nestedBasicDestination: false,
+        filenameOnlyValidation: false,
+        rootConflictPreserved: false,
         newProjectHasNoTemplateTabs: false,
         newProjectHasParentAndNameOnly: false,
         templateSourceIsolation: {
@@ -452,23 +463,6 @@ async function main() {
         }
         return false;
       };
-      const setTarget = async (value) => {
-        const observed = await exec(`(() => {
-          const input = document.querySelector('.new-file-modal label.target-row input');
-          if (!input) return null;
-          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-          setter?.call(input, ${JSON.stringify(value)});
-          input.dispatchEvent(new Event('input', { bubbles: true }));
-          return { requested: ${JSON.stringify(value)}, immediate: input.value };
-        })()`);
-        const committed = await exec(`new Promise((resolve) => requestAnimationFrame(() => {
-          resolve(document.querySelector('.new-file-modal label.target-row input')?.value ?? null);
-        }))`);
-        if (!observed || committed !== value) {
-          throw new Error(`target input did not commit: ${JSON.stringify({ observed, committed, value })}`);
-        }
-        return { ...observed, committed };
-      };
       const submitNewFileModal = async () => {
         const clicked = await clickSelector('.new-file-modal .modal-footer .btn-primary');
         if (!clicked) return { outcome: 'missing-submit', open: false, error: null };
@@ -476,7 +470,7 @@ async function main() {
           const state = JSON.parse(await exec(`JSON.stringify({
             open: !!document.querySelector('.new-file-modal'),
             error: document.querySelector('.new-file-modal .modal-error')?.textContent?.trim() ?? null,
-            input: document.querySelector('.new-file-modal label.target-row input')?.value ?? null,
+            input: document.querySelector('.new-file-modal .new-file-name-input')?.value ?? null,
           })`));
           if (!state.open) return { outcome: 'closed', ...state };
           if (state.error) return { outcome: 'error', ...state };
@@ -485,7 +479,7 @@ async function main() {
         const state = JSON.parse(await exec(`JSON.stringify({
           open: !!document.querySelector('.new-file-modal'),
           error: document.querySelector('.new-file-modal .modal-error')?.textContent?.trim() ?? null,
-          input: document.querySelector('.new-file-modal label.target-row input')?.value ?? null,
+          input: document.querySelector('.new-file-modal .new-file-name-input')?.value ?? null,
         })`));
         return { outcome: 'timeout', ...state };
       };
@@ -505,6 +499,38 @@ async function main() {
           await sleep(50);
         }
         return null;
+      };
+      const activateProjectFile = async (path) => exec(`(async () => {
+        const storeUrl = performance.getEntriesByType('resource')
+          .map((entry) => entry.name)
+          .find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+          ?? '/src/store/projectStore.ts';
+        const { useProjectStore } = await import(storeUrl);
+        await useProjectStore.getState().openFile(${JSON.stringify(path)});
+        return useProjectStore.getState().activeTab;
+      })()`);
+      const currentActiveTab = async () => exec(`(async () => {
+        const storeUrl = performance.getEntriesByType('resource')
+          .map((entry) => entry.name)
+          .find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+          ?? '/src/store/projectStore.ts';
+        const { useProjectStore } = await import(storeUrl);
+        return useProjectStore.getState().activeTab;
+      })()`);
+      const replaceInputText = async (selector, value) => {
+        const clicked = await clickSelector(selector);
+        if (!clicked) return false;
+        await client.send("Input.dispatchKeyEvent", {
+          type: "keyDown", key: "a", code: "KeyA", modifiers: 2,
+          windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65,
+        });
+        await client.send("Input.dispatchKeyEvent", {
+          type: "keyUp", key: "a", code: "KeyA", modifiers: 2,
+          windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65,
+        });
+        await client.send("Input.insertText", { text: value });
+        await sleep(80);
+        return true;
       };
       if (await exec(`document.querySelector('.modal') ? '.modal-header button' : null`)) {
         await clickSelector('.modal-header button');
@@ -532,20 +558,43 @@ async function main() {
       })`));
       result.tabs = toolbarContract.tabs;
       result.basicHasSixSeeds = toolbarContract.basicSeeds === 6;
+      result.destination = JSON.parse(await exec(`JSON.stringify({
+        editablePathInputs: document.querySelectorAll('.new-file-modal .target-row input').length,
+        shown: document.querySelector('.new-file-destination')?.textContent ?? '',
+      })`));
+      const editablePathInputsByTab = {};
+      for (const destinationTab of ['basic', 'user', 'market']) {
+        await clickSelector(`[data-new-file-tab="${destinationTab}"]`);
+        editablePathInputsByTab[destinationTab] = await exec(`document.querySelectorAll('.new-file-modal .target-row input').length`);
+      }
+      result.destination.editablePathInputsByTab = editablePathInputsByTab;
+      result.destinationHasNoEditablePath = Object.values(editablePathInputsByTab).every((count) => count === 0);
+      result.destinationShowsRoot = /\//.test(result.destination.shown);
+      await closeModal();
+      await activateProjectFile('contents/anchor.tex');
+      await openNewFile();
+      await clickSelector('[data-new-file-tab="basic"]');
+      const nestedDestinationShown = await exec(`document.querySelector('.new-file-destination')?.textContent?.trim() ?? ''`);
+      await replaceInputText('.new-file-name-input', 'nested-new.tex');
+      const nestedBasicOutcome = await submitNewFileModal();
+      result.nestedBasicDestination = nestedBasicOutcome.outcome === 'closed'
+        && (await waitForProjectFile('contents/nested-new.tex')) !== null
+        && (await readProjectFile('nested-new.tex')) === null
+        && /contents/.test(nestedDestinationShown);
+      await openNewFile();
+      await clickSelector('[data-new-file-tab="basic"]');
+      await replaceInputText('.new-file-name-input', '../invalid.tex');
+      const filenameOnlyOutcome = await submitNewFileModal();
+      result.filenameOnlyValidation = filenameOnlyOutcome.outcome === 'error'
+        && filenameOnlyOutcome.open
+        && (await readProjectFile('invalid.tex')) === null;
+      await closeModal();
+      await openNewFile();
       await clickSelector('[data-new-file-tab="user"]');
-      const importTargetGuidance = async (lang) => {
-        await setLocale(lang);
-        await sleep(80);
-        return JSON.parse(await exec(`JSON.stringify(
-          document.querySelector('.new-file-modal .new-file-panel label.target-row')?.textContent?.trim() ?? ''
-        )`));
-      };
-      const englishTargetGuidance = await importTargetGuidance("en");
-      const chineseTargetGuidance = await importTargetGuidance("zh");
-      result.importTargetGuidance = {
-        en: /project-relative/i.test(englishTargetGuidance) && !/absolute/i.test(englishTargetGuidance),
-        zh: /项目相对/.test(chineseTargetGuidance) && !/绝对路径/.test(chineseTargetGuidance),
-      };
+      await setLocale("en");
+      await sleep(80);
+      await setLocale("zh");
+      await sleep(80);
       await clickSelector('[data-new-file-tab="basic"]');
       await pressEscape();
       await sleep(80);
@@ -631,45 +680,54 @@ async function main() {
       await selectTemplate('user', 'article');
       await clickSelector('[data-new-file-tab="market"]');
       result.templateSourceIsolation.userToMarketCleared = await exec(`!document.querySelector('.market-card.template-active')`);
-      await setTarget('carry-blocked');
       const blockedCarryOutcome = await submitNewFileModal();
       result.templateSourceIsolation.blockedCarryImport = blockedCarryOutcome.outcome === 'error';
       await closeModal();
-      await rm(`${PROJ}/carry-blocked`, { recursive: true, force: true });
 
+      await activateProjectFile('contents/user-zone/anchor.tex');
       await openNewFile();
       await clickSelector('[data-new-file-tab="user"]');
       await selectTemplate('user', 'article');
-      const userTargetSet = await setTarget('from-user');
       const userImportOutcome = await submitNewFileModal();
-      const userMarker = await waitForProjectFile('from-user/user-only.txt');
+      const userMarker = await waitForProjectFile('contents/user-zone/user-only.txt');
       result.templateSourceIsolation.userImportUsesUserSource = userImportOutcome.outcome === 'closed'
-        && userMarker?.trim() === 'V087_USER_COLLISION';
+        && userMarker?.trim() === 'V087_USER_COLLISION'
+        && await currentActiveTab() === 'contents/user-zone/main.tex';
       if (!result.templateSourceIsolation.userImportUsesUserSource) {
         result.userImportDiagnostics = {
-          userTargetSet,
           userImportOutcome,
           blockedCarryOutcome,
           modal: JSON.parse(await exec(`JSON.stringify({
             open: !!document.querySelector('.new-file-modal'),
-            input: document.querySelector('.new-file-modal label.target-row input')?.value ?? null,
+            input: document.querySelector('.new-file-modal .new-file-name-input')?.value ?? null,
             error: document.querySelector('.new-file-modal .modal-error')?.textContent?.trim() ?? null,
           })`)),
-          fromUser: await snapshotPath(`${PROJ}/from-user`),
-          carryBlocked: await snapshotPath(`${PROJ}/carry-blocked`),
+          userZone: await snapshotPath(`${PROJ}/contents/user-zone`),
         };
       }
 
+      await activateProjectFile('contents/market-zone/anchor.tex');
       await openNewFile();
       await clickSelector('[data-new-file-tab="market"]');
       await selectTemplate('market', 'article');
-      await setTarget('from-market');
       const marketImportOutcome = await submitNewFileModal();
-      const marketMain = await waitForProjectFile('from-market/main.tex');
-      const marketOnly = await readProjectFile('from-market/user-only.txt');
+      const marketMain = await waitForProjectFile('contents/market-zone/main.tex');
+      const marketOnly = await readProjectFile('contents/market-zone/user-only.txt');
       result.templateSourceIsolation.marketImportUsesMarketSource = marketImportOutcome.outcome === 'closed'
         &&
-        typeof marketMain === 'string' && marketMain.includes('\\documentclass') && marketOnly === null;
+        typeof marketMain === 'string' && marketMain.includes('\\documentclass') && marketOnly === null
+        && await currentActiveTab() === 'contents/market-zone/main.tex';
+
+      await activateProjectFile('main.tex');
+      await openNewFile();
+      await clickSelector('[data-new-file-tab="user"]');
+      await selectTemplate('user', 'article');
+      const conflictOutcome = await submitNewFileModal();
+      result.rootConflictPreserved = conflictOutcome.outcome === 'error'
+        && conflictOutcome.open
+        && /main\.tex/.test(conflictOutcome.error ?? '')
+        && (await readProjectFile('user-only.txt')) === null;
+      await closeModal();
 
       await openNewFile();
       await clickSelector('[data-new-file-tab="market"]');
@@ -687,7 +745,6 @@ async function main() {
       await selectTemplate('market', 'zjuthesis');
       await sleep(80);
       result.templateSourceIsolation.downloadClearedSelection = await exec(`!document.querySelector('.market-card.template-active')`);
-      await setTarget('download-carry-blocked');
       const downloadCarryOutcome = await submitNewFileModal();
       result.templateSourceIsolation.downloadBlockedCarryImport = downloadCarryOutcome.outcome === 'error';
       await exec(`(async () => {
@@ -704,7 +761,6 @@ async function main() {
       })()`);
       await sleep(120);
       await closeModal();
-      await rm(`${PROJ}/download-carry-blocked`, { recursive: true, force: true });
 
       const themeBeforeContrast = await exec(`document.documentElement.dataset.theme ?? ''`);
       await exec(`document.documentElement.dataset.theme = 'light'`);
@@ -1095,8 +1151,11 @@ async function main() {
     && files.sameModalContract
     && JSON.stringify(files.tabs) === JSON.stringify(["basic", "user", "market"])
     && files.basicHasSixSeeds
-    && files.importTargetGuidance.en
-    && files.importTargetGuidance.zh
+    && files.destinationHasNoEditablePath
+    && files.destinationShowsRoot
+    && files.nestedBasicDestination
+    && files.filenameOnlyValidation
+    && files.rootConflictPreserved
     && files.newProjectHasNoTemplateTabs
     && files.newProjectHasParentAndNameOnly
     && Object.values(files.templateSourceIsolation).every(Boolean)

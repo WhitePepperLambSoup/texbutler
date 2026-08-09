@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, type MarketTemplate } from "../api";
 import { useProjectStore } from "../store/projectStore";
 import { useT } from "../i18n";
+import { currentDirectory, joinProjectRelative, validateFileName } from "../fileDestination";
 
 interface Props {
   open: boolean;
@@ -27,18 +28,19 @@ const basicTemplates = [
 
 const NewFileModal: NewFileModalComponent = ({ open, onClose }) => {
   const t = useT();
+  const activeTab = useProjectStore((state) => state.activeTab);
   const [tab, setTab] = useState<NewFileTab>("basic");
-  const [filePath, setFilePath] = useState("new-file.tex");
+  const [fileName, setFileName] = useState("new-file.tex");
   const [fileTemplate, setFileTemplate] = useState("article");
   const [userTemplates, setUserTemplates] = useState<UserTemplate[]>([]);
   const [marketTemplates, setMarketTemplates] = useState<MarketTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
-  const [targetDir, setTargetDir] = useState("");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState(ALL_CATEGORY);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const currentDir = currentDirectory(activeTab);
 
   const loadTemplates = async () => {
     const [users, market] = await Promise.all([
@@ -66,19 +68,16 @@ const NewFileModal: NewFileModalComponent = ({ open, onClose }) => {
   const doCreate = async () => {
     setError(null);
     if (tab === "basic") {
-      const path = filePath.trim();
-      if (!path) {
-        setError(t("tree.newFileName"));
-        return;
-      }
       setBusy(true);
       try {
-        await api.newFile(path, path.endsWith(".tex") ? fileTemplate : undefined);
+        const name = validateFileName(fileName);
+        const path = joinProjectRelative(currentDir, name);
+        await api.newFile(path, name.toLowerCase().endsWith(".tex") ? fileTemplate : undefined);
         await useProjectStore.getState().refresh();
         await useProjectStore.getState().openFile(path);
         onClose();
       } catch (e) {
-        setError(String(e));
+        setError(e instanceof Error && e.message === "filename-only" ? t("newFile.filenameOnly") : String(e));
       } finally {
         setBusy(false);
       }
@@ -89,14 +88,10 @@ const NewFileModal: NewFileModalComponent = ({ open, onClose }) => {
       setError(t("newFile.selectTemplate"));
       return;
     }
-    if (!targetDir.trim()) {
-      setError(t("newFile.targetRequired"));
-      return;
-    }
     setBusy(true);
     try {
       const result = await api.importProjectTemplate(
-        targetDir.trim(),
+        currentDir,
         selectedTemplate,
         tab === "user" ? "user" : "market",
       );
@@ -166,11 +161,19 @@ const NewFileModal: NewFileModalComponent = ({ open, onClose }) => {
           </div>
 
           <div className="new-file-panel">
+            <div className="new-file-destination">
+              <span>{t("newFile.currentDirectory")}</span>
+              <code>{currentDir || "/"}</code>
+            </div>
             {tab === "basic" && (
               <>
-                <label className="target-row">
+                <label className="new-file-name-row">
                   {t("tree.newFileName")}
-                  <input value={filePath} onChange={(event) => setFilePath(event.target.value)} />
+                  <input
+                    className="new-file-name-input"
+                    value={fileName}
+                    onChange={(event) => setFileName(event.target.value)}
+                  />
                 </label>
                 <label className="new-file-template-select">
                   {t("tree.newFileTemplate")}
@@ -199,10 +202,6 @@ const NewFileModal: NewFileModalComponent = ({ open, onClose }) => {
 
             {tab === "user" && (
               <>
-                <label className="target-row">
-                  {t("newFile.targetDir")}
-                  <input value={targetDir} onChange={(event) => setTargetDir(event.target.value)} />
-                </label>
                 <div className="template-grid">
                   {userTemplates.map((template) => (
                     <span key={template.id} className="template-wrap">
@@ -230,10 +229,6 @@ const NewFileModal: NewFileModalComponent = ({ open, onClose }) => {
 
             {tab === "market" && (
               <>
-                <label className="target-row">
-                  {t("newFile.targetDir")}
-                  <input value={targetDir} onChange={(event) => setTargetDir(event.target.value)} />
-                </label>
                 <div className="market-panel">
                   <div className="market-toolbar">
                     <input
