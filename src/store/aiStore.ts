@@ -116,6 +116,94 @@ try {
   /* corrupted storage — start from 0 */
 }
 
+interface AiRequestContext {
+  sessionId: string | null;
+  projectRoot: string;
+  file: string | null;
+}
+
+function captureRequestContext(): AiRequestContext {
+  const state = useAiStore.getState();
+  return {
+    sessionId: state.sessionId,
+    projectRoot: state.activeProjectRoot,
+    file: state.activeFile,
+  };
+}
+
+function requestContextIsActive(state: AiState, context: AiRequestContext): boolean {
+  return state.sessionId === context.sessionId
+    && state.activeProjectRoot === context.projectRoot
+    && state.activeFile === context.file;
+}
+
+function messagesForRequestContext(context: AiRequestContext): AiMessage[] {
+  const state = useAiStore.getState();
+  if (context.sessionId) {
+    return state.sessions.find((session) => session.id === context.sessionId)?.messages ?? [];
+  }
+  return requestContextIsActive(state, context) ? state.messages : [];
+}
+
+function appendMessageToRequest(
+  context: AiRequestContext,
+  message: Omit<AiMessage, "id">,
+): number | null {
+  const state = useAiStore.getState();
+  if (context.sessionId) {
+    const target = state.sessions.find((session) => session.id === context.sessionId);
+    if (!target) return null;
+    const id = ++msgId;
+    const messages = [...target.messages, { ...message, id }];
+    const sessions = state.sessions.map((session) => session.id === context.sessionId
+      ? { ...session, messages, updatedAt: Date.now() }
+      : session);
+    useAiStore.setState({
+      sessions,
+      ...(requestContextIsActive(state, context) ? { messages: [...messages] } : {}),
+    });
+    persistSessions(sessions);
+    return id;
+  }
+  if (!requestContextIsActive(state, context)) return null;
+  const id = ++msgId;
+  useAiStore.setState({ messages: [...state.messages, { ...message, id }] });
+  return id;
+}
+
+function updateRequestMessage(
+  context: AiRequestContext,
+  messageId: number,
+  update: (message: AiMessage) => AiMessage,
+  persist: boolean,
+): void {
+  const state = useAiStore.getState();
+  if (context.sessionId) {
+    const target = state.sessions.find((session) => session.id === context.sessionId);
+    if (!target) return;
+    const messages = target.messages.map((message) => message.id === messageId ? update(message) : message);
+    const sessions = state.sessions.map((session) => session.id === context.sessionId
+      ? { ...session, messages, updatedAt: Date.now() }
+      : session);
+    useAiStore.setState({
+      sessions,
+      ...(requestContextIsActive(state, context) ? { messages: [...messages] } : {}),
+    });
+    if (persist) persistSessions(sessions);
+    return;
+  }
+  if (!requestContextIsActive(state, context)) return;
+  useAiStore.setState({
+    messages: state.messages.map((message) => message.id === messageId ? update(message) : message),
+  });
+}
+
+function setRequestDiffPending(context: AiRequestContext, report: FixReport | null): void {
+  if (requestContextIsActive(useAiStore.getState(), context)) {
+    useAiStore.setState({ diffPending: report });
+  }
+}
+
 export const useAiStore = create<AiState>((set, get) => ({
   settings: null,
   messages: [],
@@ -139,48 +227,24 @@ export const useAiStore = create<AiState>((set, get) => ({
     const q = question.trim();
     if (!q) return;
     if (get().busy) return;
+    const context = captureRequestContext();
     set({ busy: true, busyKind: "diagnose" });
     const st = useProjectStore.getState();
     get().recordFileBinding();
-    get().pushMessage({ role: "user", kind: "plain", text: q });
-    const requestSessionId = get().sessionId;
-    const requestProjectRoot = get().activeProjectRoot;
-    const requestFile = get().activeFile;
+    appendMessageToRequest(context, { role: "user", kind: "plain", text: q });
     const requestSelection = get().pendingSelection;
-    const history = get().messages.slice(-12)
+    const history = messagesForRequestContext(context).slice(-12)
       .filter((m) => (m.role === "user" || m.role === "assistant") && m.kind === "plain")
       .map((m) => ({ role: m.role, content: (m.text || "").slice(0, 3000) }));
     // streaming answer: collect tb://ai-stream deltas into a live message
     let streamed = "";
-    const msgId = get().pushMessage({ role: "assistant", kind: "plain", text: "" });
-    const updateRequestMessage = (update: (message: AiMessage) => AiMessage, persist: boolean) => {
-      const state = get();
-      if (requestSessionId) {
-        let targetMessages: AiMessage[] | null = null;
-        const sessions = state.sessions.map((session) => {
-          if (session.id !== requestSessionId) return session;
-          targetMessages = session.messages.map((message) => message.id === msgId ? update(message) : message);
-          return { ...session, messages: targetMessages, updatedAt: Date.now() };
-        });
-        set({
-          sessions,
-          ...(state.sessionId === requestSessionId && targetMessages ? { messages: [...targetMessages] } : {}),
-        });
-        if (persist) persistSessions(sessions);
-        return;
-      }
-      // Scratch replies have no durable home. Update them only while the
-      // exact scratch context that started the request is still active.
-      if (state.sessionId === null
-        && state.activeProjectRoot === requestProjectRoot
-        && state.activeFile === requestFile) {
-        set({ messages: state.messages.map((message) => message.id === msgId ? update(message) : message) });
-      }
-    };
+    const answerMessageId = appendMessageToRequest(context, { role: "assistant", kind: "plain", text: "" });
     const listenP = onEvent<{ delta?: string; done?: boolean; error?: string }>("tb://ai-stream", (payload) => {
       if (typeof payload.delta === "string") {
         streamed += payload.delta;
-        updateRequestMessage((message) => ({ ...message, text: streamed }), false);
+        if (answerMessageId != null) {
+          updateRequestMessage(context, answerMessageId, (message) => ({ ...message, text: streamed }), false);
+        }
       }
     });
     // collaborative edit: AI applied a diff to the project; remember the
@@ -219,13 +283,19 @@ export const useAiStore = create<AiState>((set, get) => ({
       // finalize the live message with the complete answer; mark it as
       // applied only when the AI edited files THIS round (a leftover
       // lastEdit from a previous round must not flag a plain chat reply)
-      updateRequestMessage(
-        (message) => ({ ...message, text: answer, applied: editedThisRound }),
-        true,
-      );
+      if (answerMessageId != null) {
+        updateRequestMessage(
+          context,
+          answerMessageId,
+          (message) => ({ ...message, text: answer, applied: editedThisRound }),
+          true,
+        );
+      }
     } catch (e) {
       const errorText = useI18n.getState().t("ai.chatFailed", { e: String(e) });
-      updateRequestMessage((message) => ({ ...message, kind: "error", text: errorText }), true);
+      if (answerMessageId != null) {
+        updateRequestMessage(context, answerMessageId, (message) => ({ ...message, kind: "error", text: errorText }), true);
+      }
     } finally {
       unListen?.();
       unListenEdit?.();
@@ -242,6 +312,7 @@ export const useAiStore = create<AiState>((set, get) => ({
     const edits = get().lastEdits;
     const edit = file ? edits.find((e) => e.file === file) : edits[edits.length - 1];
     if (!edit) return;
+    const context = captureRequestContext();
     set({ busy: true, busyKind: "fix" });
     try {
       await api.aiRollback(edit.backup);
@@ -249,9 +320,9 @@ export const useAiStore = create<AiState>((set, get) => ({
       useAiStore.setState((s) => ({ lastEdits: s.lastEdits.filter((e) => e.file !== edit.file) }));
       // refresh the rule-issue list so it no longer shows stale entries
       await useCompileStoreRefresh();
-      get().pushMessage({ role: "assistant", kind: "plain", text: useI18n.getState().t("ai.editRolledBack", { file: edit.file }) });
+      appendMessageToRequest(context, { role: "assistant", kind: "plain", text: useI18n.getState().t("ai.editRolledBack", { file: edit.file }) });
     } catch (e) {
-      get().pushMessage({ role: "assistant", kind: "error", text: useI18n.getState().t("ai.chatFailed", { e: String(e) }) });
+      appendMessageToRequest(context, { role: "assistant", kind: "error", text: useI18n.getState().t("ai.chatFailed", { e: String(e) }) });
     } finally {
       set({ busy: false, busyKind: null });
     }
@@ -262,18 +333,18 @@ export const useAiStore = create<AiState>((set, get) => ({
   },
 
   async applyHunk(file, patch) {
+    const context = captureRequestContext();
     try {
       await api.aiApplyPatch(file, patch);
-      get().pushMessage({
+      appendMessageToRequest(context, {
         role: "system",
         kind: "plain",
         text: useI18n.getState().t("ai.hunkApplied", { file }),
       });
-      const active = useProjectStore.getState().activeTab;
-      if (active) await useProjectStore.getState().reloadTab(active);
+      await useProjectStore.getState().reloadTab(file);
       await useCompileStoreRefresh();
     } catch (e) {
-      get().pushMessage({
+      appendMessageToRequest(context, {
         role: "assistant",
         kind: "error",
         text: useI18n.getState().t("ai.hunkFailed", { e: String(e) }),
@@ -438,9 +509,10 @@ export const useAiStore = create<AiState>((set, get) => ({
 
   async diagnoseIssue(issue, index) {
     if (get().busy) return;
+    const context = captureRequestContext();
     set({ busy: true, busyKind: "diagnose" });
     const t = useI18n.getState().t;
-    get().pushMessage({
+    appendMessageToRequest(context, {
       role: "user",
       kind: "plain",
       text: t("ai.explainReq", { msg: issue.message, loc: `${issue.file ?? "?"}:${issue.line ?? "?"}` }),
@@ -449,26 +521,27 @@ export const useAiStore = create<AiState>((set, get) => ({
     try {
       const d: AiDiagnosis = await api.aiDiagnose(index);
       if (d.ok) {
-        get().pushMessage({
+        appendMessageToRequest(context, {
           role: "assistant",
           kind: "diagnosis",
           text: `**${d.explanation}**\n\n修复建议：${d.suggestion || "（AI 未给出具体建议）"}\n\n置信度：${d.confidence}`,
           raw: d.raw,
         });
       } else {
-        get().pushMessage({ role: "assistant", kind: "error", text: useI18n.getState().t("ai.diagFailed", { e: d.error ?? "未知错误" }) });
+        appendMessageToRequest(context, { role: "assistant", kind: "error", text: useI18n.getState().t("ai.diagFailed", { e: d.error ?? "未知错误" }) });
       }
     } catch (e) {
-      get().pushMessage({ role: "assistant", kind: "error", text: useI18n.getState().t("ai.diagFailed", { e: String(e) }) });
+      appendMessageToRequest(context, { role: "assistant", kind: "error", text: useI18n.getState().t("ai.diagFailed", { e: String(e) }) });
     }
     set({ busy: false, busyKind: null });
   },
 
   async fixIssue(issue, index) {
     if (get().busy) return;
+    const context = captureRequestContext();
     set({ busy: true, busyKind: "fix" });
     const t = useI18n.getState().t;
-    get().pushMessage({
+    appendMessageToRequest(context, {
       role: "user",
       kind: "plain",
       text: t("ai.oneKeyFix", { msg: issue.message, loc: `${issue.file ?? "?"}:${issue.line ?? "?"}` }),
@@ -477,8 +550,8 @@ export const useAiStore = create<AiState>((set, get) => ({
     try {
       const report: FixReport = await api.aiFix(index, 3, !get().suggestMode);
       if (report.diff) {
-        set({ diffPending: report });
-        get().pushMessage({
+        setRequestDiffPending(context, report);
+        appendMessageToRequest(context, {
           role: "assistant",
           kind: "fix",
           text: useI18n.getState().t(
@@ -489,7 +562,7 @@ export const useAiStore = create<AiState>((set, get) => ({
           report,
         });
       } else {
-        get().pushMessage({
+        appendMessageToRequest(context, {
           role: "assistant",
           kind: "error",
           text: report.summary,
@@ -497,7 +570,7 @@ export const useAiStore = create<AiState>((set, get) => ({
         });
       }
     } catch (e) {
-      get().pushMessage({ role: "assistant", kind: "error", text: useI18n.getState().t("ai.fixFailedMsg", { e: String(e) }) });
+      appendMessageToRequest(context, { role: "assistant", kind: "error", text: useI18n.getState().t("ai.fixFailedMsg", { e: String(e) }) });
     }
     set({ busy: false, busyKind: null });
   },
@@ -505,7 +578,8 @@ export const useAiStore = create<AiState>((set, get) => ({
   async acceptDiff() {
     const { diffPending } = get();
     if (!diffPending) return;
-    get().pushMessage({
+    const context = captureRequestContext();
+    appendMessageToRequest(context, {
       role: "assistant",
       kind: diffPending.ok ? "fix" : "error",
       text: diffPending.ok
@@ -513,31 +587,30 @@ export const useAiStore = create<AiState>((set, get) => ({
         : useI18n.getState().t("ai.fixFailed", { summary: diffPending.summary }),
       report: diffPending,
     });
-    set({ diffPending: null });
+    setRequestDiffPending(context, null);
     // Sync the editor with the fixed file on disk (the fix loop wrote it).
-    const active = useProjectStore.getState().activeTab;
-    if (active) await useProjectStore.getState().reloadTab(active);
+    if (context.file) await useProjectStore.getState().reloadTab(context.file);
     await useCompileStoreRefresh();
   },
 
   async rejectDiff() {
     const { diffPending } = get();
     if (!diffPending) return;
+    const context = captureRequestContext();
     const backup = diffPending.backup;
-    set({ diffPending: null });
+    setRequestDiffPending(context, null);
     if (backup) {
       // Real rollback: restore the pre-fix snapshot, then reload the editor.
       try {
         const rel = await api.aiRollback(backup);
-        const active = useProjectStore.getState().activeTab;
-        if (active) await useProjectStore.getState().reloadTab(active);
-        get().pushMessage({
+        await useProjectStore.getState().reloadTab(rel);
+        appendMessageToRequest(context, {
           role: "system",
           kind: "plain",
           text: useI18n.getState().t("ai.rolledBack", { file: rel }),
         });
       } catch (e) {
-        get().pushMessage({
+        appendMessageToRequest(context, {
           role: "assistant",
           kind: "error",
           text: useI18n.getState().t("ai.rollbackFailed", { e: String(e) }),
@@ -545,7 +618,7 @@ export const useAiStore = create<AiState>((set, get) => ({
       }
     } else {
       // Nothing was written (fix failed / rolled back server-side already).
-      get().pushMessage({ role: "system", kind: "plain", text: useI18n.getState().t("ai.rejected") });
+      appendMessageToRequest(context, { role: "system", kind: "plain", text: useI18n.getState().t("ai.rejected") });
     }
   },
 

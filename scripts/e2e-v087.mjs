@@ -11,6 +11,7 @@ const FILE = `${PROJ}/main.tex`;
 const APP_DATA = process.env.APPDATA;
 const USER_TEMPLATE_ROOT = APP_DATA ? join(APP_DATA, "texbutler", "templates") : null;
 const suite = process.argv[2] ?? "all";
+const sessionsExecuted = suite === "sessions" || suite === "all";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 if (!new Set(["files", "theme", "pdf", "sessions", "all", "cleanup-fault"]).has(suite)) {
@@ -248,6 +249,7 @@ async function main() {
   let sessionProjectBackup = null;
   let sessionProjectOwned = false;
   let sessionProjectRestored = true;
+  let sessionProjectUntouched = true;
   const cleanupErrors = [];
   try {
     try {
@@ -303,15 +305,18 @@ async function main() {
         entries: [],
       };
       await installTemplateFixtures(templateFixtures);
-      if (await exists(SESSION_PROJ)) {
-        const backup = `${SESSION_PROJ}.e2e-v087-backup-${process.pid}-${Date.now()}`;
-        await rename(SESSION_PROJ, backup);
-        sessionProjectBackup = backup;
+      if (sessionsExecuted) {
+        if (await exists(SESSION_PROJ)) {
+          const backup = `${SESSION_PROJ}.e2e-v087-backup-${process.pid}-${Date.now()}`;
+          await rename(SESSION_PROJ, backup);
+          sessionProjectBackup = backup;
+        }
+        sessionProjectOwned = true;
+        await mkdir(`${SESSION_PROJ}/contents`, { recursive: true });
+        await writeFile(`${SESSION_PROJ}/main.tex`, "\\documentclass{article}\nSynthetic session fixture.\n", "utf8");
+        await writeFile(`${SESSION_PROJ}/contents/abstract.tex`, "Synthetic abstract fixture.\n", "utf8");
       }
-      sessionProjectOwned = true;
-      await mkdir(`${SESSION_PROJ}/contents`, { recursive: true });
-      await writeFile(`${SESSION_PROJ}/main.tex`, "\\documentclass{article}\nSynthetic session fixture.\n", "utf8");
-      await writeFile(`${SESSION_PROJ}/contents/abstract.tex`, "Synthetic abstract fixture.\n", "utf8");
+      sessionProjectUntouched = !sessionProjectOwned;
       await rm(PROJ, { recursive: true, force: true });
       await mkdir(PROJ, { recursive: true });
       await writeFile(FILE, "\\documentclass{article}\n\\begin{document}\nE2E fixture.\n\\end{document}\n", "utf8");
@@ -1042,6 +1047,7 @@ async function main() {
           fileSessions: ai.fileSessions,
           storedSessions: JSON.parse(localStorage.getItem('tb-ai-sessions') ?? '[]'),
           storedBindings: JSON.parse(localStorage.getItem('tb-ai-file-sessions-v2') ?? '{}'),
+          diffPending: ai.diffPending,
         });
       })()`));
       const openSessionProject = async (root, file = 'main.tex') => exec(`(async () => {
@@ -1164,6 +1170,117 @@ async function main() {
         && !afterAsyncSwitch.messages.some((message) => message.text === 'async request belongs to abstract' || message.text === 'async abstract reply');
       await openFile('contents/abstract.tex');
 
+      await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+          ?? '/src/store/aiStore.ts';
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { useAiStore } = await import(aiUrl);
+        const { api } = await import(apiUrl);
+        window.__v087DiagnoseOriginal = api.aiDiagnose;
+        api.aiDiagnose = () => new Promise((resolve) => { window.__v087ResolveDiagnose = resolve; });
+        window.__v087DiagnosePromise = useAiStore.getState().diagnoseIssue({
+          message: 'ASYNC_DIAG_REQUEST', severity: 'error', file: 'contents/abstract.tex', line: 2,
+        }, 0);
+        return true;
+      })()`);
+      await sleep(100);
+      await openFile('main.tex');
+      await exec(`(async () => {
+        window.__v087ResolveDiagnose?.({
+          ok: true, explanation: 'ASYNC_DIAG_DONE', suggestion: 'diagnose suggestion', confidence: 'high', raw: 'diagnose raw',
+        });
+        await window.__v087DiagnosePromise;
+        return true;
+      })()`);
+      const afterDiagnoseSwitch = await aiState();
+      const diagnoseTarget = afterDiagnoseSwitch.sessions.find((session) => session.id === second.sessionId);
+      result.diagnoseCompletionStaysWithRequestSession = diagnoseTarget?.messages.some((message) => message.text.includes('ASYNC_DIAG_REQUEST'))
+        && diagnoseTarget?.messages.some((message) => message.text.includes('ASYNC_DIAG_DONE'))
+        && !afterDiagnoseSwitch.messages.some((message) => message.text.includes('ASYNC_DIAG_REQUEST') || message.text.includes('ASYNC_DIAG_DONE'));
+      await openFile('contents/abstract.tex');
+      await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+          ?? '/src/store/aiStore.ts';
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { useAiStore } = await import(aiUrl);
+        const { api } = await import(apiUrl);
+        api.aiDiagnose = () => new Promise((_, reject) => { window.__v087RejectDiagnose = reject; });
+        window.__v087DiagnosePromise = useAiStore.getState().diagnoseIssue({
+          message: 'ASYNC_DIAG_ERROR_REQUEST', severity: 'error', file: 'contents/abstract.tex', line: 3,
+        }, 0);
+        return true;
+      })()`);
+      await sleep(100);
+      await openFile('main.tex');
+      await exec(`(async () => {
+        window.__v087RejectDiagnose?.(new Error('ASYNC_DIAG_ERROR_DONE'));
+        await window.__v087DiagnosePromise;
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { api } = await import(apiUrl);
+        if (window.__v087DiagnoseOriginal) api.aiDiagnose = window.__v087DiagnoseOriginal;
+        delete window.__v087DiagnoseOriginal;
+        delete window.__v087ResolveDiagnose;
+        delete window.__v087RejectDiagnose;
+        delete window.__v087DiagnosePromise;
+        return true;
+      })()`);
+      const afterDiagnoseError = await aiState();
+      const diagnoseErrorTarget = afterDiagnoseError.sessions.find((session) => session.id === second.sessionId);
+      result.diagnoseErrorStaysWithRequestSession = diagnoseErrorTarget?.messages.some((message) => message.text.includes('ASYNC_DIAG_ERROR_REQUEST'))
+        && diagnoseErrorTarget?.messages.some((message) => message.text.includes('ASYNC_DIAG_ERROR_DONE'))
+        && !afterDiagnoseError.messages.some((message) => message.text.includes('ASYNC_DIAG_ERROR_REQUEST') || message.text.includes('ASYNC_DIAG_ERROR_DONE'));
+      await openFile('contents/abstract.tex');
+
+      await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const aiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+          ?? '/src/store/aiStore.ts';
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { useAiStore } = await import(aiUrl);
+        const { api } = await import(apiUrl);
+        window.__v087FixOriginal = api.aiFix;
+        api.aiFix = () => new Promise((resolve) => { window.__v087ResolveFix = resolve; });
+        window.__v087FixPromise = useAiStore.getState().fixIssue({
+          message: 'ASYNC_FIX_REQUEST', severity: 'error', file: 'contents/abstract.tex', line: 4,
+        }, 0);
+        return true;
+      })()`);
+      await sleep(100);
+      await openFile('main.tex');
+      await exec(`(async () => {
+        window.__v087ResolveFix?.({
+          ok: true, rounds: 1, summary: 'ASYNC_FIX_DONE', diff: 'ASYNC_FIX_DIFF', suggested: true, hunks: [], backup: null,
+        });
+        await window.__v087FixPromise;
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { api } = await import(apiUrl);
+        if (window.__v087FixOriginal) api.aiFix = window.__v087FixOriginal;
+        delete window.__v087FixOriginal;
+        delete window.__v087ResolveFix;
+        delete window.__v087FixPromise;
+        return true;
+      })()`);
+      const afterFixSwitch = await aiState();
+      const fixTarget = afterFixSwitch.sessions.find((session) => session.id === second.sessionId);
+      const fixStayedOutOfMain = fixTarget?.messages.some((message) => message.text.includes('ASYNC_FIX_REQUEST'))
+        && fixTarget?.messages.some((message) => message.diff === 'ASYNC_FIX_DIFF')
+        && !afterFixSwitch.messages.some((message) => message.text.includes('ASYNC_FIX_REQUEST') || message.diff === 'ASYNC_FIX_DIFF')
+        && afterFixSwitch.diffPending === null;
+      await openFile('contents/abstract.tex');
+      const afterFixReturn = await aiState();
+      result.fixCompletionStaysWithRequestSession = fixStayedOutOfMain
+        && afterFixReturn.messages.some((message) => message.diff === 'ASYNC_FIX_DIFF')
+        && afterFixReturn.diffPending === null;
+
       const sessionCountBeforeProjectSwitch = (await aiState()).sessions.length;
       await openSessionProject(SESSION_PROJ);
       const isolatedMain = await aiState();
@@ -1254,11 +1371,23 @@ async function main() {
           if (window.__v087DownloadOriginal) api.downloadTemplate = window.__v087DownloadOriginal;
           window.__v087ResolveChat?.('fixture');
           if (window.__v087ChatOriginal) api.aiChatStream = window.__v087ChatOriginal;
+          window.__v087ResolveDiagnose?.({ ok: false, error: 'cleanup' });
+          window.__v087RejectDiagnose?.(new Error('cleanup'));
+          if (window.__v087DiagnoseOriginal) api.aiDiagnose = window.__v087DiagnoseOriginal;
+          window.__v087ResolveFix?.({ ok: false, rounds: 0, summary: 'cleanup', diff: null });
+          if (window.__v087FixOriginal) api.aiFix = window.__v087FixOriginal;
           delete window.__v087ResolveDownload;
           delete window.__v087DownloadOriginal;
           delete window.__v087ResolveChat;
           delete window.__v087ChatOriginal;
           delete window.__v087AskPromise;
+          delete window.__v087ResolveDiagnose;
+          delete window.__v087RejectDiagnose;
+          delete window.__v087DiagnoseOriginal;
+          delete window.__v087DiagnosePromise;
+          delete window.__v087ResolveFix;
+          delete window.__v087FixOriginal;
+          delete window.__v087FixPromise;
           const snapshot = ${JSON.stringify(browserStateBefore)};
           localStorage.clear();
           for (const [key, value] of Object.entries(snapshot.storage)) localStorage.setItem(key, value);
@@ -1329,6 +1458,7 @@ async function main() {
           sessionProjectRestored = sessionProjectBackup
             ? await exists(SESSION_PROJ) && !await exists(sessionProjectBackup)
             : !await exists(SESSION_PROJ);
+          if (process.env.V087_SESSION_RESTORE_FALSE === "1") sessionProjectRestored = false;
         }
       } catch (error) {
         cleanupErrors.push(`session project restoration: ${error}`);
@@ -1407,19 +1537,17 @@ async function main() {
     && snapshot.populated.frameVisible
     && snapshot.widthPreserved
   )));
-  const sessionsOk = sessions === true || (
-    Object.values(sessions).every(Boolean)
-    && sessionProjectRestored
-  );
+  const sessionsOk = sessions === true || Object.values(sessions).every(Boolean);
+  const sessionProjectStateOk = sessionsExecuted ? sessionProjectRestored : sessionProjectUntouched;
   const browserRestored = cleanupErrors.length === 0
     && JSON.stringify(browserStateAfter) === JSON.stringify(browserStateBefore);
-  failed = !filesOk || !themeOk || !pdfOk || !sessionsOk || !browserRestored;
+  failed = !filesOk || !themeOk || !pdfOk || !sessionsOk || !sessionProjectStateOk || !browserRestored;
   console.log("FILES", JSON.stringify(files));
   console.log("THEME", JSON.stringify(theme));
   console.log("PDF", JSON.stringify(pdf));
   console.log("SESSIONS", JSON.stringify(sessions));
-  console.log("STATE", JSON.stringify({ browserRestored, cleanupErrors }));
-  console.log("E2E-DONE", failed ? "FAIL" : "PASS", { suite, filesOk, themeOk, pdfOk, sessionsOk, browserRestored });
+  console.log("STATE", JSON.stringify({ browserRestored, sessionProjectStateOk, cleanupErrors }));
+  console.log("E2E-DONE", failed ? "FAIL" : "PASS", { suite, filesOk, themeOk, pdfOk, sessionsOk, sessionProjectStateOk, browserRestored });
   if (failed) process.exitCode = 1;
 }
 
