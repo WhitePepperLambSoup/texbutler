@@ -138,11 +138,11 @@ pub async fn tb_ai_polish(
 /// files like `umsb.fd` that the log parser picks up): we cannot read or
 /// repair them, so fail fast with a clear message instead of a confusing
 /// mid-loop "cannot read file" abort.
-fn ensure_project_file(proj: Option<&crate::core::project::Project>, file: &str) -> Result<(), String> {
-    match proj {
-        Some(p) if p.resolve(file).is_some() => Ok(()),
-        _ => Err(format!("无法读取文件 {file}（不在项目内），放弃修复。")),
-    }
+fn existing_project_file(
+    project: &crate::core::project::Project,
+    file: &str,
+) -> Result<String, String> {
+    crate::core::document_path::resolve_existing_document(project, file)
 }
 
 #[tauri::command]
@@ -151,17 +151,18 @@ pub async fn tb_ai_diagnose(
     state: State<'_, AppState>,
     issue_index: usize,
 ) -> Result<AiDiagnosis, String> {
-    let (issue, settings) = {
+    let (mut issue, settings) = {
         let last = state.last_result.read().map_err(|e| e.to_string())?;
         let r = last.as_ref().ok_or_else(|| "还没有编译结果".to_string())?;
         let issue = r.issues.get(issue_index).cloned().ok_or_else(|| "问题索引越界".to_string())?;
         let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
         (issue, settings)
     };
-    // external files cannot be diagnosed or fixed
+    // External, missing, ambiguous, and unsupported files cannot be diagnosed.
     if let Some(f) = issue.file.as_deref() {
         let proj = state.project.read().map_err(|e| e.to_string())?;
-        ensure_project_file(proj.as_ref(), f)?;
+        let proj = proj.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
+        issue.file = Some(existing_project_file(proj, f)?);
     }
     if settings.api_key.is_none() && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. }) {
         return Err("尚未配置 AI API Key。请在“设置”中填写 provider 配置。".into());
@@ -196,7 +197,7 @@ pub async fn tb_ai_fix(
     max_rounds: Option<u32>,
     apply: Option<bool>,
 ) -> Result<FixReport, String> {
-    let (issue, settings, proj) = {
+    let (mut issue, settings, proj) = {
         let last = state.last_result.read().map_err(|e| e.to_string())?;
         let r = last.as_ref().ok_or_else(|| "还没有编译结果".to_string())?;
         let issue = r.issues.get(issue_index).cloned().ok_or_else(|| "问题索引越界".to_string())?;
@@ -208,9 +209,9 @@ pub async fn tb_ai_fix(
     if settings.api_key.is_none() && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. }) {
         return Err("尚未配置 AI API Key。请在“设置”中填写 provider 配置。".into());
     }
-    // external files (e.g. MiKTeX system files) cannot be fixed
+    // External, missing, ambiguous, and unsupported files cannot be fixed.
     if let Some(f) = issue.file.as_deref() {
-        ensure_project_file(Some(&proj), f)?;
+        issue.file = Some(existing_project_file(&proj, f)?);
     }
     let apply = apply.unwrap_or(true);
     let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "fix", "status": "start", "apply": apply }));
@@ -755,11 +756,10 @@ pub async fn tb_ai_test_connection(
 fn build_context(state: &State<'_, AppState>, issue: &Issue) -> Option<SourceContext> {
     let guard = state.project.read().ok()?;
     let proj = guard.as_ref()?;
-    let file = issue
-        .file
-        .clone()
-        .map(|f| proj.relative_path(&f))
-        .unwrap_or_else(|| proj.main_file.clone());
+    let file = match issue.file.as_deref() {
+        Some(candidate) => crate::core::document_path::resolve_existing_document(proj, candidate).ok()?,
+        None => proj.main_file.clone(),
+    };
     let body = proj.read_file(&file).ok()?;
     Some(SourceContext::around(&file, issue.line, &body, 20))
 }

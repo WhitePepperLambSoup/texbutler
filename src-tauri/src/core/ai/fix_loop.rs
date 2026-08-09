@@ -611,6 +611,20 @@ fn redact_key_in(s: &AiSettings, err: &super::provider::AiError) -> String {
     }
 }
 
+fn unreadable_report(summary: String, suggested: bool) -> FixReport {
+    FixReport {
+        ok: false,
+        rounds: 0,
+        diff: None,
+        summary,
+        issues_after: vec![],
+        rolled_back: false,
+        backup: None,
+        hunks: vec![],
+        suggested,
+    }
+}
+
 /// The full fix loop. `compile` is injected so tests can stub it.
 /// `apply: true` (default) writes the diff and recompiles; `apply: false`
 /// is suggest mode — the AI diff is returned without touching the disk.
@@ -622,23 +636,15 @@ pub async fn fix_loop(
     apply: bool,
 ) -> FixReport {
     let max_rounds = max_rounds.clamp(1, 5);
-    let file = issue
-        .file
-        .clone()
-        .map(|f| project.relative_path(&f))
-        .unwrap_or_else(|| project.main_file.clone());
+    let file = match issue.file.as_deref() {
+        Some(candidate) => match crate::core::document_path::resolve_existing_document(project, candidate) {
+            Ok(file) => file,
+            Err(error) => return unreadable_report(error, !apply),
+        },
+        None => project.main_file.clone(),
+    };
     let Ok(original) = project.read_file(&file) else {
-        return FixReport {
-            ok: false,
-            rounds: 0,
-            diff: None,
-            summary: format!("无法读取文件 `{file}`，放弃修复。"),
-            issues_after: vec![],
-            rolled_back: false,
-            backup: None,
-            hunks: vec![],
-            suggested: !apply,
-        };
+        return unreadable_report(format!("无法读取文件 `{file}`，放弃修复。"), !apply);
     };
 
     let ctx = SourceContext::around(&file, issue.line, &original, 20);

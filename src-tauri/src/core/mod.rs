@@ -5,6 +5,7 @@ pub mod ai;
 pub mod bib;
 pub mod compiler;
 pub mod docx;
+pub mod document_path;
 pub mod export;
 pub mod log_parser;
 pub mod project;
