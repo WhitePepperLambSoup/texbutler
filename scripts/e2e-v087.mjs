@@ -2367,6 +2367,49 @@ async function main() {
         delete window.__v087DeletedAskPromise;
         return true;
       })()`);
+      result.staleCompileCompletionReleasesNewProject = await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const compileUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
+          ?? '/src/store/compileStore.ts';
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { useCompileStore } = await import(compileUrl);
+        const { api } = await import(apiUrl);
+        window.__v087CompileOriginal = api.compile;
+        window.__v087CompileStarted = false;
+        api.compile = () => new Promise((resolve) => {
+          window.__v087CompileStarted = true;
+          window.__v087ResolveCompile = resolve;
+        });
+        useCompileStore.setState({ running: false, progress: null, startedAt: null });
+        window.__v087CompilePromise = useCompileStore.getState().compile('main');
+        return true;
+      })()`);
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        if (await exec(`Boolean(window.__v087CompileStarted)`)) break;
+        await sleep(50);
+      }
+      const compileOwnerBeforeSwitch = (await aiState()).root;
+      const compileOtherProject = compileOwnerBeforeSwitch === PROJ ? SESSION_PROJ : PROJ;
+      await openSessionProject(compileOtherProject);
+      result.staleCompileCompletionReleasesNewProject = await exec(`(async () => {
+        window.__v087ResolveCompile?.();
+        await window.__v087CompilePromise;
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const compileUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
+          ?? '/src/store/compileStore.ts';
+        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+          ?? '/src/api/index.ts';
+        const { useCompileStore } = await import(compileUrl);
+        const { api } = await import(apiUrl);
+        if (window.__v087CompileOriginal) api.compile = window.__v087CompileOriginal;
+        const released = useCompileStore.getState().running === false;
+        delete window.__v087CompileOriginal;
+        delete window.__v087CompileStarted;
+        delete window.__v087ResolveCompile;
+        delete window.__v087CompilePromise;
+        return released;
+      })()`);
       result.staleCompileEventRejectedAfterProjectSwitch = await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
         const compileUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)

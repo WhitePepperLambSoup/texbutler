@@ -12,6 +12,10 @@ import { recordRecent } from "./recent";
 let openFileSeq = 0;
 /** Invalidates async project-owned work across close/reopen, including same-root ABA switches. */
 let projectGeneration = 0;
+
+export function getProjectGeneration(): number {
+  return projectGeneration;
+}
 /** Per-project/file reload generation: only the newest disk read may commit. */
 const reloadTabSeq = new Map<string, number>();
 

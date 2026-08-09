@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { api, onEvent, events, type CompileDoneEvent, type CompileProgress, type CompileResult, type Issue } from "../api";
-import { useProjectStore } from "./projectStore";
+import { getProjectGeneration, useProjectStore } from "./projectStore";
 import { useI18n } from "../i18n";
 import { normalizeProjectRoot } from "./aiSessionBindings";
 
@@ -38,6 +38,10 @@ export const useCompileStore = create<CompileState>((set, get) => ({
     // save every dirty tab first: the compile must reflect exactly what
     // the editor shows right now, not whatever is on disk
     const ps = useProjectStore.getState();
+    const requestRoot = normalizeProjectRoot(ps.root);
+    const requestGeneration = getProjectGeneration();
+    const stillOwned = () => getProjectGeneration() === requestGeneration
+      && normalizeProjectRoot(useProjectStore.getState().root) === requestRoot;
     const dirty = ps.tabs.filter((t) => t.dirty);
     if (dirty.length > 0) {
       // claim the slot before the async save so a double-click cannot
@@ -52,6 +56,10 @@ export const useCompileStore = create<CompileState>((set, get) => ({
         });
         return;
       }
+    }
+    if (!stillOwned()) {
+      set({ running: false, progress: null, startedAt: null, elapsedSec: null });
+      return;
     }
     let override: string | undefined;
     if (target === "current") {
@@ -69,10 +77,15 @@ export const useCompileStore = create<CompileState>((set, get) => ({
     try {
       await api.compile(override ?? undefined);
     } catch (e) {
-      set({
-        running: false,
-        progress: { stage: "error", progress: 0, message: String(e) },
-      });
+      if (stillOwned()) {
+        set({
+          running: false,
+          progress: { stage: "error", progress: 0, message: String(e) },
+        });
+      }
+    }
+    if (!stillOwned()) {
+      set({ running: false, progress: null, startedAt: null, elapsedSec: null });
     }
   },
 

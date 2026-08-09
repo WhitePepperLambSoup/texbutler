@@ -96,7 +96,7 @@ async function main() {
   if (created.dir) {
     await exec(`(async () => {
       const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-      const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+      const projectUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
         ?? '/src/store/projectStore.ts';
       const { useProjectStore } = await import(projectUrl);
       await useProjectStore.getState().openProject(${JSON.stringify(created.dir)});

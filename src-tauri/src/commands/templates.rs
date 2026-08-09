@@ -2526,18 +2526,11 @@ fn extract_embedded_dir(src: &Dir<'_>, dst: &Path) -> Result<(), String> {
 }
 
 fn copy_tree(src: &Path, dst: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(dst).map_err(|e| e.to_string())?;
-    for entry in std::fs::read_dir(src).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let from = entry.path();
-        let to = dst.join(entry.file_name());
-        if from.is_dir() {
-            copy_tree(&from, &to)?;
-        } else {
-            std::fs::copy(&from, &to).map_err(|e| format!("复制失败: {e}"))?;
-        }
-    }
-    Ok(())
+    copy_tree_checked(
+        src,
+        dst,
+        &[".texbutler-verified", ".git", ".texbutler", "target", "node_modules"],
+    )
 }
 
 #[cfg(test)]
@@ -3465,6 +3458,23 @@ mod tests {
             "verification metadata must remain outside the project"
         );
         assert!(first_exists && second_exists);
+    }
+
+    #[test]
+    fn legacy_market_project_copy_omits_verification_marker() {
+        let root = test_root("legacy-market-marker");
+        let source = root.join("downloaded");
+        let target = root.join("created-project");
+        write_fixture(&source.join(".texbutler-verified"), b"verified\n");
+        write_fixture(&source.join("main.tex"), b"\\documentclass{article}\n");
+
+        copy_tree(&source, &target).unwrap();
+        let marker_exists = target.join(".texbutler-verified").exists();
+        let main_exists = target.join("main.tex").exists();
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(!marker_exists, "legacy market copy must not expose verification metadata");
+        assert!(main_exists);
     }
 
     #[test]
