@@ -835,6 +835,8 @@ async function main() {
         moreMenuHasSecondaryActions: false,
         themeSelections: { liquid: false, dark: false, light: false },
         overflowMenuSurfaces: {},
+        brightGradientRejected: false,
+        brightGradientContrast: 0,
         outsidePointerPreservesFocus: false,
         escapeRestoresTriggerFocus: false,
         menuHitTest: false,
@@ -867,50 +869,185 @@ async function main() {
           settingsVisible: insideViewport('.toolbar-settings'),
         });
       })()`));
-      const inspectMenuSurface = async (menuSelector, itemSelector) => JSON.parse(await exec(`(() => {
-        const menu = document.querySelector(${JSON.stringify(menuSelector)});
-        const item = menu?.querySelector(${JSON.stringify(itemSelector)});
-        if (!menu || !item) return JSON.stringify({ opened: false, surfaceAlpha: 0, contrast: 0 });
-        const parse = (value) => {
-          const match = value.match(/rgba?\\(([^)]+)\\)/);
-          if (!match) return { r: 0, g: 0, b: 0, a: 0 };
-          const parts = match[1].split(/[ ,/]+/).filter(Boolean).map(Number);
-          return { r: parts[0], g: parts[1], b: parts[2], a: parts[3] ?? 1 };
-        };
-        const over = (front, back) => {
-          const a = front.a + back.a * (1 - front.a);
-          return a === 0 ? { r: 0, g: 0, b: 0, a: 0 } : {
-            r: (front.r * front.a + back.r * back.a * (1 - front.a)) / a,
-            g: (front.g * front.a + back.g * back.a * (1 - front.a)) / a,
-            b: (front.b * front.a + back.b * back.a * (1 - front.a)) / a,
-            a,
+      const inspectMenuSurface = async (menuSelector, itemSelector) => {
+        const prepared = JSON.parse(await exec(`(() => {
+          const menu = document.querySelector(${JSON.stringify(menuSelector)});
+          const item = menu?.querySelector(${JSON.stringify(itemSelector)});
+          if (!menu || !item) return JSON.stringify({ opened: false });
+          const colorAlpha = (value) => {
+            const match = value.match(/rgba?\\(([^)]+)\\)/);
+            if (!match) return 0;
+            const parts = match[1].split(/[ ,/]+/).filter(Boolean).map(Number);
+            return parts[3] ?? 1;
           };
-        };
-        const luminance = ({ r, g, b }) => {
-          const linear = [r, g, b].map((channel) => {
-            const value = channel / 255;
-            return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+          const splitLayers = (value) => {
+            const layers = [];
+            let depth = 0;
+            let start = 0;
+            for (let index = 0; index < value.length; index += 1) {
+              if (value[index] === '(') depth += 1;
+              else if (value[index] === ')') depth -= 1;
+              else if (value[index] === ',' && depth === 0) {
+                layers.push(value.slice(start, index));
+                start = index + 1;
+              }
+            }
+            layers.push(value.slice(start));
+            return layers;
+          };
+          const menuStyle = getComputedStyle(menu);
+          let surfaceAlpha = colorAlpha(menuStyle.backgroundColor);
+          for (const layer of splitLayers(menuStyle.backgroundImage)) {
+            if (layer.trim() === 'none') continue;
+            const colors = [...layer.matchAll(/rgba?\\([^)]+\\)/g)].map((match) => colorAlpha(match[0]));
+            if (colors.length === 0) continue;
+            const minimumLayerAlpha = Math.min(...colors);
+            surfaceAlpha = minimumLayerAlpha + surfaceAlpha * (1 - minimumLayerAlpha);
+          }
+          const rect = item.getBoundingClientRect();
+          const descendants = [...item.querySelectorAll('*')].map((node) => ({
+            value: node.style.getPropertyValue('visibility'),
+            priority: node.style.getPropertyPriority('visibility'),
+          }));
+          const itemColor = {
+            value: item.style.getPropertyValue('color'),
+            priority: item.style.getPropertyPriority('color'),
+          };
+          const foreground = getComputedStyle(item).color;
+          item.style.setProperty('color', 'transparent', 'important');
+          [...item.querySelectorAll('*')].forEach((node) => {
+            node.style.setProperty('visibility', 'hidden', 'important');
           });
-          return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
-        };
-        const ancestors = [];
-        for (let current = menu.parentElement; current; current = current.parentElement) ancestors.push(current);
-        let underneath = { r: 255, g: 255, b: 255, a: 1 };
-        for (const current of ancestors.reverse()) {
-          underneath = over(parse(getComputedStyle(current).backgroundColor), underneath);
+          return JSON.stringify({
+            opened: true,
+            rect: {
+              x: rect.left + window.scrollX,
+              y: rect.top + window.scrollY,
+              width: rect.width,
+              height: rect.height,
+            },
+            foreground,
+            surfaceAlpha,
+            itemColor,
+            descendants,
+          });
+        })()`));
+        if (!prepared.opened) return { opened: false, surfaceAlpha: 0, contrast: 0 };
+        try {
+          await sleep(50);
+          const screenshot = await client.send("Page.captureScreenshot", {
+            format: "png",
+            fromSurface: true,
+            captureBeyondViewport: false,
+            clip: { ...prepared.rect, scale: 1 },
+          });
+          const contrast = Number(await exec(`(async () => {
+            const parse = (value) => {
+              const match = value.match(/rgba?\\(([^)]+)\\)/);
+              if (!match) return { r: 0, g: 0, b: 0, a: 0 };
+              const parts = match[1].split(/[ ,/]+/).filter(Boolean).map(Number);
+              return { r: parts[0], g: parts[1], b: parts[2], a: parts[3] ?? 1 };
+            };
+            const over = (front, back) => ({
+              r: front.r * front.a + back.r * (1 - front.a),
+              g: front.g * front.a + back.g * (1 - front.a),
+              b: front.b * front.a + back.b * (1 - front.a),
+              a: 1,
+            });
+            const luminance = ({ r, g, b }) => {
+              const linear = [r, g, b].map((channel) => {
+                const value = channel / 255;
+                return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+              });
+              return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+            };
+            const image = new Image();
+            image.src = ${JSON.stringify(`data:image/png;base64,${screenshot.data}`)};
+            await image.decode();
+            const canvas = document.createElement('canvas');
+            canvas.width = image.naturalWidth;
+            canvas.height = image.naturalHeight;
+            const context = canvas.getContext('2d', { willReadFrequently: true });
+            if (!context || canvas.width < 5 || canvas.height < 5) return 0;
+            context.drawImage(image, 0, 0);
+            const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+            const foreground = parse(${JSON.stringify(prepared.foreground)});
+            let minimumContrast = Infinity;
+            for (let y = 2; y < canvas.height - 2; y += 1) {
+              for (let x = 2; x < canvas.width - 2; x += 1) {
+                const offset = (y * canvas.width + x) * 4;
+                const background = {
+                  r: pixels[offset],
+                  g: pixels[offset + 1],
+                  b: pixels[offset + 2],
+                  a: pixels[offset + 3] / 255,
+                };
+                const renderedForeground = over(foreground, background);
+                const foregroundLuminance = luminance(renderedForeground);
+                const backgroundLuminance = luminance(background);
+                const ratio = (Math.max(foregroundLuminance, backgroundLuminance) + 0.05)
+                  / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05);
+                minimumContrast = Math.min(minimumContrast, ratio);
+              }
+            }
+            return Number.isFinite(minimumContrast) ? minimumContrast : 0;
+          })()`));
+          return {
+            opened: true,
+            surfaceAlpha: prepared.surfaceAlpha,
+            contrast,
+          };
+        } finally {
+          await exec(`(() => {
+            const menu = document.querySelector(${JSON.stringify(menuSelector)});
+            const item = menu?.querySelector(${JSON.stringify(itemSelector)});
+            if (!item) return;
+            const prepared = ${JSON.stringify(prepared)};
+            if (prepared.itemColor.value) {
+              item.style.setProperty('color', prepared.itemColor.value, prepared.itemColor.priority);
+            } else {
+              item.style.removeProperty('color');
+            }
+            [...item.querySelectorAll('*')].forEach((node, index) => {
+              const original = prepared.descendants[index];
+              if (!original) return;
+              if (original.value) node.style.setProperty('visibility', original.value, original.priority);
+              else node.style.removeProperty('visibility');
+            });
+          })()`);
         }
-        const menuColor = parse(getComputedStyle(menu).backgroundColor);
-        const effectiveSurface = over(menuColor, underneath);
-        const foreground = over(parse(getComputedStyle(item).color), effectiveSurface);
-        const foregroundLuminance = luminance(foreground);
-        const backgroundLuminance = luminance(effectiveSurface);
-        return JSON.stringify({
-          opened: true,
-          surfaceAlpha: menuColor.a,
-          contrast: (Math.max(foregroundLuminance, backgroundLuminance) + 0.05)
-            / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05),
-        });
-      })()`));
+      };
+      const inspectBrightGradientMutation = async (menuSelector, itemSelector) => {
+        const original = JSON.parse(await exec(`(() => {
+          const menu = document.querySelector(${JSON.stringify(menuSelector)});
+          if (!menu) return JSON.stringify(null);
+          const property = 'background-image';
+          const snapshot = {
+            value: menu.style.getPropertyValue(property),
+            priority: menu.style.getPropertyPriority(property),
+          };
+          menu.style.setProperty(
+            property,
+            'linear-gradient(rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.98))',
+            'important',
+          );
+          return JSON.stringify(snapshot);
+        })()`));
+        if (!original) return { opened: false, surfaceAlpha: 0, contrast: 0 };
+        try {
+          await sleep(50);
+          return await inspectMenuSurface(menuSelector, itemSelector);
+        } finally {
+          await exec(`(() => {
+            const menu = document.querySelector(${JSON.stringify(menuSelector)});
+            if (!menu) return;
+            const property = 'background-image';
+            const original = ${JSON.stringify(original)};
+            if (original.value) menu.style.setProperty(property, original.value, original.priority);
+            else menu.style.removeProperty(property);
+          })()`);
+        }
+      };
 
       for (const [width, height] of [[940, 700], [1280, 800]]) {
         await setViewport(width, height);
@@ -942,6 +1079,14 @@ async function main() {
         const editor = editorOpened
           ? await inspectMenuSurface('.editor-tools-menu', 'button:not(:disabled)')
           : { opened: false, surfaceAlpha: 0, contrast: 0 };
+        if (id === "liquid" && editor.opened) {
+          const brightMutation = await inspectBrightGradientMutation(
+            '.editor-tools-menu',
+            'button:not(:disabled)',
+          );
+          result.brightGradientContrast = brightMutation.contrast;
+          result.brightGradientRejected = brightMutation.opened && brightMutation.contrast < 4.5;
+        }
         if (editor.opened) await pressEscape();
         const aiOpened = await clickSelector('.ai-menu-anchor > button');
         const ai = aiOpened
@@ -1885,6 +2030,7 @@ async function main() {
         menu.opened && menu.surfaceAlpha >= 0.9 && menu.contrast >= 4.5
       ))
     ))
+    && theme.brightGradientRejected
     && theme.outsidePointerPreservesFocus
     && theme.escapeRestoresTriggerFocus
     && theme.menuHitTest
