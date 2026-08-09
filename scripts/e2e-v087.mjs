@@ -834,6 +834,7 @@ async function main() {
         widths: {},
         moreMenuHasSecondaryActions: false,
         themeSelections: { liquid: false, dark: false, light: false },
+        overflowMenuSurfaces: {},
         outsidePointerPreservesFocus: false,
         escapeRestoresTriggerFocus: false,
         menuHitTest: false,
@@ -866,6 +867,50 @@ async function main() {
           settingsVisible: insideViewport('.toolbar-settings'),
         });
       })()`));
+      const inspectMenuSurface = async (menuSelector, itemSelector) => JSON.parse(await exec(`(() => {
+        const menu = document.querySelector(${JSON.stringify(menuSelector)});
+        const item = menu?.querySelector(${JSON.stringify(itemSelector)});
+        if (!menu || !item) return JSON.stringify({ opened: false, surfaceAlpha: 0, contrast: 0 });
+        const parse = (value) => {
+          const match = value.match(/rgba?\\(([^)]+)\\)/);
+          if (!match) return { r: 0, g: 0, b: 0, a: 0 };
+          const parts = match[1].split(/[ ,/]+/).filter(Boolean).map(Number);
+          return { r: parts[0], g: parts[1], b: parts[2], a: parts[3] ?? 1 };
+        };
+        const over = (front, back) => {
+          const a = front.a + back.a * (1 - front.a);
+          return a === 0 ? { r: 0, g: 0, b: 0, a: 0 } : {
+            r: (front.r * front.a + back.r * back.a * (1 - front.a)) / a,
+            g: (front.g * front.a + back.g * back.a * (1 - front.a)) / a,
+            b: (front.b * front.a + back.b * back.a * (1 - front.a)) / a,
+            a,
+          };
+        };
+        const luminance = ({ r, g, b }) => {
+          const linear = [r, g, b].map((channel) => {
+            const value = channel / 255;
+            return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+          });
+          return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+        };
+        const ancestors = [];
+        for (let current = menu.parentElement; current; current = current.parentElement) ancestors.push(current);
+        let underneath = { r: 255, g: 255, b: 255, a: 1 };
+        for (const current of ancestors.reverse()) {
+          underneath = over(parse(getComputedStyle(current).backgroundColor), underneath);
+        }
+        const menuColor = parse(getComputedStyle(menu).backgroundColor);
+        const effectiveSurface = over(menuColor, underneath);
+        const foreground = over(parse(getComputedStyle(item).color), effectiveSurface);
+        const foregroundLuminance = luminance(foreground);
+        const backgroundLuminance = luminance(effectiveSurface);
+        return JSON.stringify({
+          opened: true,
+          surfaceAlpha: menuColor.a,
+          contrast: (Math.max(foregroundLuminance, backgroundLuminance) + 0.05)
+            / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05),
+        });
+      })()`));
 
       for (const [width, height] of [[940, 700], [1280, 800]]) {
         await setViewport(width, height);
@@ -883,6 +928,9 @@ async function main() {
       }
 
       await setViewport(1280, 800);
+      if (await exec(`!!document.querySelector('.ai-rail-toggle')`)) {
+        await clickSelector('.ai-rail-toggle');
+      }
       for (const [id, index] of [["liquid", 1], ["dark", 2], ["light", 3]]) {
         if (!await clickSelector('.theme-picker-btn')) continue;
         if (!await clickSelector(`.theme-picker-menu .theme-option:nth-child(${index})`)) continue;
@@ -890,6 +938,17 @@ async function main() {
           document.documentElement.dataset.theme === ${JSON.stringify(id)}
             && window.localStorage.getItem('tb-theme') === ${JSON.stringify(id)}
         )`));
+        const editorOpened = await clickSelector('.editor-more-action');
+        const editor = editorOpened
+          ? await inspectMenuSurface('.editor-tools-menu', 'button:not(:disabled)')
+          : { opened: false, surfaceAlpha: 0, contrast: 0 };
+        if (editor.opened) await pressEscape();
+        const aiOpened = await clickSelector('.ai-menu-anchor > button');
+        const ai = aiOpened
+          ? await inspectMenuSurface('.ai-menu', '.ai-menu-item:not(:disabled):not(.danger)')
+          : { opened: false, surfaceAlpha: 0, contrast: 0 };
+        if (ai.opened) await pressEscape();
+        result.overflowMenuSurfaces[id] = { editor, ai };
       }
 
       if (await clickSelector('.theme-picker-btn')) {
@@ -1820,6 +1879,12 @@ async function main() {
     ))
     && theme.moreMenuHasSecondaryActions
     && Object.values(theme.themeSelections).every(Boolean)
+    && Object.values(theme.overflowMenuSurfaces).length === 3
+    && Object.values(theme.overflowMenuSurfaces).every((menus) => (
+      Object.values(menus).every((menu) => (
+        menu.opened && menu.surfaceAlpha >= 0.9 && menu.contrast >= 4.5
+      ))
+    ))
     && theme.outsidePointerPreservesFocus
     && theme.escapeRestoresTriggerFocus
     && theme.menuHitTest

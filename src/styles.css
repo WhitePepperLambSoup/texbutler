@@ -1487,6 +1487,29 @@ html[data-theme="liquid"] .tree-active .tree-main-tag {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
 }
 
+html[data-theme="liquid"] .editor-tools-menu,
+html[data-theme="liquid"] .ai-menu {
+  background-color: rgba(12, 17, 34, 0.94);
+  background-image: linear-gradient(
+    160deg,
+    rgba(28, 36, 68, 0.34),
+    rgba(12, 17, 34, 0.08)
+  );
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+html[data-theme="dark"] .editor-tools-menu,
+html[data-theme="dark"] .ai-menu {
+  background: var(--bg3);
+}
+
+html[data-theme="light"] .editor-tools-menu,
+html[data-theme="light"] .ai-menu {
+  background: #fff;
+}
+
 .ai-menu-item {
   width: 100%;
   min-height: 30px;
