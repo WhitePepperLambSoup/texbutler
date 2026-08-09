@@ -7,6 +7,14 @@ fn normalized(value: &str) -> String {
     value.trim().trim_matches(['`', '"']).replace('\\', "/")
 }
 
+fn windows_drive_form(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes
+        .first()
+        .is_some_and(u8::is_ascii_alphabetic)
+        && bytes.get(1) == Some(&b':')
+}
+
 fn supported(path: &str) -> bool {
     Path::new(path)
         .extension()
@@ -43,6 +51,8 @@ fn exact_existing(project: &Project, candidate: &str) -> Option<String> {
 
 pub fn resolve_existing_document(project: &Project, candidate: &str) -> Result<String, String> {
     let candidate = normalized(candidate);
+    let native_absolute = Path::new(&candidate).is_absolute();
+    let has_windows_drive_form = windows_drive_form(&candidate);
     if candidate.is_empty()
         || Path::new(&candidate)
             .components()
@@ -50,11 +60,15 @@ pub fn resolve_existing_document(project: &Project, candidate: &str) -> Result<S
     {
         return Err(format!("无法读取文件 `{candidate}`：路径无效"));
     }
+    if has_windows_drive_form && !native_absolute {
+        return Err(format!(
+            "无法读取文件 `{candidate}`：文件不在当前项目内"
+        ));
+    }
     if let Some(rel) = exact_existing(project, &candidate) {
         return Ok(rel);
     }
-    let windows_absolute = candidate.as_bytes().get(1) == Some(&b':');
-    if Path::new(&candidate).is_absolute() || windows_absolute {
+    if native_absolute || has_windows_drive_form {
         return Err(format!(
             "无法读取文件 `{candidate}`：文件不在当前项目内"
         ));
@@ -147,6 +161,37 @@ mod tests {
             resolve_existing_document(&project, "t/my-latex-project/contents/abstract.tex").unwrap(),
             "contents/abstract.tex",
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn recognizes_windows_drive_form_on_every_platform() {
+        assert!(windows_drive_form("C:/outside/main.tex"));
+        assert!(windows_drive_form("z:\\outside\\main.tex"));
+        assert!(!windows_drive_form("contents/main.tex"));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn refuses_windows_drive_form_that_exists_as_a_native_relative_path() {
+        let (root, mut project) = fixture("drive-form");
+        std::fs::create_dir_all(root.join("C:/outside")).unwrap();
+        std::fs::write(root.join("C:/outside/main.tex"), "outside\\n").unwrap();
+        project.scan().unwrap();
+        assert!(resolve_existing_document(&project, "C:/outside/main.tex").is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn refuses_ambiguous_truncated_suffix() {
+        let (root, mut project) = fixture("suffix-ambiguity");
+        std::fs::create_dir_all(root.join("dir")).unwrap();
+        std::fs::write(root.join("a.tex"), "root\\n").unwrap();
+        std::fs::write(root.join("dir/a.tex"), "nested\\n").unwrap();
+        project.scan().unwrap();
+        assert!(resolve_existing_document(&project, "prefix/dir/a.tex")
+            .unwrap_err()
+            .contains("多个"));
         std::fs::remove_dir_all(root).unwrap();
     }
 
