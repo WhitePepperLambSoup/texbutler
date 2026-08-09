@@ -64,6 +64,8 @@ async function main() {
   let localeBefore;
   let localeAfter;
   let testLocaleBaseline;
+  let pdfWidthBefore;
+  let pdfWidthAfter;
   try {
     await rm(PROJ, { recursive: true, force: true }).catch(() => {});
     await mkdir(PROJ, { recursive: true });
@@ -332,6 +334,10 @@ async function main() {
 
     const runPdf = async () => {
       const result = { viewports: {} };
+      pdfWidthBefore = JSON.parse(await exec(`(() => {
+        const value = localStorage.getItem('tb-pdf-w');
+        return JSON.stringify({ hasValue: value !== null, value });
+      })()`));
       const setViewport = async (width, height) => {
         await client.send("Emulation.setDeviceMetricsOverride", {
           width,
@@ -356,7 +362,8 @@ async function main() {
         return JSON.stringify({
           paneWidth: rect?.width ?? 0,
           paneVisible: (rect?.width ?? 0) >= 240,
-          titleVisible: document.querySelectorAll('.col-pdf .panel-title').length > 0,
+          titleVisible: visible('.col-pdf .panel-title')
+            && (document.querySelector('.col-pdf .panel-title')?.textContent?.trim().length ?? 0) > 0,
           emptyVisible: visible('.col-pdf .pdf-empty'),
           dividerWidth: dividerRect?.width ?? 0,
           dividerVisible: (dividerRect?.width ?? 0) >= 6 && getComputedStyle(divider).visibility !== 'hidden',
@@ -426,6 +433,19 @@ async function main() {
     pdf = suite === "files" || suite === "theme" ? true : await runPdf();
     if (files !== true) await setLocale(testLocaleBaseline);
   } finally {
+    if (client && exec && pdfWidthBefore) {
+      const storageSnapshot = JSON.stringify(pdfWidthBefore);
+      await exec(`(() => {
+        const snapshot = ${storageSnapshot};
+        if (snapshot.hasValue) window.localStorage.setItem('tb-pdf-w', snapshot.value);
+        else window.localStorage.removeItem('tb-pdf-w');
+        return true;
+      })()`);
+      pdfWidthAfter = JSON.parse(await exec(`(() => {
+        const value = localStorage.getItem('tb-pdf-w');
+        return JSON.stringify({ hasValue: value !== null, value });
+      })()`));
+    }
     if (client && localeBefore && inspectLocale && setLocale) {
       await setLocale(localeBefore.lang);
       const storageSnapshot = JSON.stringify({
@@ -451,6 +471,14 @@ async function main() {
       live: localeAfter?.lang === localeBefore?.lang,
       storage: localeAfter?.hasStoredLang === localeBefore?.hasStoredLang
         && localeAfter?.storedLang === localeBefore?.storedLang,
+    };
+  }
+  if (pdf !== true) {
+    pdf.restoration = {
+      before: pdfWidthBefore,
+      after: pdfWidthAfter,
+      restored: pdfWidthAfter?.hasValue === pdfWidthBefore?.hasValue
+        && pdfWidthAfter?.value === pdfWidthBefore?.value,
     };
   }
   const filesOk = files === true || (
@@ -481,7 +509,7 @@ async function main() {
     && theme.escapeRestoresTriggerFocus
     && theme.menuHitTest
   );
-  const pdfOk = pdf === true || Object.values(pdf.viewports).every((snapshot) => (
+  const pdfOk = pdf === true || (pdf.restoration?.restored && Object.values(pdf.viewports).every((snapshot) => (
     snapshot.empty.paneVisible
     && snapshot.empty.titleVisible
     && snapshot.empty.emptyVisible
@@ -492,7 +520,7 @@ async function main() {
     && snapshot.dragSavedWidth
     && snapshot.populated.frameVisible
     && snapshot.widthPreserved
-  ));
+  )));
   failed = !filesOk || !themeOk || !pdfOk;
   console.log("FILES", JSON.stringify(files));
   console.log("THEME", JSON.stringify(theme));
