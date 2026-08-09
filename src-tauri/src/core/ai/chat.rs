@@ -78,6 +78,51 @@ pub async fn ask_about_source_edit_stream(
     mut on_delta: impl FnMut(&str),
     mut on_edit: impl FnMut(&str, &str, &str),
 ) -> Result<String, String> {
+    let mut rounds = StreamingModelRounds {
+        settings: s,
+        on_delta: &mut on_delta,
+    };
+    run_edit_chat(
+        &mut rounds,
+        project,
+        file,
+        selection,
+        question,
+        history,
+        &mut on_edit,
+    )
+    .await
+}
+
+trait ModelRoundSource {
+    async fn next_reply(&mut self, messages: &[ChatMsg]) -> Result<String, String>;
+}
+
+struct StreamingModelRounds<'a, D> {
+    settings: &'a AiSettings,
+    on_delta: &'a mut D,
+}
+
+impl<D> ModelRoundSource for StreamingModelRounds<'_, D>
+where
+    D: FnMut(&str),
+{
+    async fn next_reply(&mut self, messages: &[ChatMsg]) -> Result<String, String> {
+        super::provider::chat_stream(self.settings, messages, &mut *self.on_delta)
+            .await
+            .map_err(|error| error.to_string())
+    }
+}
+
+async fn run_edit_chat<R: ModelRoundSource>(
+    rounds: &mut R,
+    project: &Project,
+    file: Option<&str>,
+    selection: Option<&str>,
+    question: &str,
+    history: &[ChatMsg],
+    on_edit: &mut (impl FnMut(&str, &str, &str) + ?Sized),
+) -> Result<String, String> {
     // Try to apply the AI's edit; on failure retry ONCE with the latest
     // file content and the failure reason — the AI often worked from a
     // stale view of the file (user edited meanwhile, or its context lines
@@ -116,9 +161,7 @@ pub async fn ask_about_source_edit_stream(
             ),
         });
         let reply = loop {
-            let reply = super::provider::chat_stream(s, &messages, &mut on_delta)
-                .await
-                .map_err(|error| error.to_string())?;
+            let reply = rounds.next_reply(&messages).await?;
             let (reads, _edits) = partition_tool_calls(parse_tool_calls(&reply));
             if reads.is_empty() {
                 break reply;
@@ -137,13 +180,13 @@ pub async fn ask_about_source_edit_stream(
                 content: results,
             });
         };
-        match apply_edit_reply(project, file, &reply, &mut on_edit).await {
+        match apply_edit_reply(project, file, &reply, on_edit).await {
             ApplyOutcome::Applied(final_text) => return Ok(final_text),
             ApplyOutcome::NoDiff(text) => {
                 // no diff — maybe the AI emitted structured tool calls
                 // (declarative edits: far more reliable than free-form
                 // diffs for insert/replace/delete operations)
-                match execute_tool_calls(project, &reply, &mut on_edit).await {
+                match execute_tool_calls(project, &reply, on_edit).await {
                     ToolOutcome::Applied(n, failures, skipped, final_text) => {
                         let mut out = final_text;
                         if n > 0 {
@@ -248,11 +291,6 @@ fn render_read_results(project: &Project, reads: &[ToolCall]) -> String {
 }
 
 fn user_facing_tool_text(reply: &str) -> String {
-    if let Some(explanation) = reply.rsplit_once("解释：").map(|(_, text)| text.trim()) {
-        if !explanation.is_empty() {
-            return explanation.to_string();
-        }
-    }
     let marker = "【工具调用】";
     let mut removed = Vec::new();
     let trimmed = reply.trim_start();
@@ -277,25 +315,32 @@ fn user_facing_tool_text(reply: &str) -> String {
             cursor += end;
         }
     }
-    if removed.is_empty() {
-        return reply.trim().to_string();
-    }
-    removed.sort_unstable();
-    let mut out = String::new();
-    let mut cursor = 0usize;
-    for (start, end) in removed {
-        if start > cursor {
-            out.push_str(&reply[cursor..start]);
+    let cleaned = if removed.is_empty() {
+        reply.trim().to_string()
+    } else {
+        removed.sort_unstable();
+        let mut out = String::new();
+        let mut cursor = 0usize;
+        for (start, end) in removed {
+            if start > cursor {
+                out.push_str(&reply[cursor..start]);
+            }
+            cursor = cursor.max(end);
         }
-        cursor = cursor.max(end);
+        out.push_str(&reply[cursor..]);
+        out.lines()
+            .filter(|line| !line.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_string()
+    };
+    if let Some(explanation) = cleaned.rsplit_once("解释：").map(|(_, text)| text.trim()) {
+        if !explanation.is_empty() {
+            return explanation.to_string();
+        }
     }
-    out.push_str(&reply[cursor..]);
-    out.lines()
-        .filter(|line| !line.trim().is_empty())
-        .collect::<Vec<_>>()
-        .join("\n")
-        .trim()
-        .to_string()
+    cleaned
 }
 
 fn next_tool_json_span(scan: &str) -> Option<(usize, usize)> {
@@ -1172,6 +1217,41 @@ fn truncate(text: &str, max: usize) -> String {
 mod tests {
     use super::*;
 
+    struct PresetModelRounds {
+        replies: std::collections::VecDeque<String>,
+        seen_messages: Vec<Vec<ChatMsg>>,
+    }
+
+    impl PresetModelRounds {
+        fn new(replies: &[&str]) -> Self {
+            Self {
+                replies: replies.iter().map(|reply| (*reply).to_string()).collect(),
+                seen_messages: Vec::new(),
+            }
+        }
+    }
+
+    impl ModelRoundSource for PresetModelRounds {
+        async fn next_reply(&mut self, messages: &[ChatMsg]) -> Result<String, String> {
+            self.seen_messages.push(messages.to_vec());
+            self.replies
+                .pop_front()
+                .ok_or_else(|| "unexpected extra model round".to_string())
+        }
+    }
+
+    fn chat_runner_fixture(label: &str) -> (std::path::PathBuf, Project) {
+        let dir = std::env::temp_dir().join(format!(
+            "tb-chat-runner-{label}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("main.tex"), "a\n").unwrap();
+        let project = Project::open(&dir).unwrap();
+        (dir, project)
+    }
+
     #[test]
     fn document_summary_reports_class_packages_and_chinese() {
         let src = "\\documentclass[11pt]{article}\n\\usepackage[margin=2.5cm]{geometry}\n\\usepackage{amsmath,amssymb}\n\\usepackage{graphicx}\n\\begin{document}\n\\section*{Physics model}\n\\subsection*{(a) method}\n\\end{document}\n";
@@ -1244,6 +1324,112 @@ mod tests {
     }
 
     #[test]
+    fn mixed_read_edit_waits_for_continuation_before_writing() {
+        let (dir, project) = chat_runner_fixture("mixed-read-edit");
+        let mut rounds = PresetModelRounds::new(&[
+            "【工具调用】{\"tool\":\"read_file\",\"file\":\"main.tex\"}\n【工具调用】{\"tool\":\"replace\",\"file\":\"main.tex\",\"old\":\"a\",\"new\":\"stale\"}",
+            "【工具调用】{\"tool\":\"replace\",\"file\":\"main.tex\",\"old\":\"a\",\"new\":\"b\"}\n解释：已完成。",
+        ]);
+        let mut edits = Vec::new();
+        let result = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(run_edit_chat(
+                &mut rounds,
+                &project,
+                Some("main.tex"),
+                None,
+                "修改文件",
+                &[],
+                &mut |rel, snapshot, diff| {
+                    edits.push((rel.to_string(), snapshot.to_string(), diff.to_string()));
+                },
+            ))
+            .unwrap();
+
+        assert_eq!(rounds.seen_messages.len(), 2);
+        assert_eq!(project.read_file("main.tex").unwrap(), "b\n");
+        assert_eq!(edits.len(), 1, "mixed first-round edit must not emit on_edit");
+        assert_eq!(edits[0].0, "main.tex");
+        assert_eq!(std::fs::read_to_string(&edits[0].1).unwrap(), "a\n");
+        assert!(edits[0].2.contains("+b"));
+        assert!(result.contains("已完成"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn third_read_stops_without_fetching_or_applying_mixed_edit() {
+        let (dir, project) = chat_runner_fixture("third-read-stop");
+        let mut rounds = PresetModelRounds::new(&[
+            "【工具调用】{\"tool\":\"read_file\",\"file\":\"main.tex\"}\n【工具调用】{\"tool\":\"replace\",\"file\":\"main.tex\",\"old\":\"a\",\"new\":\"first\"}",
+            "【工具调用】{\"tool\":\"read_file\",\"file\":\"main.tex\"}\n【工具调用】{\"tool\":\"replace\",\"file\":\"main.tex\",\"old\":\"a\",\"new\":\"second\"}",
+            "【工具调用】{\"tool\":\"read_file\",\"file\":\"main.tex\"}\n【工具调用】{\"tool\":\"replace\",\"file\":\"main.tex\",\"old\":\"a\",\"new\":\"third\"}",
+            "【工具调用】{\"tool\":\"replace\",\"file\":\"main.tex\",\"old\":\"a\",\"new\":\"unexpected\"}",
+        ]);
+        let mut edits = Vec::new();
+        let result = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(run_edit_chat(
+                &mut rounds,
+                &project,
+                Some("main.tex"),
+                None,
+                "修改文件",
+                &[],
+                &mut |rel, snapshot, diff| {
+                    edits.push((rel.to_string(), snapshot.to_string(), diff.to_string()));
+                },
+            ))
+            .unwrap();
+
+        assert_eq!(rounds.seen_messages.len(), 3);
+        assert_eq!(rounds.replies.len(), 1, "fourth reply must not be fetched");
+        assert_eq!(project.read_file("main.tex").unwrap(), "a\n");
+        assert!(edits.is_empty());
+        assert_eq!(result, "已达到本次请求的文件读取上限；请缩小范围后重试。");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_round_does_not_consume_stale_edit_retry() {
+        let (dir, project) = chat_runner_fixture("read-then-stale-retry");
+        let mut rounds = PresetModelRounds::new(&[
+            "【工具调用】{\"tool\":\"read_file\",\"file\":\"main.tex\"}",
+            "【工具调用】{\"tool\":\"replace\",\"file\":\"main.tex\",\"old\":\"missing\",\"new\":\"b\"}",
+            "【工具调用】{\"tool\":\"replace\",\"file\":\"main.tex\",\"old\":\"a\",\"new\":\"b\"}",
+        ]);
+        let mut edits = Vec::new();
+        let result = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(run_edit_chat(
+                &mut rounds,
+                &project,
+                Some("main.tex"),
+                None,
+                "修改文件",
+                &[],
+                &mut |rel, snapshot, diff| {
+                    edits.push((rel.to_string(), snapshot.to_string(), diff.to_string()));
+                },
+            ))
+            .unwrap();
+
+        assert_eq!(rounds.seen_messages.len(), 3);
+        assert!(rounds.seen_messages[2]
+            .iter()
+            .any(|message| message.content.contains("你刚才的方案无法应用")));
+        assert_eq!(project.read_file("main.tex").unwrap(), "b\n");
+        assert_eq!(edits.len(), 1);
+        assert!(result.contains("已自动应用 1 处修改"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn finalized_tool_text_hides_json_but_keeps_explanation() {
         let reply = "我先读取文件。\n【工具调用】{\"tool\":\"read_file\",\"file\":\"a.tex\"}\n解释：已修复摘要环境。";
         let text = user_facing_tool_text(reply);
@@ -1261,6 +1447,27 @@ mod tests {
         assert!(!text.contains("工具调用"));
         assert!(text.contains("准备修改"));
         assert!(text.contains("修改已完成"));
+    }
+
+    #[test]
+    fn finalized_tool_text_cleans_tool_after_explanation() {
+        let reply = "解释：保留这段说明。\n【工具调用】{\"tool\":\"read_file\",\"file\":\"main.tex\"}\n结尾说明。";
+        let text = user_facing_tool_text(reply);
+        assert!(!text.contains("read_file"));
+        assert!(!text.contains("工具调用"));
+        assert!(text.contains("保留这段说明"));
+        assert!(text.contains("结尾说明"));
+    }
+
+    #[test]
+    fn finalized_tool_text_cleans_tools_around_explanation() {
+        let reply = "【工具调用】{\"tool\":\"read_file\",\"file\":\"main.tex\"}\n解释：已检查。\n【工具调用】{\"tool\":\"replace\",\"file\":\"main.tex\",\"old\":\"a\",\"new\":\"b\"}\n补充说明。";
+        let text = user_facing_tool_text(reply);
+        assert!(!text.contains("read_file"));
+        assert!(!text.contains("replace"));
+        assert!(!text.contains("工具调用"));
+        assert!(text.contains("已检查"));
+        assert!(text.contains("补充说明"));
     }
 
     #[test]
