@@ -400,14 +400,17 @@ pub async fn tb_ai_chat_stream(
     selection: Option<String>,
     history: Option<Vec<crate::core::ai::ChatMsg>>,
 ) -> Result<String, String> {
-    let (settings, proj) = {
+    let (settings, proj, project_generation) = {
         let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
         let guard = state.project.read().map_err(|e| e.to_string())?;
         let proj = guard
             .as_ref()
             .ok_or_else(|| "尚未打开项目".to_string())?
             .clone();
-        (settings, proj)
+        let project_generation = state
+            .project_generation
+            .load(std::sync::atomic::Ordering::SeqCst);
+        (settings, proj, project_generation)
     };
     if settings.api_key.is_none()
         && !matches!(
@@ -433,7 +436,6 @@ pub async fn tb_ai_chat_stream(
         "tb://ai-status",
         serde_json::json!({ "kind": "chat", "status": "start" }),
     );
-    let app2 = app.clone();
     let app3 = app.clone();
     use std::sync::atomic::Ordering;
     let applied_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -445,9 +447,7 @@ pub async fn tb_ai_chat_stream(
         selection.as_deref(),
         &question,
         history.as_deref().unwrap_or(&[]),
-        move |delta| {
-            let _ = app2.emit("tb://ai-stream", serde_json::json!({ "delta": delta }));
-        },
+        move |_delta| {},
         move |file, backup, diff| {
             ac2.fetch_add(1, Ordering::SeqCst);
             let _ = app3.emit(
@@ -502,11 +502,9 @@ pub async fn tb_ai_chat_stream(
                 &format!("编译任务异常终止: {e}"),
             )
         });
-        // sync the diagnostics panel with the fresh result
-        if let Ok(mut guard) = state.last_result.write() {
-            *guard = Some(cr.clone());
-        }
-        let _ = app.emit("tb://compile-done", &cr);
+        state.publish_compile_result_if_current(project_generation, &root, &cr, || {
+            crate::commands::compile::emit_compile_done(&app, &root, &cr);
+        })?;
         if cr.ok {
             full.push_str("\n\n✅ 自动编译验证通过。");
         } else {
@@ -529,7 +527,6 @@ pub async fn tb_ai_chat_stream(
                     "刚才的修改导致编译失败：{}。请用【工具调用】修复这些问题，保持其他内容不变。",
                     errs.join("；")
                 );
-                let app4 = app.clone();
                 let app5 = app.clone();
                 let applied2 = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
                 let ac3 = applied2.clone();
@@ -540,9 +537,7 @@ pub async fn tb_ai_chat_stream(
                     None,
                     &fix_q,
                     &[],
-                    move |delta| {
-                        let _ = app4.emit("tb://ai-stream", serde_json::json!({ "delta": delta }));
-                    },
+                    move |_delta| {},
                     move |file, backup, diff| {
                         ac3.fetch_add(1, Ordering::SeqCst);
                         let _ = app5.emit(
@@ -590,10 +585,14 @@ pub async fn tb_ai_chat_stream(
                                     &format!("编译任务异常终止: {e}"),
                                 )
                             });
-                            if let Ok(mut guard) = state.last_result.write() {
-                                *guard = Some(cr2.clone());
-                            }
-                            let _ = app.emit("tb://compile-done", &cr2);
+                            state.publish_compile_result_if_current(
+                                project_generation,
+                                &root2,
+                                &cr2,
+                                || {
+                                    crate::commands::compile::emit_compile_done(&app, &root2, &cr2);
+                                },
+                            )?;
                             if cr2.ok {
                                 full.push_str("\n✅ 修复后自动编译验证通过。");
                             } else {
@@ -610,6 +609,7 @@ pub async fn tb_ai_chat_stream(
             }
         }
     }
+    let _ = app.emit("tb://ai-stream", serde_json::json!({ "delta": &full }));
     let _ = app.emit("tb://ai-stream", serde_json::json!({ "done": true }));
     let _ = app.emit(
         "tb://ai-status",

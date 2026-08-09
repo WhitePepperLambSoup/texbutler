@@ -78,11 +78,8 @@ pub async fn ask_about_source_edit_stream(
     mut on_delta: impl FnMut(&str),
     mut on_edit: impl FnMut(&str, &str, &str),
 ) -> Result<String, String> {
-    let mut rounds = StreamingModelRounds {
-        settings: s,
-        on_delta: &mut on_delta,
-    };
-    run_edit_chat(
+    let mut rounds = StreamingModelRounds { settings: s };
+    let final_text = run_edit_chat(
         &mut rounds,
         project,
         file,
@@ -91,24 +88,22 @@ pub async fn ask_about_source_edit_stream(
         history,
         &mut on_edit,
     )
-    .await
+    .await?;
+    on_delta(&final_text);
+    Ok(final_text)
 }
 
 trait ModelRoundSource {
     async fn next_reply(&mut self, messages: &[ChatMsg]) -> Result<String, String>;
 }
 
-struct StreamingModelRounds<'a, D> {
+struct StreamingModelRounds<'a> {
     settings: &'a AiSettings,
-    on_delta: &'a mut D,
 }
 
-impl<D> ModelRoundSource for StreamingModelRounds<'_, D>
-where
-    D: FnMut(&str),
-{
+impl ModelRoundSource for StreamingModelRounds<'_> {
     async fn next_reply(&mut self, messages: &[ChatMsg]) -> Result<String, String> {
-        super::provider::chat_stream(self.settings, messages, &mut *self.on_delta)
+        super::provider::chat_stream(self.settings, messages, |_| {})
             .await
             .map_err(|error| error.to_string())
     }
@@ -1134,7 +1129,7 @@ fn build_messages(
         }
     }
     if let Some(f) = file {
-        if f.ends_with(".tex") {
+        if f.to_ascii_lowercase().ends_with(".tex") {
             if let Ok(content) = project.read_file(&f) {
                 // document summary: class / packages / section tree — a
                 // lightweight "repo map" so the AI knows the project shape
@@ -1842,6 +1837,123 @@ mod tests {
         assert_eq!(edited, vec!["contents/abstract.tex"]);
         assert_eq!(project.read_file("contents/abstract.tex").unwrap(), "new");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn spawn_streaming_replies(replies: Vec<String>) -> (String, std::thread::JoinHandle<()>) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            for reply in replies {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                    .unwrap();
+                let mut request = Vec::new();
+                let mut buffer = [0u8; 4096];
+                loop {
+                    let read = stream.read(&mut buffer).unwrap();
+                    if read == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(&buffer[..read]);
+                    let Some(header_end) = request.windows(4).position(|part| part == b"\r\n\r\n")
+                    else {
+                        continue;
+                    };
+                    let headers = String::from_utf8_lossy(&request[..header_end]);
+                    let content_length = headers
+                        .lines()
+                        .find_map(|line| {
+                            line.strip_prefix("content-length:")
+                                .or_else(|| line.strip_prefix("Content-Length:"))
+                        })
+                        .and_then(|value| value.trim().parse::<usize>().ok())
+                        .unwrap_or(0);
+                    if request.len() >= header_end + 4 + content_length {
+                        break;
+                    }
+                }
+
+                let payload = serde_json::json!({
+                    "choices": [{ "delta": { "content": reply } }]
+                });
+                let body = format!("data: {payload}\n\ndata: [DONE]\n\n");
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+        (format!("http://{address}/v1"), handle)
+    }
+
+    #[test]
+    fn streamed_text_equals_final_text_across_read_and_retry_rounds() {
+        fn ignore_edit(_: &str, _: &str, _: &str) {}
+
+        let (dir, project) = chat_runner_fixture("visible-stream-contract");
+        let replies = vec![
+            r#"{"tool":"read_file","file":"main.tex"}"#.to_string(),
+            r#"{"tool":"replace","file":"main.tex","old":"missing","new":"b"}"#.to_string(),
+            "{\"tool\":\"replace\",\"file\":\"main.tex\",\"old\":\"a\",\"new\":\"b\"}\nDone."
+                .to_string(),
+        ];
+        let (base_url, server) = spawn_streaming_replies(replies);
+        let settings = AiSettings {
+            provider: super::super::provider::ProviderKind::Ollama { base_url },
+            model: "stream-contract-test".into(),
+            ..Default::default()
+        };
+        let mut deltas = Vec::new();
+        let result = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(ask_about_source_edit_stream(
+                &settings,
+                &project,
+                Some("main.tex"),
+                None,
+                "edit",
+                &[],
+                |delta| deltas.push(delta.to_string()),
+                ignore_edit,
+            ))
+            .unwrap();
+        server.join().unwrap();
+        let streamed = deltas.concat();
+        let updated = project.read_file("main.tex").unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert_eq!(updated, "b\n");
+        assert_eq!(streamed, result);
+        assert!(!streamed.contains("read_file"));
+        assert!(!streamed.contains("missing"));
+    }
+
+    #[test]
+    fn uppercase_tex_file_is_included_in_current_file_context() {
+        let dir =
+            std::env::temp_dir().join(format!("tb-chat-uppercase-context-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("MAIN.TEX"),
+            "\\documentclass{article}\nUPPERCASE_CONTEXT_SENTINEL\n",
+        )
+        .unwrap();
+        let project = Project::open(&dir).unwrap();
+
+        let messages = build_messages(&project, Some("MAIN.TEX"), None, "question", 30_000, &[]);
+        let user = messages.last().unwrap().content.clone();
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(user.contains("UPPERCASE_CONTEXT_SENTINEL"));
     }
 
     #[test]

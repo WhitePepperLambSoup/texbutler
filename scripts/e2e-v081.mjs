@@ -79,12 +79,21 @@ async function main() {
   })()`);
   await sleep(2500);
   await exec(`(async () => {
-    const { useProjectStore } = await import('/src/store/projectStore.ts');
+    const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+    const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+      ?? '/src/store/projectStore.ts';
+    const { useProjectStore } = await import(projectUrl);
     await useProjectStore.getState().openProject(${JSON.stringify(PROJ)});
     await useProjectStore.getState().openFile('main.tex');
     return true;
   })()`);
-  await sleep(800);
+  let layoutReady = false;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    layoutReady = await exec(`Boolean(document.querySelector('.col-tree') && document.querySelectorAll('.splitter-v').length >= 3 && document.querySelector('.splitter-h'))`);
+    if (layoutReady) break;
+    await sleep(100);
+  }
+  if (!layoutReady) throw new Error("splitter layout did not render after opening the project");
 
   // 1) splitters exist; tree width default 220
   const step1 = JSON.parse(await exec(`(() => {

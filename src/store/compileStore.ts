@@ -1,7 +1,8 @@
 import { create } from "zustand";
-import { api, onEvent, events, type CompileProgress, type CompileResult, type Issue } from "../api";
+import { api, onEvent, events, type CompileDoneEvent, type CompileProgress, type CompileResult, type Issue } from "../api";
 import { useProjectStore } from "./projectStore";
 import { useI18n } from "../i18n";
+import { normalizeProjectRoot } from "./aiSessionBindings";
 
 interface CompileState {
   running: boolean;
@@ -115,7 +116,11 @@ export const useCompileStore = create<CompileState>((set, get) => ({
 onEvent<CompileProgress>(events.compileProgress, (p) => {
   useCompileStore.setState({ progress: p });
 });
-onEvent<CompileResult>(events.compileDone, (r) => {
+onEvent<CompileDoneEvent>(events.compileDone, (payload) => {
+  if (normalizeProjectRoot(payload.root) !== normalizeProjectRoot(useProjectStore.getState().root)) {
+    return;
+  }
+  const r = payload.result;
   const startedAt = useCompileStore.getState().startedAt;
   const elapsedSec = startedAt ? Math.round((Date.now() - startedAt) / 100) / 10 : null;
   useCompileStore.setState({

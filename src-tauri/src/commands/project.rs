@@ -5,6 +5,7 @@ use crate::state::AppState;
 use image::GenericImageView;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
 
@@ -262,6 +263,8 @@ pub async fn tb_open_project(
     {
         let mut proj_guard = state.project.write().map_err(|e| e.to_string())?;
         *proj_guard = Some(proj);
+        state.project_generation.fetch_add(1, Ordering::SeqCst);
+        *state.last_result.write().map_err(|e| e.to_string())? = None;
     }
     *state.watcher.write().map_err(|e| e.to_string())? = Some(handle);
 
@@ -311,6 +314,8 @@ pub async fn tb_new_project(
     {
         let mut proj_guard = state.project.write().map_err(|e| e.to_string())?;
         *proj_guard = Some(proj);
+        state.project_generation.fetch_add(1, Ordering::SeqCst);
+        *state.last_result.write().map_err(|e| e.to_string())? = None;
     }
     *state.watcher.write().map_err(|e| e.to_string())? = Some(handle);
     Ok(project_info(&state)?)

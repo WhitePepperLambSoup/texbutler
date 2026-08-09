@@ -78,32 +78,45 @@ async function main() {
   })()`);
   await sleep(2500);
   await exec(`(async () => {
-    const { useProjectStore } = await import('/src/store/projectStore.ts');
+    const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+    const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+      ?? '/src/store/projectStore.ts';
+    const { useProjectStore } = await import(projectUrl);
     await useProjectStore.getState().openProject(${JSON.stringify(PROJ)});
     await useProjectStore.getState().openFile('main.tex');
     return true;
   })()`);
-  await sleep(800);
+  let layoutReady = false;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    layoutReady = await exec(`Boolean(document.querySelector('.editor-tabs') && document.querySelector('.monaco-editor') && document.querySelector('.ai-rail'))`);
+    if (layoutReady) break;
+    await sleep(100);
+  }
+  if (!layoutReady) throw new Error('editor layout did not render after opening the project');
 
   // 1) toolbar has the "New file" button; clicking opens the template dialog
   const step1 = JSON.parse(await exec(`(async () => {
-    const btns = [...document.querySelectorAll('.toolbar .btn')];
-    const nb = btns.find((b) => b.textContent.includes('新建文件') || b.textContent.includes('New file'));
+    const nb = document.querySelector('.toolbar-new-file');
     if (!nb) return JSON.stringify({ found: false });
     nb.click();
-    await new Promise((r) => setTimeout(r, 300));
-    const modal = document.querySelector('.modal');
-    const tplSelect = modal && modal.querySelector('select');
-    const opts = tplSelect ? [...tplSelect.options].map((o) => o.value) : [];
-    const hasTpl = opts.includes('article') && opts.includes('ctexart') && opts.includes('beamer');
+    for (let attempt = 0; attempt < 50 && !document.querySelector('.new-file-modal'); attempt += 1) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const modal = document.querySelector('.new-file-modal');
+    if (!modal) return JSON.stringify({ found: true, modal: false });
+    const tabs = [...modal.querySelectorAll('[data-new-file-tab]')].map((button) => button.dataset.newFileTab);
+    const basicSeeds = modal.querySelectorAll('.template-card').length;
     // close dialog
-    const closeBtn = modal && modal.querySelector('.modal-header .btn-mini');
+    const closeBtn = modal.querySelector('.modal-header .btn-mini');
     if (closeBtn) closeBtn.click();
     await new Promise((r) => setTimeout(r, 200));
-    return JSON.stringify({ found: true, hasTpl, opts });
+    return JSON.stringify({ found: true, modal: true, tabs, basicSeeds });
   })()`));
   console.log("STEP1 (toolbar new file):", JSON.stringify(step1));
-  const step1Ok = step1.found === true && step1.hasTpl === true;
+  const step1Ok = step1.found === true
+    && step1.modal === true
+    && JSON.stringify(step1.tabs) === JSON.stringify(['basic', 'user', 'market'])
+    && step1.basicSeeds === 6;
 
   // 2) create a file via the API-equivalent path (template seeding works)
   const step2 = JSON.parse(await exec(`(async () => {

@@ -2367,6 +2367,38 @@ async function main() {
         delete window.__v087DeletedAskPromise;
         return true;
       })()`);
+      result.staleCompileEventRejectedAfterProjectSwitch = await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const compileUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
+          ?? '/src/store/compileStore.ts';
+        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+          ?? '/src/store/projectStore.ts';
+        const eventUrl = resources.find((name) => new URL(name).pathname.includes('/node_modules/.vite/deps/@tauri-apps_api_event.js'));
+        if (!eventUrl) throw new Error('Tauri event module URL not found');
+        const { useCompileStore } = await import(compileUrl);
+        const { useProjectStore } = await import(projectUrl);
+        const { emit } = await import(eventUrl);
+        const activeRoot = useProjectStore.getState().root;
+        const staleRoot = activeRoot === ${JSON.stringify(PROJ)} ? ${JSON.stringify(SESSION_PROJ)} : ${JSON.stringify(PROJ)};
+        useCompileStore.setState({ lastResult: null, compileIssues: [] });
+        await emit('tb://compile-done', {
+          root: staleRoot,
+          result: {
+            ok: false,
+            pdf_path: 'C:/STALE_PROJECT_A.pdf',
+            log_path: 'C:/STALE_PROJECT_A.log',
+            issues: [{ message: 'STALE_PROJECT_A_COMPILE', severity: 'error', file: 'main.tex', line: 1 }],
+            engine: 'tectonic',
+            fell_back: false,
+          },
+        });
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        const compile = useCompileStore.getState();
+        const project = useProjectStore.getState();
+        return compile.lastResult === null
+          && compile.compileIssues.length === 0
+          && project.pdfPath !== 'C:/STALE_PROJECT_A.pdf';
+      })()`);
       return result;
     };
 

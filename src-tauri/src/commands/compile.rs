@@ -16,6 +16,22 @@ pub struct CompileProgress {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct CompileDoneEvent {
+    pub root: String,
+    pub result: CompileResult,
+}
+
+pub fn emit_compile_done(app: &AppHandle, root: &Path, result: &CompileResult) {
+    let _ = app.emit(
+        "tb://compile-done",
+        CompileDoneEvent {
+            root: root.to_string_lossy().to_string(),
+            result: result.clone(),
+        },
+    );
+}
+
 /// Start an async compile of the current project.
 /// `main_override` (optional relative path) compiles that file instead of
 /// the project's main file (used for "编译当前文件").
@@ -25,7 +41,7 @@ pub async fn tb_compile(
     state: State<'_, AppState>,
     main_override: Option<String>,
 ) -> Result<(), String> {
-    let (root, main) = {
+    let (root, main, project_generation) = {
         let guard = state.project.read().map_err(|e| e.to_string())?;
         let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
         let target = match main_override.filter(|p| !p.is_empty()) {
@@ -38,7 +54,11 @@ pub async fn tb_compile(
             }
             None => proj.main_file.clone(),
         };
-        (proj.root.clone(), target)
+        (
+            proj.root.clone(),
+            target,
+            state.project_generation.load(Ordering::SeqCst),
+        )
     };
     if !root.exists() {
         return Err("项目目录不存在".into());
@@ -48,7 +68,11 @@ pub async fn tb_compile(
     state.cancel_flag.store(false, Ordering::SeqCst);
     let _ = app.emit(
         "tb://compile-progress",
-        CompileProgress { stage: "prepare".into(), progress: 0.0, message: "准备编译…".into() },
+        CompileProgress {
+            stage: "prepare".into(),
+            progress: 0.0,
+            message: "准备编译…".into(),
+        },
     );
 
     // read settings snapshot for the scheduler
@@ -86,16 +110,21 @@ pub async fn tb_compile(
         ),
     };
 
-    {
-        let mut guard = state.last_result.write().map_err(|e| e.to_string())?;
-        *guard = Some(result.clone());
-    }
-    let _ = app.emit("tb://compile-progress", CompileProgress {
-        stage: "done".into(),
-        progress: 1.0,
-        message: if result.ok { "编译完成".into() } else { "编译失败".into() },
-    });
-    let _ = app.emit("tb://compile-done", &result);
+    let _ = app.emit(
+        "tb://compile-progress",
+        CompileProgress {
+            stage: "done".into(),
+            progress: 1.0,
+            message: if result.ok {
+                "编译完成".into()
+            } else {
+                "编译失败".into()
+            },
+        },
+    );
+    state.publish_compile_result_if_current(project_generation, &root, &result, || {
+        emit_compile_done(&app, &root, &result);
+    })?;
     Ok(())
 }
 

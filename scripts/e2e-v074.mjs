@@ -95,7 +95,10 @@ async function main() {
   let createOk = false;
   if (created.dir) {
     await exec(`(async () => {
-      const { useProjectStore } = await import('/src/store/projectStore.ts');
+      const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+      const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+        ?? '/src/store/projectStore.ts';
+      const { useProjectStore } = await import(projectUrl);
       await useProjectStore.getState().openProject(${JSON.stringify(created.dir)});
       await new Promise((r) => setTimeout(r, 600));
       const st = useProjectStore.getState();
@@ -130,11 +133,16 @@ async function main() {
     const toolbarButton = document.querySelector('.toolbar-new-file');
     if (!toolbarButton) return JSON.stringify({ modal: false });
     toolbarButton.click();
-    await new Promise((r) => setTimeout(r, 400));
+    for (let attempt = 0; attempt < 50 && !document.querySelector('.new-file-modal'); attempt += 1) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    if (!document.querySelector('.new-file-modal')) return JSON.stringify({ modal: false });
     const tabs = [...document.querySelectorAll('[data-new-file-tab]')].map((b) => b.dataset.newFileTab);
     const marketBtn = document.querySelector('[data-new-file-tab="market"]');
     if (marketBtn) marketBtn.click();
-    await new Promise((r) => setTimeout(r, 1200));
+    for (let attempt = 0; attempt < 100 && document.querySelectorAll('.market-card').length === 0; attempt += 1) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
     // clear any residual search filter (the modal keeps state between
     // open/close cycles) so we count the full unfiltered list
     const searchReset = document.querySelector('.market-search');

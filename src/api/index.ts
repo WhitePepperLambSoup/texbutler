@@ -163,6 +163,11 @@ export interface BundleStatus {
   system_texlive: boolean;
 }
 
+export interface CompileDoneEvent {
+  root: string;
+  result: CompileResult;
+}
+
 export type TemplateSource = "user" | "market";
 
 export interface ImportedTemplate {

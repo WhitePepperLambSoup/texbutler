@@ -426,7 +426,7 @@ fn create_missing_target_parents(project: &Project, target: &Path) -> Result<Vec
     Ok(created)
 }
 
-pub fn copy_tree_checked(src: &Path, dst: &Path, excluded_dirs: &[&str]) -> Result<(), String> {
+pub fn copy_tree_checked(src: &Path, dst: &Path, excluded_entries: &[&str]) -> Result<(), String> {
     let source_metadata = std::fs::symlink_metadata(src)
         .map_err(|error| format!("could not inspect template source directory: {error}"))?;
     if source_metadata.file_type().is_symlink() || !source_metadata.is_dir() {
@@ -453,15 +453,15 @@ pub fn copy_tree_checked(src: &Path, dst: &Path, excluded_dirs: &[&str]) -> Resu
         }
 
         let name = entry.file_name();
+        if excluded_entries
+            .iter()
+            .any(|excluded| name == std::ffi::OsStr::new(excluded))
+        {
+            continue;
+        }
         let to = dst.join(&name);
         if metadata.is_dir() {
-            if excluded_dirs
-                .iter()
-                .any(|excluded| name == std::ffi::OsStr::new(excluded))
-            {
-                continue;
-            }
-            copy_tree_checked(&from, &to, excluded_dirs)?;
+            copy_tree_checked(&from, &to, excluded_entries)?;
         } else if metadata.is_file() {
             std::fs::copy(&from, &to)
                 .map_err(|error| format!("could not copy template file: {error}"))?;
@@ -492,7 +492,13 @@ fn stage_resolved_template(source: ResolvedTemplate<'_>, stage: &Path) -> Result
         ResolvedTemplate::Directory(directory) => copy_tree_checked(
             directory,
             stage,
-            &[".git", ".texbutler", "target", "node_modules"],
+            &[
+                ".git",
+                ".texbutler",
+                ".texbutler-verified",
+                "target",
+                "node_modules",
+            ],
         ),
         ResolvedTemplate::SingleFile(file) => {
             let metadata = std::fs::symlink_metadata(file)
@@ -565,6 +571,7 @@ enum DestinationEntry {
     Conflict,
 }
 
+#[cfg(test)]
 fn inspect_merge_conflicts_with<F>(
     stage: &Path,
     destination: &Path,
@@ -662,6 +669,7 @@ where
     }
 }
 
+#[cfg(test)]
 fn inspect_merge_conflicts(stage: &Path, destination: &Path) -> Result<Vec<MergeEntry>, String> {
     inspect_merge_conflicts_with(
         stage,
@@ -763,6 +771,308 @@ fn metadata_is_reparse_point(metadata: &std::fs::Metadata) -> bool {
 #[cfg(not(windows))]
 fn metadata_is_reparse_point(_metadata: &std::fs::Metadata) -> bool {
     false
+}
+
+#[cfg(windows)]
+mod relative_directory_io {
+    use std::ffi::{c_void, OsStr};
+    use std::io;
+    use std::os::windows::ffi::OsStrExt;
+    use std::os::windows::io::{AsRawHandle, FromRawHandle};
+
+    #[repr(C)]
+    struct UnicodeString {
+        length: u16,
+        maximum_length: u16,
+        buffer: *mut u16,
+    }
+
+    #[repr(C)]
+    struct ObjectAttributes {
+        length: u32,
+        root_directory: *mut c_void,
+        object_name: *mut UnicodeString,
+        attributes: u32,
+        security_descriptor: *mut c_void,
+        security_quality_of_service: *mut c_void,
+    }
+
+    #[repr(C)]
+    struct IoStatusBlock {
+        status_or_pointer: *mut c_void,
+        information: usize,
+    }
+
+    #[link(name = "ntdll")]
+    extern "system" {
+        fn NtCreateFile(
+            file_handle: *mut *mut c_void,
+            desired_access: u32,
+            object_attributes: *mut ObjectAttributes,
+            io_status_block: *mut IoStatusBlock,
+            allocation_size: *mut i64,
+            file_attributes: u32,
+            share_access: u32,
+            create_disposition: u32,
+            create_options: u32,
+            ea_buffer: *mut c_void,
+            ea_length: u32,
+        ) -> i32;
+        fn RtlNtStatusToDosError(status: i32) -> u32;
+    }
+
+    const DELETE: u32 = 0x0001_0000;
+    const GENERIC_WRITE: u32 = 0x4000_0000;
+    const FILE_LIST_DIRECTORY: u32 = 0x0000_0001;
+    const FILE_READ_ATTRIBUTES: u32 = 0x0000_0080;
+    const SYNCHRONIZE: u32 = 0x0010_0000;
+    const FILE_SHARE_READ: u32 = 0x0000_0001;
+    const FILE_SHARE_WRITE: u32 = 0x0000_0002;
+    const FILE_SHARE_DELETE: u32 = 0x0000_0004;
+    const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x0000_0010;
+    const FILE_ATTRIBUTE_NORMAL: u32 = 0x0000_0080;
+    const FILE_OPEN: u32 = 0x0000_0001;
+    const FILE_CREATE: u32 = 0x0000_0002;
+    const FILE_DIRECTORY_FILE: u32 = 0x0000_0001;
+    const FILE_SYNCHRONOUS_IO_NONALERT: u32 = 0x0000_0020;
+    const FILE_NON_DIRECTORY_FILE: u32 = 0x0000_0040;
+    const FILE_OPEN_FOR_BACKUP_INTENT: u32 = 0x0000_4000;
+    const FILE_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+    const OBJ_CASE_INSENSITIVE: u32 = 0x0000_0040;
+
+    fn nt_create_relative(
+        parent: &std::fs::File,
+        name: &OsStr,
+        desired_access: u32,
+        file_attributes: u32,
+        disposition: u32,
+        options: u32,
+    ) -> io::Result<std::fs::File> {
+        let mut name: Vec<u16> = name.encode_wide().collect();
+        let byte_len = name
+            .len()
+            .checked_mul(std::mem::size_of::<u16>())
+            .and_then(|length| u16::try_from(length).ok())
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "entry name is too long"))?;
+        let mut unicode = UnicodeString {
+            length: byte_len,
+            maximum_length: byte_len,
+            buffer: name.as_mut_ptr(),
+        };
+        let mut attributes = ObjectAttributes {
+            length: std::mem::size_of::<ObjectAttributes>() as u32,
+            root_directory: parent.as_raw_handle().cast(),
+            object_name: &mut unicode,
+            attributes: OBJ_CASE_INSENSITIVE,
+            security_descriptor: std::ptr::null_mut(),
+            security_quality_of_service: std::ptr::null_mut(),
+        };
+        let mut status_block = IoStatusBlock {
+            status_or_pointer: std::ptr::null_mut(),
+            information: 0,
+        };
+        let mut raw_handle = std::ptr::null_mut();
+        let status = unsafe {
+            NtCreateFile(
+                &mut raw_handle,
+                desired_access,
+                &mut attributes,
+                &mut status_block,
+                std::ptr::null_mut(),
+                file_attributes,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                disposition,
+                options,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        if status < 0 {
+            let error = unsafe { RtlNtStatusToDosError(status) };
+            return Err(io::Error::from_raw_os_error(error as i32));
+        }
+        Ok(unsafe { std::fs::File::from_raw_handle(raw_handle.cast()) })
+    }
+
+    pub fn open_child(parent: &std::fs::File, name: &OsStr) -> io::Result<std::fs::File> {
+        nt_create_relative(
+            parent,
+            name,
+            FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+            FILE_ATTRIBUTE_NORMAL,
+            FILE_OPEN,
+            FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_FOR_BACKUP_INTENT | FILE_OPEN_REPARSE_POINT,
+        )
+    }
+
+    pub fn create_directory(parent: &std::fs::File, name: &OsStr) -> io::Result<std::fs::File> {
+        nt_create_relative(
+            parent,
+            name,
+            DELETE | FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+            FILE_ATTRIBUTE_DIRECTORY,
+            FILE_CREATE,
+            FILE_DIRECTORY_FILE
+                | FILE_SYNCHRONOUS_IO_NONALERT
+                | FILE_OPEN_FOR_BACKUP_INTENT
+                | FILE_OPEN_REPARSE_POINT,
+        )
+    }
+
+    pub fn create_file(parent: &std::fs::File, name: &OsStr) -> io::Result<std::fs::File> {
+        nt_create_relative(
+            parent,
+            name,
+            GENERIC_WRITE | DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+            FILE_ATTRIBUTE_NORMAL,
+            FILE_CREATE,
+            FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_REPARSE_POINT,
+        )
+    }
+}
+
+#[cfg(unix)]
+mod relative_directory_io {
+    use std::ffi::{c_char, c_int, c_uint, CString, OsStr};
+    use std::io;
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::io::{AsRawFd, FromRawFd};
+
+    extern "C" {
+        fn openat(dirfd: c_int, path: *const c_char, flags: c_int, mode: c_uint) -> c_int;
+        fn mkdirat(dirfd: c_int, path: *const c_char, mode: c_uint) -> c_int;
+    }
+
+    const O_RDONLY: c_int = 0;
+    const O_WRONLY: c_int = 1;
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    const O_CREAT: c_int = 0x40;
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    const O_EXCL: c_int = 0x80;
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    const O_NOFOLLOW: c_int = 0x20_000;
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    const O_CLOEXEC: c_int = 0x8_0000;
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    const O_CREAT: c_int = 0x0200;
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    const O_EXCL: c_int = 0x0800;
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    const O_NOFOLLOW: c_int = 0x0100;
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    const O_CLOEXEC: c_int = 0x100_0000;
+
+    fn child_name(name: &OsStr) -> io::Result<CString> {
+        CString::new(name.as_bytes())
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "entry name contains NUL"))
+    }
+
+    fn open_child_with_flags(
+        parent: &std::fs::File,
+        name: &OsStr,
+        flags: c_int,
+        mode: c_uint,
+    ) -> io::Result<std::fs::File> {
+        let name = child_name(name)?;
+        let fd = unsafe { openat(parent.as_raw_fd(), name.as_ptr(), flags, mode) };
+        if fd < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(unsafe { std::fs::File::from_raw_fd(fd) })
+    }
+
+    pub fn open_child(parent: &std::fs::File, name: &OsStr) -> io::Result<std::fs::File> {
+        open_child_with_flags(parent, name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC, 0)
+    }
+
+    pub fn create_directory(parent: &std::fs::File, name: &OsStr) -> io::Result<std::fs::File> {
+        let name_c = child_name(name)?;
+        let status = unsafe { mkdirat(parent.as_raw_fd(), name_c.as_ptr(), 0o777) };
+        if status < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        open_child(parent, name)
+    }
+
+    pub fn create_file(parent: &std::fs::File, name: &OsStr) -> io::Result<std::fs::File> {
+        open_child_with_flags(
+            parent,
+            name,
+            O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
+            0o666,
+        )
+    }
+}
+
+struct TrustedDirectory {
+    handle: std::fs::File,
+    identity: ObjectIdentity,
+}
+
+impl TrustedDirectory {
+    fn from_handle(handle: std::fs::File) -> Result<Self, String> {
+        let metadata = handle
+            .metadata()
+            .map_err(|error| format!("could not inspect template directory handle: {error}"))?;
+        if !metadata.is_dir() || metadata_is_reparse_point(&metadata) {
+            return Err("template destination is not a trusted directory".into());
+        }
+        let identity = object_identity(&handle)
+            .ok_or_else(|| "could not identify template destination directory".to_string())?;
+        Ok(Self { handle, identity })
+    }
+
+    fn open_validated(project: &Project, path: &Path) -> Result<Self, String> {
+        project.canonical_inside(path)?;
+        let trusted = Self::from_handle(open_directory_handle(path)?)?;
+        trusted.validate_path(project, path)?;
+        Ok(trusted)
+    }
+
+    fn validate_path(&self, project: &Project, path: &Path) -> Result<(), String> {
+        project.canonical_inside(path)?;
+        let metadata = std::fs::symlink_metadata(path)
+            .map_err(|error| format!("could not inspect template destination: {error}"))?;
+        if metadata.file_type().is_symlink() || metadata_is_reparse_point(&metadata) {
+            return Err("template import destination changed during import".into());
+        }
+        let current = Self::from_handle(open_directory_handle(path)?)?;
+        if current.identity != self.identity {
+            return Err("template import destination changed during import".into());
+        }
+        Ok(())
+    }
+
+    fn try_clone(&self) -> Result<Self, String> {
+        Self::from_handle(
+            self.handle
+                .try_clone()
+                .map_err(|error| format!("could not retain template directory: {error}"))?,
+        )
+    }
+
+    fn inspect_child(
+        &self,
+        name: &std::ffi::OsStr,
+    ) -> Result<(DestinationEntry, Option<Self>), String> {
+        match relative_directory_io::open_child(&self.handle, name) {
+            Ok(handle) => {
+                let metadata = handle
+                    .metadata()
+                    .map_err(|error| format!("could not inspect template destination: {error}"))?;
+                if metadata.is_dir() && !metadata_is_reparse_point(&metadata) {
+                    let directory = Self::from_handle(handle)?;
+                    Ok((DestinationEntry::ReusableDirectory, Some(directory)))
+                } else {
+                    Ok((DestinationEntry::Conflict, None))
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                Ok((DestinationEntry::Missing, None))
+            }
+            Err(_) => Ok((DestinationEntry::Conflict, None)),
+        }
+    }
 }
 
 fn open_directory_handle(path: &Path) -> Result<std::fs::File, String> {
@@ -926,6 +1236,7 @@ fn create_directory_handle(path: &Path) -> std::io::Result<std::fs::File> {
     std::fs::File::open(path)
 }
 
+#[cfg(test)]
 fn create_file_handle(path: &Path) -> std::io::Result<std::fs::File> {
     #[cfg(windows)]
     {
@@ -1346,6 +1657,7 @@ fn cleanup_unidentified_created_object(
     }
 }
 
+#[cfg(test)]
 fn create_owned_file_with_identity(
     path: &Path,
     identify: fn(&std::fs::File) -> Option<ObjectIdentity>,
@@ -1360,10 +1672,12 @@ fn create_owned_file_with_identity(
     )
 }
 
+#[cfg(test)]
 fn create_owned_file(path: &Path) -> Result<OwnedObject, String> {
     create_owned_file_with_identity(path, object_identity)
 }
 
+#[cfg(test)]
 fn create_owned_directory_with_identity(
     path: &Path,
     identify: fn(&std::fs::File) -> Option<ObjectIdentity>,
@@ -1378,6 +1692,7 @@ fn create_owned_directory_with_identity(
     )
 }
 
+#[cfg(test)]
 fn create_owned_directory(path: &Path) -> Result<OwnedObject, String> {
     create_owned_directory_with_identity(path, object_identity)
 }
@@ -1399,6 +1714,227 @@ impl CreatedEntries {
     }
 }
 
+struct TrustedMergePlan {
+    entries: Vec<MergeEntry>,
+    directories: std::collections::HashMap<PathBuf, TrustedDirectory>,
+}
+
+fn inspect_merge_conflicts_trusted(
+    stage: &Path,
+    destination: TrustedDirectory,
+) -> Result<TrustedMergePlan, String> {
+    fn inspect(
+        stage: &Path,
+        relative: &Path,
+        destination: Option<TrustedDirectory>,
+        entries: &mut Vec<MergeEntry>,
+        conflicts: &mut Vec<String>,
+        directories: &mut std::collections::HashMap<PathBuf, TrustedDirectory>,
+    ) -> Result<(), String> {
+        let source_dir = stage.join(relative);
+        let mut children = std::fs::read_dir(&source_dir)
+            .map_err(|error| format!("could not inspect staged template: {error}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("could not inspect staged template: {error}"))?;
+        children.sort_by_key(|entry| entry.file_name());
+
+        for child in children {
+            let name = child.file_name();
+            let child_relative = relative.join(&name);
+            let source = child.path();
+            let source_metadata = std::fs::symlink_metadata(&source)
+                .map_err(|error| format!("could not inspect staged template: {error}"))?;
+            if source_metadata.file_type().is_symlink() {
+                return Err(format!(
+                    "template may not contain symbolic links: {}",
+                    source.display()
+                ));
+            }
+            let is_dir = source_metadata.is_dir();
+            if !is_dir && !source_metadata.is_file() {
+                return Err(format!(
+                    "template contains an unsupported file: {}",
+                    source.display()
+                ));
+            }
+
+            let (destination_entry, child_directory) = match destination.as_ref() {
+                Some(parent) => parent.inspect_child(&name)?,
+                None => (DestinationEntry::Missing, None),
+            };
+            if destination_entry == DestinationEntry::Conflict
+                || (!is_dir && destination_entry == DestinationEntry::ReusableDirectory)
+            {
+                conflicts.push(child_relative.to_string_lossy().replace('\\', "/"));
+            }
+            entries.push(MergeEntry {
+                relative: child_relative.clone(),
+                is_dir,
+            });
+            if is_dir {
+                let next_directory = if destination_entry == DestinationEntry::ReusableDirectory {
+                    let directory = child_directory.ok_or_else(|| {
+                        "template destination directory handle was lost".to_string()
+                    })?;
+                    directories.insert(child_relative.clone(), directory.try_clone()?);
+                    Some(directory)
+                } else {
+                    None
+                };
+                inspect(
+                    stage,
+                    &child_relative,
+                    next_directory,
+                    entries,
+                    conflicts,
+                    directories,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    let mut entries = Vec::new();
+    let mut conflicts = Vec::new();
+    let mut directories = std::collections::HashMap::new();
+    directories.insert(PathBuf::new(), destination.try_clone()?);
+    inspect(
+        stage,
+        Path::new(""),
+        Some(destination),
+        &mut entries,
+        &mut conflicts,
+        &mut directories,
+    )?;
+    if conflicts.is_empty() {
+        Ok(TrustedMergePlan {
+            entries,
+            directories,
+        })
+    } else {
+        Err(format!(
+            "template import conflicts with existing entries: {}",
+            conflicts.join(", ")
+        ))
+    }
+}
+
+fn create_owned_file_relative(
+    parent: &TrustedDirectory,
+    name: &std::ffi::OsStr,
+    path: &Path,
+) -> Result<OwnedObject, String> {
+    let handle = relative_directory_io::create_file(&parent.handle, name)
+        .map_err(|error| format!("could not create template file: {error}"))?;
+    OwnedObject::from_new_handle_with_identity(
+        path.to_path_buf(),
+        handle,
+        OwnedObjectKind::File,
+        object_identity,
+    )
+}
+
+fn create_owned_directory_relative(
+    parent: &TrustedDirectory,
+    name: &std::ffi::OsStr,
+    path: &Path,
+) -> Result<OwnedObject, String> {
+    let handle = relative_directory_io::create_directory(&parent.handle, name)
+        .map_err(|error| format!("could not create template directory: {error}"))?;
+    OwnedObject::from_new_handle_with_identity(
+        path.to_path_buf(),
+        handle,
+        OwnedObjectKind::Directory,
+        object_identity,
+    )
+}
+
+fn merge_staged_tree_trusted_with<F>(
+    stage: &Path,
+    destination_path: &Path,
+    mut plan: TrustedMergePlan,
+    mut copier: F,
+) -> Result<(), String>
+where
+    F: FnMut(&Path, &mut std::fs::File) -> Result<(), String>,
+{
+    let mut created = CreatedEntries::default();
+    for entry in plan.entries {
+        if entry.is_dir && plan.directories.contains_key(&entry.relative) {
+            continue;
+        }
+        let parent_relative = entry.relative.parent().unwrap_or_else(|| Path::new(""));
+        let name = entry
+            .relative
+            .file_name()
+            .ok_or_else(|| "invalid staged template entry".to_string())?;
+        let target_path = destination_path.join(&entry.relative);
+
+        if entry.is_dir {
+            let directory = {
+                let parent = plan
+                    .directories
+                    .get(parent_relative)
+                    .ok_or_else(|| "template destination parent handle is missing".to_string())?;
+                match create_owned_directory_relative(parent, name, &target_path) {
+                    Ok(directory) => directory,
+                    Err(error) => {
+                        created.rollback();
+                        return Err(error);
+                    }
+                }
+            };
+            let trusted = TrustedDirectory::from_handle(
+                directory
+                    .handle
+                    .try_clone()
+                    .map_err(|error| format!("could not retain template directory: {error}"))?,
+            )?;
+            created.dirs.push(directory);
+            plan.directories.insert(entry.relative, trusted);
+        } else {
+            let file = {
+                let parent = plan
+                    .directories
+                    .get(parent_relative)
+                    .ok_or_else(|| "template destination parent handle is missing".to_string())?;
+                match create_owned_file_relative(parent, name, &target_path) {
+                    Ok(file) => file,
+                    Err(error) => {
+                        created.rollback();
+                        return Err(error);
+                    }
+                }
+            };
+            created.files.push(file);
+            let target = &mut created.files.last_mut().expect("just pushed").handle;
+            if let Err(error) = copier(&stage.join(&entry.relative), target) {
+                created.rollback();
+                return Err(error);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn merge_staged_tree_trusted(
+    project: &Project,
+    stage: &Path,
+    destination_path: &Path,
+    destination: TrustedDirectory,
+) -> Result<(), String> {
+    destination.validate_path(project, destination_path)?;
+    let plan = inspect_merge_conflicts_trusted(stage, destination)?;
+    merge_staged_tree_trusted_with(stage, destination_path, plan, |source, target| {
+        let mut source = std::fs::File::open(source)
+            .map_err(|error| format!("could not open staged template file: {error}"))?;
+        std::io::copy(&mut source, target)
+            .map(|_| ())
+            .map_err(|error| format!("could not copy template file: {error}"))
+    })
+}
+
+#[cfg(test)]
 fn merge_staged_tree_with<F>(
     stage: &Path,
     destination: &Path,
@@ -1452,20 +1988,6 @@ where
         }
     }
     Ok(())
-}
-
-fn merge_staged_tree(
-    stage: &Path,
-    destination: &Path,
-    entries: &[MergeEntry],
-) -> Result<(), String> {
-    merge_staged_tree_with(stage, destination, entries, |source, target| {
-        let mut source = std::fs::File::open(source)
-            .map_err(|error| format!("could not open staged template file: {error}"))?;
-        std::io::copy(&mut source, target)
-            .map(|_| ())
-            .map_err(|error| format!("could not copy template file: {error}"))
-    })
 }
 
 fn join_relative(directory: &str, child: &str) -> String {
@@ -1591,12 +2113,12 @@ fn merge_resolved_template_from_nonce(
     let destination = project
         .resolve(&destination_dir)
         .ok_or_else(|| "template import directory escapes the project".to_string())?;
+    let trusted_destination = TrustedDirectory::open_validated(project, &destination)?;
     let stage = create_import_stage_from_nonce(project, starting_nonce)?;
     let main_inside = {
         stage_resolved_template(source, &stage.path)?;
         let main_inside = detect_main_document(&stage.path)?;
-        let entries = inspect_merge_conflicts(&stage.path, &destination)?;
-        merge_staged_tree(&stage.path, &destination, &entries)?;
+        merge_staged_tree_trusted(project, &stage.path, &destination, trusted_destination)?;
         main_inside
     };
     Ok(ImportedTemplate {
@@ -2901,6 +3423,98 @@ mod tests {
             "failed stage acquisition must clean up"
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn downloaded_template_marker_is_not_imported_or_reimported_as_a_conflict() {
+        let root = test_root("merge-market-marker");
+        let project_root = root.join("project");
+        let first_download = root.join("market-first");
+        let second_download = root.join("market-second");
+        write_fixture(
+            &project_root.join("main.tex"),
+            b"\\documentclass{article}\n",
+        );
+        write_fixture(&first_download.join(".texbutler-verified"), b"verified\n");
+        write_fixture(
+            &first_download.join("chapters/first.tex"),
+            b"\\documentclass{article}\nfirst market file\n",
+        );
+        write_fixture(&second_download.join(".texbutler-verified"), b"verified\n");
+        write_fixture(
+            &second_download.join("chapters/second.tex"),
+            b"\\documentclass{article}\nsecond market file\n",
+        );
+        let project = Project::open(&project_root).unwrap();
+
+        let first = resolve_market_template("remote-first", &first_download).unwrap();
+        merge_resolved_template(&project, "", first).unwrap();
+        let second = resolve_market_template("remote-second", &second_download).unwrap();
+        let second_result = merge_resolved_template(&project, "", second);
+        let marker_exists = project_root.join(".texbutler-verified").exists();
+        let first_exists = project_root.join("chapters/first.tex").exists();
+        let second_exists = project_root.join("chapters/second.tex").exists();
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(
+            second_result.is_ok(),
+            "second import should not conflict: {second_result:?}"
+        );
+        assert!(
+            !marker_exists,
+            "verification metadata must remain outside the project"
+        );
+        assert!(first_exists && second_exists);
+    }
+
+    #[test]
+    fn merge_never_writes_through_a_destination_replaced_during_copy() {
+        let root = test_root("merge-destination-replacement");
+        let staged = root.join("staged");
+        let project_root = root.join("project");
+        let container = project_root.join("container");
+        let destination = container.join("destination");
+        let parked = root.join("container-parked");
+        let outside = root.join("outside");
+        write_fixture(
+            &project_root.join("main.tex"),
+            b"\\documentclass{article}\n",
+        );
+        write_fixture(&staged.join("a-first.tex"), b"first\n");
+        write_fixture(&staged.join("b-second.tex"), b"second\n");
+        std::fs::create_dir_all(&destination).unwrap();
+        std::fs::create_dir_all(outside.join("destination")).unwrap();
+        let project = Project::open(&project_root).unwrap();
+        let trusted_destination = TrustedDirectory::open_validated(&project, &destination).unwrap();
+        let swapped = match std::fs::rename(&container, &parked) {
+            Ok(()) => true,
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => false,
+            Err(error) => panic!("could not park destination ancestor: {error}"),
+        };
+        if !swapped {
+            drop(trusted_destination);
+            let escaped = container.join("destination/b-second.tex").exists();
+            let _ = std::fs::remove_dir_all(&root);
+            assert!(
+                !escaped,
+                "a pinned destination must reject ancestor replacement"
+            );
+            return;
+        }
+        std::fs::rename(&outside, &container).unwrap();
+
+        let result =
+            merge_staged_tree_trusted(&project, &staged, &destination, trusted_destination);
+
+        let escaped = container.join("destination/b-second.tex").exists();
+        let parked_second = parked.join("destination/b-second.tex").exists();
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(
+            !escaped,
+            "destination replacement must never redirect a template write outside (result={result:?})"
+        );
+        assert!(result.is_err() || parked_second);
     }
 
     #[test]
