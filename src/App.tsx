@@ -96,15 +96,22 @@ export default function App() {
   const [newFileOpen, setNewFileOpen] = useState(false);
   const [welcomeRev, setWelcomeRev] = useState(0);
   // Windows-style splitter sizes (draggable separator bars, persisted)
-  const tree = usePanelSize("tb-tree-w", 220, 160, 460);
+  const tree = usePanelSize("tb-tree-w", 220, 160, 460, 1);
   const pdf = usePanelSize(
     "tb-pdf-w",
     360,
     240,
     Math.round((window.innerWidth || 1400) * 0.7),
+    -1,
   );
-  const ai = usePanelSize("tb-ai-w", 300, 240, 520);
-  const bottom = usePanelHeight("tb-bottom-h", 220, 140, Math.round((window.innerHeight || 900) * 0.55));
+  const ai = usePanelSize("tb-ai-w", 300, 240, 520, -1);
+  const bottom = usePanelHeight(
+    "tb-bottom-h",
+    220,
+    140,
+    Math.round((window.innerHeight || 900) * 0.55),
+    -1,
+  );
   const [aiOpen, setAiOpen] = useState(() => {
     // cold start: a narrow window must not restore an expanded AI rail
     // (the "AI panel cut off" bug on first launch)
@@ -620,25 +627,25 @@ export default function App() {
           {leftTab === "bib" && <BibPanel />}
           {leftTab === "todo" && <TodoPanel />}
         </aside>
-        <div className="splitter-v" onMouseDown={treeDrag} title={t("ui.resizeTree")} />
+        <div className="splitter-v" onPointerDown={treeDrag} title={t("ui.resizeTree")} />
         <main className={`col-editor ${splitFile ? "is-split" : ""}`}>
           <EditorPane />
           {splitFile && <SplitPane file={splitFile} onClose={() => setSplitFile(null)} />}
         </main>
-        <div className="splitter-v" onMouseDown={pdfDrag} title={t("ui.resizePdf")} />
+        <div className="splitter-v" onPointerDown={pdfDrag} title={t("ui.resizePdf")} />
         <aside className={`col-pdf ${pdfPath ? "has-pdf" : "no-pdf"}`} style={{ width: pdf.size }}>
           <PdfPreview revision={pdfRev} page={pdfPage ?? undefined} />
         </aside>
         <div
           className="splitter-v"
-          onMouseDown={aiDrag}
+          onPointerDown={aiDrag}
           title={t("ui.resizeAi")}
           style={{ visibility: aiOpen ? "visible" : "hidden" }}
         />
         <AiRail aiWidth={ai.size} open={aiOpen} onToggle={toggleAi} />
       </div>
       )}
-      <div className="splitter-h" onMouseDown={bottomDrag} title={t("ui.resizeBottom")} />
+      <div className="splitter-h" onPointerDown={bottomDrag} title={t("ui.resizeBottom")} />
       <div className="bottom" style={{ height: bottom.size }}>
         <ProblemsPanel />
       </div>

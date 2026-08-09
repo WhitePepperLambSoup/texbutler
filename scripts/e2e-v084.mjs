@@ -144,9 +144,37 @@ async function main() {
     const rect = splitter.getBoundingClientRect();
     const sx = rect.left + rect.width / 2;
     const sy = rect.top + 60;
-    splitter.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: sx, clientY: sy, button: 0 }));
-    window.dispatchEvent(new MouseEvent('mousemove', { clientX: sx + 80, clientY: sy }));
-    window.dispatchEvent(new MouseEvent('mouseup', {}));
+    const pointerId = 8401;
+    splitter.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true,
+      pointerId,
+      pointerType: 'mouse',
+      isPrimary: true,
+      clientX: sx,
+      clientY: sy,
+      button: 0,
+      buttons: 1,
+    }));
+    window.dispatchEvent(new PointerEvent('pointermove', {
+      bubbles: true,
+      pointerId,
+      pointerType: 'mouse',
+      isPrimary: true,
+      clientX: sx + 80,
+      clientY: sy,
+      button: -1,
+      buttons: 1,
+    }));
+    window.dispatchEvent(new PointerEvent('pointerup', {
+      bubbles: true,
+      pointerId,
+      pointerType: 'mouse',
+      isPrimary: true,
+      clientX: sx + 80,
+      clientY: sy,
+      button: -1,
+      buttons: 0,
+    }));
     await new Promise((r) => setTimeout(r, 150));
     const after = tree.getBoundingClientRect().width;
     return JSON.stringify({ before, after, saved: Number(localStorage.getItem('tb-tree-w')) });
@@ -173,6 +201,7 @@ async function main() {
   await rm(PROJ, { recursive: true, force: true }).catch(() => {});
   const pass = step1Ok && step2Ok && step3Ok && step4Ok;
   console.log("E2E-DONE", pass ? "PASS" : "FAIL", { step1Ok, step2Ok, step3Ok, step4Ok });
+  if (!pass) process.exitCode = 1;
 }
 
 main().catch((e) => { console.error("E2E-FAIL", e); process.exit(1); });

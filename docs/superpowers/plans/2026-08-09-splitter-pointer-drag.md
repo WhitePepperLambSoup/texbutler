@@ -24,6 +24,7 @@
 ## File Structure
 
 - Modify `scripts/e2e-v081.mjs`: use real pointer events and assert all four growth directions, all termination paths, style cleanup, and persisted restoration.
+- Modify `scripts/e2e-v084.mjs`: migrate its legacy splitter probe to Pointer Events and return a failing exit code when any assertion fails.
 - Modify `src/hooks/usePanelSize.ts`: implement one pointer-session dimension hook and retain the public width/height wrappers.
 - Modify `src/App.tsx`: assign correct growth directions and switch splitter bindings from `onMouseDown` to `onPointerDown`.
 
@@ -33,6 +34,7 @@
 
 **Files:**
 - Modify: `scripts/e2e-v081.mjs:70-150`
+- Modify: `scripts/e2e-v084.mjs:139-176`
 - Modify: `src/hooks/usePanelSize.ts:1-116`
 - Modify: `src/App.tsx:98-115,623-641`
 
@@ -417,7 +419,7 @@ Expected: every command exits `0`. v081 reports four correct positive growth del
 Run `git diff --check`, verify `git diff -- src-tauri/Cargo.toml` contains no intentional content, then stage exactly:
 
 ```powershell
-git add scripts/e2e-v081.mjs src/hooks/usePanelSize.ts src/App.tsx
+git add scripts/e2e-v081.mjs scripts/e2e-v084.mjs src/hooks/usePanelSize.ts src/App.tsx docs/superpowers/plans/2026-08-09-splitter-pointer-drag.md
 git commit -m "fix: make splitter dragging reliable"
 ```
 
