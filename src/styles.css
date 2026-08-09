@@ -1560,6 +1560,10 @@ html[data-theme] .ai-menu .ai-menu-item:disabled {
   box-shadow: none;
 }
 
+html[data-theme="liquid"] .editor-tools-menu .btn-mini:disabled {
+  color: #becae3;
+}
+
 .ai-menu-separator {
   height: 1px;
   margin: 4px;

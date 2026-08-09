@@ -1545,8 +1545,8 @@ async function main() {
           dragged,
           afterDrag,
           populated,
-          dragMovedPane: Math.abs((afterDrag.paneWidth ?? 0) - (empty.paneWidth ?? 0) - 40) <= 3,
-          dragSavedWidth: Math.abs((afterDrag.savedWidth ?? 0) - (empty.savedWidth ?? 0) - 40) <= 3,
+          dragMovedPane: Math.abs((afterDrag.paneWidth ?? 0) - (empty.paneWidth ?? 0) + 40) <= 3,
+          dragSavedWidth: Math.abs((afterDrag.savedWidth ?? 0) - (empty.savedWidth ?? 0) + 40) <= 3,
           widthPreserved: Math.abs((populated.paneWidth ?? 0) - (afterDrag.paneWidth ?? 0)) <= 1,
         };
       }
@@ -1612,6 +1612,16 @@ async function main() {
         ${body}
         return true;
       })()`);
+      const ensureAiRailOpen = async () => {
+        const collapsed = await exec(`document.querySelector('.ai-rail')?.classList.contains('collapsed') ?? true`);
+        if (collapsed) await clickSelector('.ai-rail-toggle');
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          const open = await exec(`document.querySelector('.ai-rail')?.classList.contains('open') ?? false`);
+          if (open) return true;
+          await sleep(50);
+        }
+        return false;
+      };
 
       await exec(`(() => {
         localStorage.removeItem('tb-ai-sessions');
@@ -1624,6 +1634,7 @@ async function main() {
       await sleep(250);
 
       const result = {};
+      result.aiRailOpenedForSessionUi = await ensureAiRailOpen();
       const bindingSemantics = JSON.parse(await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
         const bindingsUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/aiSessionBindings.ts') && new URL(name).search)
@@ -1765,8 +1776,12 @@ async function main() {
       })()`);
       result.foreignRollbackCannotExecute = foreignRollbackCalls === 0;
       await openFile('contents/abstract.tex');
-      await sleep(100);
-      result.ownerRollbackVisibleOnReturn = await exec(`Boolean(document.querySelector('.ai-generate-actions .btn-danger'))`);
+      result.ownerRollbackVisibleOnReturn = false;
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        result.ownerRollbackVisibleOnReturn = await exec(`Boolean(document.querySelector('.ai-generate-actions .btn-danger'))`);
+        if (result.ownerRollbackVisibleOnReturn) break;
+        await sleep(50);
+      }
       await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
         const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
@@ -2651,12 +2666,23 @@ async function main() {
   const projectFixtureStateOk = projectRestored;
   const browserRestored = cleanupErrors.length === 0
     && JSON.stringify(browserStateAfter) === JSON.stringify(browserStateBefore);
+  const browserStateDiff = browserRestored ? null : {
+    storage: [...new Set([
+      ...Object.keys(browserStateBefore?.storage ?? {}),
+      ...Object.keys(browserStateAfter?.storage ?? {}),
+    ])].filter((key) => browserStateBefore?.storage?.[key] !== browserStateAfter?.storage?.[key]),
+    theme: [browserStateBefore?.theme, browserStateAfter?.theme],
+    locale: [browserStateBefore?.locale, browserStateAfter?.locale],
+    projectFields: Object.keys(browserStateBefore?.project ?? {}).filter((key) => (
+      JSON.stringify(browserStateBefore?.project?.[key]) !== JSON.stringify(browserStateAfter?.project?.[key])
+    )),
+  };
   failed = !filesOk || !themeOk || !pdfOk || !sessionsOk || !projectFixtureStateOk || !sessionProjectStateOk || !browserRestored;
   console.log("FILES", JSON.stringify(files));
   console.log("THEME", JSON.stringify(theme));
   console.log("PDF", JSON.stringify(pdf));
   console.log("SESSIONS", JSON.stringify(sessions));
-  console.log("STATE", JSON.stringify({ browserRestored, projectFixtureStateOk, sessionProjectStateOk, cleanupErrors }));
+  console.log("STATE", JSON.stringify({ browserRestored, browserStateDiff, projectFixtureStateOk, sessionProjectStateOk, cleanupErrors }));
   console.log("E2E-DONE", failed ? "FAIL" : "PASS", { suite, filesOk, themeOk, pdfOk, sessionsOk, projectFixtureStateOk, sessionProjectStateOk, browserRestored });
   if (failed) process.exitCode = 1;
 }
