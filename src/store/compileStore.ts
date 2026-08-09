@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { api, onEvent, events, type CompileDoneEvent, type CompileProgress, type CompileResult, type Issue } from "../api";
+import { api, onEvent, events, type CompileDoneEvent, type CompileProgress, type CompileProgressEvent, type CompileResult, type Issue } from "../api";
 import { getProjectGeneration, useProjectStore } from "./projectStore";
 import { useI18n } from "../i18n";
 import { normalizeProjectRoot } from "./aiSessionBindings";
@@ -22,6 +22,12 @@ interface CompileState {
 
 let ruleCheckSeq = 0;
 let diagnosticsSeq = 0;
+
+function compileEventOwned(payload: { root: string; generation: number }): boolean {
+  const project = useProjectStore.getState();
+  return payload.generation === project.backendGeneration
+    && normalizeProjectRoot(payload.root) === normalizeProjectRoot(project.root);
+}
 
 export const useCompileStore = create<CompileState>((set, get) => ({
   running: false,
@@ -126,13 +132,40 @@ export const useCompileStore = create<CompileState>((set, get) => ({
 }));
 
 // ---- event wiring ----
-onEvent<CompileProgress>(events.compileProgress, (p) => {
+let observedProjectIdentity = {
+  root: normalizeProjectRoot(useProjectStore.getState().root),
+  generation: useProjectStore.getState().backendGeneration,
+};
+useProjectStore.subscribe((project) => {
+  const nextIdentity = {
+    root: normalizeProjectRoot(project.root),
+    generation: project.backendGeneration,
+  };
+  if (nextIdentity.root === observedProjectIdentity.root
+    && nextIdentity.generation === observedProjectIdentity.generation) {
+    return;
+  }
+  observedProjectIdentity = nextIdentity;
+  ruleCheckSeq += 1;
+  diagnosticsSeq += 1;
+  useCompileStore.setState({
+    running: false,
+    progress: null,
+    lastResult: null,
+    compileIssues: [],
+    ruleIssues: [],
+    checkRunning: false,
+    startedAt: null,
+    elapsedSec: null,
+  });
+});
+
+onEvent<CompileProgressEvent>(events.compileProgress, (p) => {
+  if (!compileEventOwned(p)) return;
   useCompileStore.setState({ progress: p });
 });
 onEvent<CompileDoneEvent>(events.compileDone, (payload) => {
-  if (normalizeProjectRoot(payload.root) !== normalizeProjectRoot(useProjectStore.getState().root)) {
-    return;
-  }
+  if (!compileEventOwned(payload)) return;
   const r = payload.result;
   const startedAt = useCompileStore.getState().startedAt;
   const elapsedSec = startedAt ? Math.round((Date.now() - startedAt) / 100) / 10 : null;

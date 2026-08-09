@@ -35,6 +35,7 @@ export interface ProjectFileNode {
 
 export interface ProjectInfo {
   root: string;
+  generation: number;
   main_file: string;
   files: ProjectFileNode[];
   pdf_url?: string | null;
@@ -44,6 +45,11 @@ export interface CompileProgress {
   stage: string;
   progress: number;
   message: string;
+}
+
+export interface CompileProgressEvent extends CompileProgress {
+  root: string;
+  generation: number;
 }
 
 export interface FixHunk {
@@ -165,6 +171,7 @@ export interface BundleStatus {
 
 export interface CompileDoneEvent {
   root: string;
+  generation: number;
   result: CompileResult;
 }
 

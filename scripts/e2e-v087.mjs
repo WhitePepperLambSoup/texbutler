@@ -2369,9 +2369,9 @@ async function main() {
       })()`);
       result.staleCompileCompletionReleasesNewProject = await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const compileUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
+        const compileUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
           ?? '/src/store/compileStore.ts';
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { useCompileStore } = await import(compileUrl);
         const { api } = await import(apiUrl);
@@ -2396,9 +2396,9 @@ async function main() {
         window.__v087ResolveCompile?.();
         await window.__v087CompilePromise;
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const compileUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
+        const compileUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
           ?? '/src/store/compileStore.ts';
-        const apiUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
           ?? '/src/api/index.ts';
         const { useCompileStore } = await import(compileUrl);
         const { api } = await import(apiUrl);
@@ -2410,13 +2410,89 @@ async function main() {
         delete window.__v087CompilePromise;
         return released;
       })()`);
+      result.projectSwitchClearsCompileState = await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const compileUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
+          ?? '/src/store/compileStore.ts';
+        const { useCompileStore } = await import(compileUrl);
+        useCompileStore.setState({
+          running: false,
+          progress: { stage: 'done', progress: 1, message: 'PROJECT_A_PROGRESS' },
+          lastResult: {
+            ok: false,
+            pdf_path: 'C:/PROJECT_A.pdf',
+            log_path: 'C:/PROJECT_A.log',
+            issues: [{ message: 'PROJECT_A_RESULT', severity: 'error', file: 'main.tex', line: 1 }],
+            engine: 'tectonic',
+            fell_back: false,
+          },
+          compileIssues: [{ message: 'PROJECT_A_COMPILE_ISSUE', severity: 'error', file: 'main.tex', line: 1 }],
+          ruleIssues: [{ message: 'PROJECT_A_RULE_ISSUE', severity: 'warning', file: 'main.tex', line: 2 }],
+          startedAt: 1,
+          elapsedSec: 9.9,
+        });
+        return true;
+      })()`);
+      await openSessionProject(compileOwnerBeforeSwitch);
+      result.projectSwitchClearsCompileState = await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const compileUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
+          ?? '/src/store/compileStore.ts';
+        const { useCompileStore } = await import(compileUrl);
+        const compile = useCompileStore.getState();
+        return compile.running === false
+          && compile.progress === null
+          && compile.lastResult === null
+          && compile.compileIssues.length === 0
+          && compile.ruleIssues.length === 0
+          && compile.startedAt === null
+          && compile.elapsedSec === null;
+      })()`);
+      result.staleCompileProgressRejectedAfterProjectSwitch = await exec(`(async () => {
+        const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+        const compileUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
+          ?? '/src/store/compileStore.ts';
+        const projectUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+          ?? '/src/store/projectStore.ts';
+        const eventUrl = [...resources].reverse().find((name) => new URL(name).pathname.includes('/node_modules/.vite/deps/@tauri-apps_api_event.js'));
+        if (!eventUrl) throw new Error('Tauri event module URL not found');
+        const { useCompileStore } = await import(compileUrl);
+        const { useProjectStore } = await import(projectUrl);
+        const { emit } = await import(eventUrl);
+        const project = useProjectStore.getState();
+        const activeRoot = project.root;
+        const activeGeneration = project.backendGeneration ?? 1;
+        const staleRoot = activeRoot === ${JSON.stringify(PROJ)} ? ${JSON.stringify(SESSION_PROJ)} : ${JSON.stringify(PROJ)};
+        const sentinel = { stage: 'prepare', progress: 0, message: 'CURRENT_PROJECT_PROGRESS' };
+        useCompileStore.setState({ progress: sentinel });
+        await emit('tb://compile-progress', {
+          root: staleRoot,
+          generation: activeGeneration,
+          stage: 'run',
+          progress: 0.3,
+          message: 'STALE_PROJECT_ROOT_PROGRESS',
+        });
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const foreignRootIgnored = useCompileStore.getState().progress?.message === sentinel.message;
+        useCompileStore.setState({ progress: sentinel });
+        await emit('tb://compile-progress', {
+          root: activeRoot,
+          generation: activeGeneration - 1,
+          stage: 'done',
+          progress: 1,
+          message: 'STALE_PROJECT_GENERATION_PROGRESS',
+        });
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const staleGenerationIgnored = useCompileStore.getState().progress?.message === sentinel.message;
+        return foreignRootIgnored && staleGenerationIgnored;
+      })()`);
       result.staleCompileEventRejectedAfterProjectSwitch = await exec(`(async () => {
         const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
-        const compileUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
+        const compileUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/compileStore.ts') && new URL(name).search)
           ?? '/src/store/compileStore.ts';
-        const projectUrl = resources.find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+        const projectUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
           ?? '/src/store/projectStore.ts';
-        const eventUrl = resources.find((name) => new URL(name).pathname.includes('/node_modules/.vite/deps/@tauri-apps_api_event.js'));
+        const eventUrl = [...resources].reverse().find((name) => new URL(name).pathname.includes('/node_modules/.vite/deps/@tauri-apps_api_event.js'));
         if (!eventUrl) throw new Error('Tauri event module URL not found');
         const { useCompileStore } = await import(compileUrl);
         const { useProjectStore } = await import(projectUrl);
@@ -2426,6 +2502,7 @@ async function main() {
         useCompileStore.setState({ lastResult: null, compileIssues: [] });
         await emit('tb://compile-done', {
           root: staleRoot,
+          generation: useProjectStore.getState().backendGeneration ?? 1,
           result: {
             ok: false,
             pdf_path: 'C:/STALE_PROJECT_A.pdf',

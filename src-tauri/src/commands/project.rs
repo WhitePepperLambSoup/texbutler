@@ -12,6 +12,7 @@ use tauri_plugin_dialog::DialogExt;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProjectInfo {
     pub root: String,
+    pub generation: u64,
     pub main_file: String,
     pub files: Vec<ProjectFile>,
     pub pdf_url: Option<String>,
@@ -336,6 +337,7 @@ fn project_info(state: &State<'_, AppState>) -> Result<ProjectInfo, String> {
     let pdf = proj.pdf_path();
     Ok(ProjectInfo {
         root: proj.root.to_string_lossy().to_string(),
+        generation: state.project_generation.load(Ordering::SeqCst),
         main_file: proj.main_file.clone(),
         files,
         pdf_url: if pdf.exists() {

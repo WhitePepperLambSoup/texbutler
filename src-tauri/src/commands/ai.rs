@@ -503,7 +503,7 @@ pub async fn tb_ai_chat_stream(
             )
         });
         state.publish_compile_result_if_current(project_generation, &root, &cr, || {
-            crate::commands::compile::emit_compile_done(&app, &root, &cr);
+            crate::commands::compile::emit_compile_done(&app, &root, project_generation, &cr);
         })?;
         if cr.ok {
             full.push_str("\n\n✅ 自动编译验证通过。");
@@ -590,7 +590,12 @@ pub async fn tb_ai_chat_stream(
                                 &root2,
                                 &cr2,
                                 || {
-                                    crate::commands::compile::emit_compile_done(&app, &root2, &cr2);
+                                    crate::commands::compile::emit_compile_done(
+                                        &app,
+                                        &root2,
+                                        project_generation,
+                                        &cr2,
+                                    );
                                 },
                             )?;
                             if cr2.ok {

@@ -11,6 +11,8 @@ use tauri::{AppHandle, Emitter, State};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CompileProgress {
+    pub root: String,
+    pub generation: u64,
     pub stage: String,
     pub progress: f32,
     pub message: String,
@@ -19,14 +21,16 @@ pub struct CompileProgress {
 #[derive(Debug, Clone, Serialize)]
 pub struct CompileDoneEvent {
     pub root: String,
+    pub generation: u64,
     pub result: CompileResult,
 }
 
-pub fn emit_compile_done(app: &AppHandle, root: &Path, result: &CompileResult) {
+pub fn emit_compile_done(app: &AppHandle, root: &Path, generation: u64, result: &CompileResult) {
     let _ = app.emit(
         "tb://compile-done",
         CompileDoneEvent {
             root: root.to_string_lossy().to_string(),
+            generation,
             result: result.clone(),
         },
     );
@@ -66,9 +70,12 @@ pub async fn tb_compile(
 
     // reset cancel flag and mark running
     state.cancel_flag.store(false, Ordering::SeqCst);
+    let event_root = root.to_string_lossy().to_string();
     let _ = app.emit(
         "tb://compile-progress",
         CompileProgress {
+            root: event_root.clone(),
+            generation: project_generation,
             stage: "prepare".into(),
             progress: 0.0,
             message: "准备编译…".into(),
@@ -80,6 +87,7 @@ pub async fn tb_compile(
     let scheduler = CompilerScheduler::new_with_passes(settings.engine, settings.texlive_passes);
 
     let app2 = app.clone();
+    let run_event_root = event_root.clone();
     let cancel = state.cancel_flag.clone();
     let proj = crate::core::project::Project::open(&root)?;
     let main_owned = main.clone();
@@ -90,6 +98,8 @@ pub async fn tb_compile(
         let _ = app2.emit(
             "tb://compile-progress",
             CompileProgress {
+                root: run_event_root,
+                generation: project_generation,
                 stage: "run".into(),
                 progress: 0.3,
                 message: format!("使用 {} 编译中…", scheduler_preview(&settings)),
@@ -113,6 +123,8 @@ pub async fn tb_compile(
     let _ = app.emit(
         "tb://compile-progress",
         CompileProgress {
+            root: event_root,
+            generation: project_generation,
             stage: "done".into(),
             progress: 1.0,
             message: if result.ok {
@@ -123,7 +135,7 @@ pub async fn tb_compile(
         },
     );
     state.publish_compile_result_if_current(project_generation, &root, &result, || {
-        emit_compile_done(&app, &root, &result);
+        emit_compile_done(&app, &root, project_generation, &result);
     })?;
     Ok(())
 }

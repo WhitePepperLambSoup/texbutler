@@ -27,6 +27,7 @@ export interface Tab {
 
 interface ProjectState {
   root: string;
+  backendGeneration: number | null;
   mainFile: string;
   files: ProjectFileNode[];
   /** Open editor tabs (in opening order). */
@@ -58,6 +59,7 @@ interface ProjectState {
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
   root: "",
+  backendGeneration: null,
   mainFile: "main.tex",
   files: [],
   tabs: [],
@@ -83,6 +85,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     projectGeneration += 1;
     set({
       root: info.root,
+      backendGeneration: info.generation,
       mainFile: info.main_file,
       files: info.files,
       pdfPath: info.pdf_url ?? null,
@@ -100,6 +103,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     projectGeneration += 1;
     set({
       root: info.root,
+      backendGeneration: info.generation,
       mainFile: info.main_file,
       files: info.files,
       pdfPath: info.pdf_url ?? null,
@@ -111,7 +115,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   async refresh() {
     const info = await api.projectInfo();
-    set({ files: info.files, pdfPath: info.pdf_url ?? null });
+    set({
+      files: info.files,
+      pdfPath: info.pdf_url ?? null,
+      backendGeneration: info.generation,
+    });
     void get().loadRefIndex();
   },
 
@@ -269,6 +277,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     projectGeneration += 1;
     set({
       root: "",
+      backendGeneration: null,
       mainFile: "main.tex",
       files: [],
       tabs: [],
