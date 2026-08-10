@@ -5,11 +5,70 @@
 //!   -interaction=nonstopmode -halt-on-error -file-line-error
 //! and runs twice (cross-references / TOC); a third pass is optional.
 
-use super::{CompileError, Compiler, CompileResult, EngineUsed};
+use super::{CompileError, CompileResult, Compiler, EngineUsed};
 use crate::core::project::Project;
 use crate::core::{Issue, IssueKind, Severity};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+pub(crate) const NO_ENGINE_OUTPUT_MARKER: &str = "texbutler:no-engine-output";
+
+fn tail(text: &str, max_chars: usize) -> &str {
+    if text.chars().count() <= max_chars {
+        return text;
+    }
+    let start = text
+        .char_indices()
+        .rev()
+        .nth(max_chars.saturating_sub(1))
+        .map(|(idx, _)| idx)
+        .unwrap_or(0);
+    &text[start..]
+}
+
+/// Build a useful failure issue from the persisted log and the engine's
+/// console output. The helper is pure so it can be tested without TeX Live.
+pub(crate) fn synthesize_failure_issues(
+    main: &Path,
+    engine_name: &str,
+    exit_code: Option<i32>,
+    log_text: &str,
+    console_text: &str,
+) -> Vec<Issue> {
+    let mut issues = crate::core::log_parser::parse_log_str(log_text);
+    if issues.is_empty() {
+        issues = crate::core::log_parser::parse_log_str(console_text);
+    }
+
+    let main_rel = main.to_string_lossy().replace('\\', "/");
+    for issue in &mut issues {
+        if let Some(file) = issue.file.as_deref() {
+            let file = file.replace('\\', "/");
+            if file == main_rel || file.ends_with(&format!("/{main_rel}")) {
+                issue.file = Some(main_rel.clone());
+            }
+        }
+    }
+    if !issues.is_empty() {
+        return issues;
+    }
+
+    let raw = if console_text.trim().is_empty() {
+        format!("{NO_ENGINE_OUTPUT_MARKER}\nengine={engine_name} exit_code={exit_code:?}")
+    } else {
+        format!(
+            "engine={engine_name} exit_code={exit_code:?}\n{}",
+            tail(console_text, 12_000)
+        )
+    };
+    vec![Issue::new(
+        Severity::Error,
+        IssueKind::CompileError,
+        format!("{engine_name} 编译失败（退出码异常），但未能从日志中解析出具体错误。请检查控制台输出或 main.log。"),
+    )
+    .with_file(main_rel)
+    .with_raw(raw)]
+}
 
 pub struct SystemTexliveCompiler {
     /// Resolved engine binary path (None until detected).
@@ -76,14 +135,17 @@ impl Compiler for SystemTexliveCompiler {
         // Resolve engine: use cached detection if present, else re-detect.
         let (engine, engine_name) = match &self.engine {
             Some(e) => (e.clone(), self.engine_name),
-            None => Self::detect()
-                .map(|(p, n)| (p, n))
-                .ok_or_else(|| CompileError::Unavailable("未在 PATH 中找到 xelatex 或 lualatex".into()))?,
+            None => Self::detect().map(|(p, n)| (p, n)).ok_or_else(|| {
+                CompileError::Unavailable("未在 PATH 中找到 xelatex 或 lualatex".into())
+            })?,
         };
         let main_path = project.root.join(main);
 
         if !main_path.exists() {
-            return Err(CompileError::Project(format!("主文件不存在: {}", main_path.display())));
+            return Err(CompileError::Project(format!(
+                "主文件不存在: {}",
+                main_path.display()
+            )));
         }
 
         let build_dir = project.build_dir();
@@ -110,8 +172,19 @@ impl Compiler for SystemTexliveCompiler {
             })
             .unwrap_or_else(|_| user_texinputs);
 
+        let main_stem = main_path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        let produced_log = build_dir.join(format!("{main_stem}.log"));
+        let log_path = project.log_path();
+        let _ = std::fs::remove_file(&produced_log);
+        if log_path != produced_log {
+            let _ = std::fs::remove_file(&log_path);
+        }
         let mut last_status: Option<std::process::ExitStatus>;
-        let mut all_logs: Vec<u8> = Vec::new();
+        let mut console_text = String::new();
 
         let mut passes = self.passes;
         // If the doc has no \input/\include/\bibliography, one pass suffices;
@@ -129,8 +202,8 @@ impl Compiler for SystemTexliveCompiler {
                 .current_dir(&build_dir);
             let out = cmd.output()?;
             last_status = Some(out.status);
-            all_logs.extend_from_slice(&out.stdout);
-            all_logs.extend_from_slice(&out.stderr);
+            console_text.push_str(&String::from_utf8_lossy(&out.stdout));
+            console_text.push_str(&String::from_utf8_lossy(&out.stderr));
             out.status.success()
         };
 
@@ -154,41 +227,37 @@ impl Compiler for SystemTexliveCompiler {
                 .current_dir(&build_dir);
             let out = cmd.output()?;
             last_status = Some(out.status);
-            all_logs.extend_from_slice(&out.stdout);
-            all_logs.extend_from_slice(&out.stderr);
+            console_text.push_str(&String::from_utf8_lossy(&out.stdout));
+            console_text.push_str(&String::from_utf8_lossy(&out.stderr));
             if !out.status.success() {
                 break;
             }
         }
 
-        let log_path = project.log_path();
         // xelatex writes main.log into -output-directory
-        let main_stem = main_path.file_stem().unwrap_or_default().to_string_lossy();
-        let produced_log = build_dir.join(format!("{main_stem}.log"));
         if produced_log.exists() {
             std::fs::copy(&produced_log, &log_path).ok();
-        } else if !all_logs.is_empty() {
-            std::fs::write(&log_path, &all_logs).ok();
+        } else if !console_text.is_empty() {
+            std::fs::write(&log_path, console_text.as_bytes()).ok();
         }
 
         let pdf = build_dir.join(format!("{main_stem}.pdf"));
         let ok = last_status.map(|s| s.success()).unwrap_or(false) && pdf.exists();
-        let issues = if log_path.exists() {
-            crate::core::log_parser::parse_log(&log_path)
+        let log_text = if produced_log.exists() {
+            std::fs::read_to_string(&produced_log).unwrap_or_default()
         } else {
-            vec![]
+            String::new()
         };
-
-        // Synthesize an issue when the engine failed but the log parser
-        // produced nothing useful.
-        let issues = if !ok && issues.is_empty() {
-            vec![Issue::new(
-                Severity::Error,
-                IssueKind::CompileError,
-                format!("{engine_name} 编译失败（退出码异常），但未能从日志中解析出具体错误。请检查控制台输出或 main.log。"),
-            )]
+        let issues = if !ok {
+            synthesize_failure_issues(
+                main,
+                engine_name,
+                last_status.and_then(|s| s.code()),
+                &log_text,
+                &console_text,
+            )
         } else {
-            issues
+            crate::core::log_parser::parse_log_str(&log_text)
         };
 
         Ok(CompileResult {
@@ -206,6 +275,36 @@ impl Compiler for SystemTexliveCompiler {
 mod tests {
     use super::*;
     use crate::core::project::Project;
+
+    #[test]
+    fn failure_diagnostics_use_console_when_log_has_no_parseable_error() {
+        let issues = synthesize_failure_issues(
+            Path::new("q2_en.tex"),
+            "xelatex",
+            Some(1),
+            "This is a stale log with no errors",
+            "C:/tmp/q2_en.tex:7: Undefined control sequence.\n! Undefined control sequence.\n",
+        );
+        assert_eq!(issues[0].file.as_deref(), Some("q2_en.tex"));
+        assert_eq!(issues[0].line, Some(7));
+        assert!(issues[0]
+            .raw
+            .as_deref()
+            .unwrap()
+            .contains("Undefined control sequence"));
+    }
+
+    #[test]
+    fn failure_diagnostics_mark_empty_engine_output_without_fake_line() {
+        let issues = synthesize_failure_issues(Path::new("q2_en.tex"), "xelatex", Some(1), "", "");
+        assert_eq!(issues[0].file.as_deref(), Some("q2_en.tex"));
+        assert_eq!(issues[0].line, None);
+        assert!(issues[0]
+            .raw
+            .as_deref()
+            .unwrap()
+            .starts_with(NO_ENGINE_OUTPUT_MARKER));
+    }
 
     #[test]
     fn detect_returns_something_on_ci_with_tex() {
@@ -230,7 +329,11 @@ mod tests {
             .compile(&proj, Path::new("main.tex"), &|| false)
             .expect("compile should run");
         assert!(result.ok, "multi-file compile failed: {:?}", result.issues);
-        assert!(result.pdf_path.as_ref().map(|p| p.exists()).unwrap_or(false));
+        assert!(result
+            .pdf_path
+            .as_ref()
+            .map(|p| p.exists())
+            .unwrap_or(false));
         assert_eq!(result.engine, EngineUsed::SystemTexlive);
     }
 }

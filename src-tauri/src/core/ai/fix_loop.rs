@@ -7,7 +7,7 @@
 
 use super::prompt_templates;
 use super::provider::{AiSettings, ChatMsg, chat};
-use crate::core::compiler::{CompileResult, CompilerScheduler};
+use crate::core::compiler::{texlive::NO_ENGINE_OUTPUT_MARKER, CompileResult, CompilerScheduler};
 use crate::core::project::Project;
 use crate::core::{FixReport, Issue, SourceContext};
 use std::path::{Path, PathBuf};
@@ -625,6 +625,14 @@ fn unreadable_report(summary: String, suggested: bool) -> FixReport {
     }
 }
 
+fn is_unrepairable_engine_failure(issue: &Issue) -> bool {
+    issue
+        .raw
+        .as_deref()
+        .map(|raw| raw.lines().next() == Some(NO_ENGINE_OUTPUT_MARKER))
+        .unwrap_or(false)
+}
+
 /// The full fix loop. `compile` is injected so tests can stub it.
 /// `apply: true` (default) writes the diff and recompiles; `apply: false`
 /// is suggest mode — the AI diff is returned without touching the disk.
@@ -636,6 +644,19 @@ pub async fn fix_loop(
     apply: bool,
 ) -> FixReport {
     let max_rounds = max_rounds.clamp(1, 5);
+    if is_unrepairable_engine_failure(issue) {
+        return FixReport {
+            ok: false,
+            rounds: 0,
+            diff: None,
+            summary: "编译引擎没有输出任何诊断，已停止 AI 修复以避免盲目修改。".to_string(),
+            issues_after: vec![issue.clone()],
+            rolled_back: false,
+            backup: None,
+            hunks: vec![],
+            suggested: !apply,
+        };
+    }
     let file = match issue.file.as_deref() {
         Some(candidate) => match crate::core::document_path::resolve_existing_document(project, candidate) {
             Ok(file) => file,
@@ -1236,6 +1257,31 @@ fn truncate(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unrepairable_engine_failure_requires_the_stable_marker() {
+        let marked = Issue::new(
+            crate::core::Severity::Error,
+            crate::core::IssueKind::CompileError,
+            "engine failure",
+        )
+        .with_raw("texbutler:no-engine-output\nengine=xelatex exit_code=Some(1)");
+        let localized_only = Issue::new(
+            crate::core::Severity::Error,
+            crate::core::IssueKind::CompileError,
+            "编译失败，但未能从日志中解析出具体错误。",
+        );
+        let similar_prefix = Issue::new(
+            crate::core::Severity::Error,
+            crate::core::IssueKind::CompileError,
+            "engine failure",
+        )
+        .with_raw("texbutler:no-engine-output-extra");
+
+        assert!(is_unrepairable_engine_failure(&marked));
+        assert!(!is_unrepairable_engine_failure(&localized_only));
+        assert!(!is_unrepairable_engine_failure(&similar_prefix));
+    }
 
     #[test]
     fn build_hunks_keeps_context_lines() {
