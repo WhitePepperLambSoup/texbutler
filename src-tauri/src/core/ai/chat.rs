@@ -554,6 +554,49 @@ fn question_requests_edit(question: &str) -> bool {
     let has_english_inquiry = words
         .iter()
         .any(|word| ENGLISH_INQUIRY_TERMS.contains(word));
+    const ENGLISH_STRONG_DOCUMENT_TARGETS: &[&str] = &[
+        "title",
+        "abstract",
+        "appendix",
+        "section",
+        "subsection",
+        "paragraph",
+        "sentence",
+        "line",
+        "word",
+        "wording",
+        "introduction",
+        "conclusion",
+        "chapter",
+        "body",
+        "date",
+        "format",
+        "bibliography",
+        "citation",
+        "reference",
+        "references",
+        "equation",
+        "figure",
+        "table",
+        "preamble",
+        "package",
+        "macro",
+        "heading",
+        "caption",
+        "theorem",
+        "proof",
+        "footnote",
+        "header",
+        "footer",
+        "grammar",
+        "spelling",
+        "punctuation",
+        "typo",
+        "typos",
+    ];
+    let has_english_strong_document_target = words
+        .iter()
+        .any(|word| ENGLISH_STRONG_DOCUMENT_TARGETS.contains(word));
     const META_SUBJECT_WORDS: &[&str] = &[
         "tool",
         "tools",
@@ -573,6 +616,25 @@ fn question_requests_edit(question: &str) -> bool {
         "replacements",
         "inserting",
         "deleting",
+        "edit",
+        "modify",
+        "change",
+        "replace",
+        "add",
+        "delete",
+        "remove",
+        "adjust",
+        "rewrite",
+        "insert",
+        "update",
+        "fix",
+        "changing",
+        "adding",
+        "removing",
+        "adjusting",
+        "rewriting",
+        "updating",
+        "fixing",
     ];
     const META_DESCRIPTOR_WORDS: &[&str] = &[
         "example",
@@ -597,13 +659,77 @@ fn question_requests_edit(question: &str) -> bool {
     let has_english_meta_descriptor = words
         .iter()
         .any(|word| META_DESCRIPTOR_WORDS.contains(word));
-    let is_english_meta_request = has_english_meta_subject && has_english_meta_descriptor;
+    let is_english_meta_request = has_english_meta_subject
+        && has_english_meta_descriptor
+        && !has_english_strong_document_target;
+    let first_english_generator = words
+        .iter()
+        .position(|word| matches!(*word, "generate" | "write" | "create" | "produce"));
+    let first_english_meta_descriptor = words
+        .iter()
+        .position(|word| META_DESCRIPTOR_WORDS.contains(word));
+    const ENGLISH_TOOL_OPERATION_WORDS: &[&str] = &[
+        "read",
+        "reading",
+        "edit",
+        "editing",
+        "modify",
+        "modifying",
+        "change",
+        "changing",
+        "insert",
+        "inserting",
+        "replace",
+        "replacing",
+        "replacement",
+        "replacements",
+        "delete",
+        "deleting",
+        "add",
+        "adding",
+        "remove",
+        "removing",
+        "adjust",
+        "adjusting",
+        "rewrite",
+        "rewriting",
+        "update",
+        "updating",
+        "fix",
+        "fixing",
+        "readfile",
+        "insertbefore",
+        "insertafter",
+        "deleteline",
+    ];
+    let has_later_english_tool_operation = words
+        .iter()
+        .enumerate()
+        .any(|(index, word)| {
+            ENGLISH_TOOL_OPERATION_WORDS.contains(word)
+                && first_english_generator.is_some_and(|generator| generator < index)
+        });
+    let is_english_generated_operation_example = first_english_generator.is_some()
+        && first_english_meta_descriptor.is_some_and(|descriptor| {
+            first_english_generator.is_some_and(|generator| generator < descriptor)
+        })
+        && has_later_english_tool_operation;
     let has_chinese_meta_subject = question.contains("工具")
         || question.contains("调用")
         || question.contains("json")
         || question.contains("api")
         || question.contains("命令")
-        || question.contains("操作");
+        || question.contains("操作")
+        || question.contains("修改")
+        || question.contains("替换")
+        || question.contains("添加")
+        || question.contains("删除")
+        || question.contains("调整")
+        || question.contains("重写")
+        || question.contains("编辑")
+        || question.contains("插入")
+        || question.contains("移除")
+        || question.contains("修复");
     let has_chinese_meta_descriptor = question.contains("示例")
         || question.contains("例子")
         || question.contains("格式")
@@ -613,7 +739,49 @@ fn question_requests_edit(question: &str) -> bool {
         || question.contains("演示")
         || question.contains("教程")
         || question.contains("教学");
-    let is_chinese_meta_request = has_chinese_meta_subject && has_chinese_meta_descriptor;
+    const CHINESE_STRONG_DOCUMENT_TARGETS: &[&str] = &[
+        "标题",
+        "摘要",
+        "附录",
+        "章节",
+        "小节",
+        "段落",
+        "句子",
+        "这一行",
+        "词语",
+        "措辞",
+        "引言",
+        "结论",
+        "正文",
+        "日期",
+        "格式",
+        "参考文献",
+        "引用",
+        "公式",
+        "图片",
+        "图表",
+        "表格",
+        "导言区",
+        "宏包",
+        "宏",
+        "说明文字",
+        "标题文字",
+        "定理",
+        "证明",
+        "脚注",
+        "页眉",
+        "页脚",
+        "语法",
+        "拼写",
+        "标点",
+        "错别字",
+    ];
+    let has_chinese_strong_document_target = CHINESE_STRONG_DOCUMENT_TARGETS
+        .iter()
+        .any(|target| question.contains(target));
+    let is_chinese_meta_request = has_chinese_meta_subject
+        && has_chinese_meta_descriptor
+        && !has_chinese_strong_document_target;
     let generate_position = question.find("生成");
     let later_tool_operation = [
         "修改",
@@ -638,10 +806,14 @@ fn question_requests_edit(question: &str) -> bool {
     let is_generated_operation_example = generate_position.is_some()
         && later_tool_operation
         && has_chinese_meta_descriptor;
-    if is_english_meta_request || is_chinese_meta_request || is_generated_operation_example {
+    if is_english_meta_request
+        || is_english_generated_operation_example
+        || is_chinese_meta_request
+        || is_generated_operation_example
+    {
         return false;
     }
-    const ENGLISH_DOCUMENT_TARGETS: &[&str] = &[
+    const ENGLISH_GENERIC_DOCUMENT_TARGETS: &[&str] = &[
         "this",
         "it",
         "file",
@@ -652,28 +824,11 @@ fn question_requests_edit(question: &str) -> bool {
         "selection",
         "text",
         "content",
-        "title",
-        "abstract",
-        "appendix",
-        "section",
-        "paragraph",
-        "line",
-        "date",
-        "format",
-        "bibliography",
-        "citation",
-        "equation",
-        "figure",
-        "table",
-        "preamble",
-        "package",
-        "macro",
-        "heading",
-        "caption",
     ];
-    let has_english_document_target = words
-        .iter()
-        .any(|word| ENGLISH_DOCUMENT_TARGETS.contains(word))
+    let has_english_document_target = has_english_strong_document_target
+        || words
+            .iter()
+            .any(|word| ENGLISH_GENERIC_DOCUMENT_TARGETS.contains(word))
         || [".tex", ".bib", ".sty", ".cls"]
             .iter()
             .any(|extension| question.contains(extension));
@@ -748,7 +903,7 @@ fn question_requests_edit(question: &str) -> bool {
         && CHINESE_EDIT_TERMS
             .iter()
             .any(|term| question.trim_start().starts_with(term));
-    const CHINESE_DOCUMENT_TARGETS: &[&str] = &[
+    const CHINESE_GENERIC_DOCUMENT_TARGETS: &[&str] = &[
         "这个",
         "这段",
         "这里",
@@ -759,29 +914,11 @@ fn question_requests_edit(question: &str) -> bool {
         "选区",
         "文本",
         "内容",
-        "标题",
-        "摘要",
-        "附录",
-        "章节",
-        "段落",
-        "这一行",
-        "日期",
-        "格式",
-        "参考文献",
-        "引用",
-        "公式",
-        "图片",
-        "图表",
-        "表格",
-        "导言区",
-        "宏包",
-        "宏",
-        "小节",
-        "说明文字",
     ];
-    let has_chinese_document_target = CHINESE_DOCUMENT_TARGETS
-        .iter()
-        .any(|target| question.contains(target))
+    let has_chinese_document_target = has_chinese_strong_document_target
+        || CHINESE_GENERIC_DOCUMENT_TARGETS
+            .iter()
+            .any(|target| question.contains(target))
         || [".tex", ".bib", ".sty", ".cls"]
             .iter()
             .any(|extension| question.contains(extension));
@@ -1784,6 +1921,15 @@ mod tests {
         assert!(!question_requests_edit(
             "Please generate a demonstration of a replace call"
         ));
+        assert!(!question_requests_edit(
+            "Please generate a tutorial for replace usage in main.tex"
+        ));
+        assert!(!question_requests_edit(
+            "Please generate a replace tutorial for the introduction"
+        ));
+        assert!(!question_requests_edit(
+            "Please write a tutorial about replacing the introduction"
+        ));
         assert!(!question_requests_edit("请生成一个 replace 调用教程"));
         assert!(!question_requests_edit("请生成一个 replace 演示"));
         assert!(!question_requests_edit("Replace tool: what does it do?"));
@@ -1804,6 +1950,12 @@ mod tests {
         assert!(question_requests_edit(
             "Please replace the sample section in main.tex"
         ));
+        assert!(question_requests_edit("Rewrite the introduction"));
+        assert!(question_requests_edit(
+            "Please update the JSON schema section in main.tex"
+        ));
+        assert!(question_requests_edit("请修改引言"));
+        assert!(question_requests_edit("请修复错别字"));
         assert!(question_requests_edit("修改格式"));
         assert!(question_requests_edit("调整格式"));
 
@@ -1920,6 +2072,10 @@ mod tests {
             (
                 "fenced-meta-demonstration",
                 "Please generate a demonstration of a replace call",
+            ),
+            (
+                "fenced-meta-tutorial-en",
+                "Please generate a tutorial for replace usage in main.tex",
             ),
             ("fenced-meta-tutorial-zh", "请生成一个 replace 调用教程"),
             ("fenced-meta-demonstration-zh", "请生成一个 replace 演示"),
