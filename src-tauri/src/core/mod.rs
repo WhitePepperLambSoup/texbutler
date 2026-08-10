@@ -121,6 +121,19 @@ impl SourceContext {
     /// Build a context window around `line` (1-based) from a full file body.
     pub fn around(file: &str, line: Option<usize>, body: &str, radius: usize) -> Self {
         let lines: Vec<&str> = body.lines().collect();
+        if line.is_none() {
+            return SourceContext {
+                file: file.to_string(),
+                line,
+                before: Vec::new(),
+                focus: None,
+                after: lines
+                    .iter()
+                    .take(radius * 2 + 1)
+                    .map(|s| s.to_string())
+                    .collect(),
+            };
+        }
         let idx = line.and_then(|l| l.checked_sub(1)).unwrap_or(0).min(lines.len().saturating_sub(1));
         let before = lines
             .iter()
@@ -147,6 +160,12 @@ impl SourceContext {
     /// Render the window as one text block (line numbers included).
     pub fn render(&self) -> String {
         let mut out = String::new();
+        if self.line.is_none() {
+            for (i, line) in self.after.iter().enumerate() {
+                out.push_str(&format!("{} | {}\n", i + 1, line));
+            }
+            return out;
+        }
         let start = self.line.unwrap_or(1).saturating_sub(self.before.len());
         for (i, l) in self.before.iter().enumerate() {
             out.push_str(&format!("{} | {}\n", start + i, l));
@@ -212,4 +231,24 @@ pub struct FixReport {
 pub fn round_f64(v: f64, decimals: usize) -> f64 {
     let factor = 10f64.powi(decimals as i32);
     (v * factor).round() / factor
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SourceContext;
+
+    #[test]
+    fn unknown_line_context_does_not_mark_first_line_as_error() {
+        let ctx = SourceContext::around(
+            "q2_en.tex",
+            None,
+            "\\documentclass{article}\n\\usepackage{ctex}\n正文\n",
+            2,
+        );
+        assert!(ctx.focus.is_none());
+        let rendered = ctx.render();
+        assert!(rendered.contains("1 | \\documentclass{article}"));
+        assert!(!rendered.contains("0 |"));
+        assert!(!rendered.contains("<<<< 此处出错"));
+    }
 }
