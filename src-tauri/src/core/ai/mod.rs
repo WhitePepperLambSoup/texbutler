@@ -10,5 +10,5 @@ pub mod provider;
 pub mod translate;
 
 pub use diagnose::{AiDiagnosis, diagnose};
-pub use fix_loop::{fix_loop, rollback_from_backup};
+pub use fix_loop::{MAX_FIX_ROUNDS, fix_loop, rollback_from_backup};
 pub use provider::{AiError, AiSettings, ChatMsg, ProviderKind, chat};

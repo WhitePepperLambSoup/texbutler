@@ -12,6 +12,12 @@ use crate::core::project::Project;
 use crate::core::{FixReport, Issue, SourceContext};
 use std::path::{Path, PathBuf};
 
+pub const MAX_FIX_ROUNDS: u32 = 3;
+
+fn normalized_fix_rounds(requested: u32) -> u32 {
+    requested.clamp(1, MAX_FIX_ROUNDS)
+}
+
 /// Apply a unified diff text to a single file (we only ever diff one file
 /// at a time; the AI is instructed to diff `ctx.file` only).
 ///
@@ -653,7 +659,7 @@ pub async fn fix_loop(
     max_rounds: u32,
     apply: bool,
 ) -> FixReport {
-    let max_rounds = max_rounds.clamp(1, 5);
+    let max_rounds = normalized_fix_rounds(max_rounds);
     if is_unrepairable_engine_failure(issue) {
         return FixReport {
             ok: false,
@@ -1267,6 +1273,14 @@ fn truncate(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fix_rounds_are_capped_at_three() {
+        assert_eq!(normalized_fix_rounds(0), 1);
+        assert_eq!(normalized_fix_rounds(3), 3);
+        assert_eq!(normalized_fix_rounds(4), 3);
+        assert_eq!(normalized_fix_rounds(u32::MAX), 3);
+    }
 
     #[test]
     fn unrepairable_engine_failure_requires_the_stable_marker() {

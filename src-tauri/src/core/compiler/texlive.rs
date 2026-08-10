@@ -37,22 +37,55 @@ fn is_absolute_path(path: &str) -> bool {
 
 fn parsed_failure_issues(log_text: &str, console_text: &str) -> Vec<Issue> {
     let mut issues = crate::core::log_parser::parse_log_str(log_text);
-    let console_issues = crate::core::log_parser::parse_log_str(console_text);
-    if issues.is_empty() {
-        issues = console_issues;
-    } else if !issues.iter().any(|issue| issue.severity == Severity::Error) {
-        issues.extend(
-            console_issues
-                .into_iter()
-                .filter(|issue| issue.severity == Severity::Error),
+    issues.extend(crate::core::log_parser::parse_log_str(console_text));
+    for issue in &mut issues {
+        issue.line = issue.line.filter(|line| *line > 0);
+    }
+    issues.sort_by_key(|issue| {
+        (
+            issue.severity != Severity::Error,
+            issue.file.is_none(),
+            issue.line.is_none(),
+        )
+    });
+    issues.dedup_by(|left, right| {
+        left.severity == right.severity
+            && left.file == right.file
+            && left.line == right.line
+            && left.message == right.message
+    });
+    issues
+}
+
+fn failure_raw(
+    engine_name: &str,
+    exit_code: Option<i32>,
+    log_text: &str,
+    console_text: &str,
+) -> String {
+    if log_text.trim().is_empty() && console_text.trim().is_empty() {
+        return format!(
+            "{NO_ENGINE_OUTPUT_MARKER}\nengine={engine_name} exit_code={exit_code:?}"
         );
     }
-    for issue in &mut issues {
-        if issue.line == Some(0) {
-            issue.line = None;
-        }
+    let mut raw = format!("engine={engine_name} exit_code={exit_code:?}");
+    if !log_text.trim().is_empty() {
+        raw.push_str("\n[log]\n");
+        raw.push_str(tail(log_text, 6_000));
     }
-    issues
+    if !console_text.trim().is_empty() {
+        raw.push_str("\n[console]\n");
+        raw.push_str(tail(console_text, 6_000));
+    }
+    raw
+}
+
+fn remove_stale_log(path: &Path) -> std::io::Result<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
 }
 
 /// Build a useful failure issue from the persisted log and the engine's
@@ -74,25 +107,23 @@ pub(crate) fn synthesize_failure_issues(
             }
         }
     }
-    if !issues.is_empty() {
+    if issues
+        .iter()
+        .any(|issue| issue.severity == Severity::Error)
+    {
         return issues;
     }
 
-    let raw = if console_text.trim().is_empty() {
-        format!("{NO_ENGINE_OUTPUT_MARKER}\nengine={engine_name} exit_code={exit_code:?}")
-    } else {
-        format!(
-            "engine={engine_name} exit_code={exit_code:?}\n{}",
-            tail(console_text, 12_000)
-        )
-    };
-    vec![Issue::new(
+    let raw = failure_raw(engine_name, exit_code, log_text, console_text);
+    let mut fallback = vec![Issue::new(
         Severity::Error,
         IssueKind::CompileError,
         format!("{engine_name} 编译失败（退出码异常），但未能从日志中解析出具体错误。请检查控制台输出或 main.log。"),
     )
     .with_file(main_rel)
-    .with_raw(raw)]
+    .with_raw(raw)];
+    fallback.extend(issues);
+    fallback
 }
 
 fn synthesize_failure_issues_for_project(
@@ -105,7 +136,10 @@ fn synthesize_failure_issues_for_project(
 ) -> Vec<Issue> {
     let main_rel = main.to_string_lossy().replace('\\', "/");
     let mut issues = parsed_failure_issues(log_text, console_text);
-    if issues.is_empty() {
+    if !issues
+        .iter()
+        .any(|issue| issue.severity == Severity::Error)
+    {
         return synthesize_failure_issues(main, engine_name, exit_code, log_text, console_text);
     }
     for issue in &mut issues {
@@ -234,9 +268,9 @@ impl Compiler for SystemTexliveCompiler {
             .to_string();
         let produced_log = build_dir.join(format!("{main_stem}.log"));
         let log_path = project.log_path();
-        let _ = std::fs::remove_file(&produced_log);
+        remove_stale_log(&produced_log)?;
         if log_path != produced_log {
-            let _ = std::fs::remove_file(&log_path);
+            remove_stale_log(&log_path)?;
         }
         let mut last_status: Option<std::process::ExitStatus>;
         let mut console_text = String::new();
@@ -385,6 +419,38 @@ mod tests {
     }
 
     #[test]
+    fn failure_diagnostics_prefer_console_location_when_log_error_lacks_file() {
+        let issues = synthesize_failure_issues(
+            Path::new("q2_en.tex"),
+            "xelatex",
+            Some(1),
+            "! Undefined control sequence.\nl.2 \\bad\n",
+            "q2_en.tex:7: Undefined control sequence.\n",
+        );
+
+        assert_eq!(issues[0].file.as_deref(), Some("q2_en.tex"));
+        assert_eq!(issues[0].line, Some(7));
+    }
+
+    #[test]
+    fn failure_diagnostics_synthesize_error_from_warning_only_log() {
+        let issues = synthesize_failure_issues(
+            Path::new("q2_en.tex"),
+            "xelatex",
+            Some(1),
+            "Overfull \\hbox (2pt too wide) in paragraph at lines 3--4\n",
+            "",
+        );
+
+        assert_eq!(issues[0].severity, Severity::Error);
+        assert!(issues[0]
+            .raw
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Overfull"));
+    }
+
+    #[test]
     fn failure_diagnostics_normalize_nested_project_path() {
         let root = std::env::temp_dir().join(format!("tb-texlive-normalize-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
@@ -466,6 +532,25 @@ mod tests {
         );
 
         assert_eq!(issues[0].line, None);
+    }
+
+    #[test]
+    fn stale_log_cleanup_ignores_only_missing_files() {
+        let root = std::env::temp_dir().join(format!(
+            "tb-texlive-stale-log-cleanup-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+
+        let missing = root.join("missing.log");
+        assert!(remove_stale_log(&missing).is_ok());
+
+        let not_a_file = root.join("locked.log");
+        std::fs::create_dir(&not_a_file).unwrap();
+        assert!(remove_stale_log(&not_a_file).is_err());
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

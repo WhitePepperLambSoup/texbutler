@@ -1,16 +1,24 @@
 // e2e: issue actions must use the persistent conversation for the reported TeX file.
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const CDP_PORT = 9336;
-const PROJ = `D:/reasonix program/idea/tex/.worktrees/codex-fix-compile-ai-repair/assets/e2e/v088-issue-session-scope-${process.pid}-${randomUUID()}`;
-const suite = process.argv[2] === "--case" ? process.argv[3] : null;
+const args = process.argv.slice(2);
+const suite = args.length === 0
+  ? "issue-session-scope"
+  : args[0] === "--case"
+    ? args[1]
+    : null;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 if (suite !== "issue-session-scope") {
-  throw new Error("usage: node scripts/e2e-v088.mjs --case issue-session-scope");
+  throw new Error("usage: node scripts/e2e-v088.mjs [--case issue-session-scope]");
 }
+
+const PROJ_NATIVE = await mkdtemp(join(tmpdir(), "texbutler-v088-"));
+const PROJ = PROJ_NATIVE.replaceAll("\\", "/");
 
 async function cdp() {
   for (let attempt = 0; attempt < 120; attempt += 1) {
@@ -90,12 +98,24 @@ async function main() {
       const { useProjectStore } = await import(projectUrl);
       const { api } = await import(apiUrl);
       window.__v088OriginalDiagnose = api.aiDiagnose;
+      window.__v088OriginalFix = api.aiFix;
       api.aiDiagnose = async () => ({
         ok: true,
         explanation: 'q2-en-diagnosis',
         suggestion: 'q2-en-suggestion',
         confidence: 'high',
         raw: 'q2-en-raw',
+      });
+      api.aiFix = async () => ({
+        ok: false,
+        rounds: 1,
+        summary: 'q2-en-fix',
+        diff: null,
+        issues_after: [],
+        rolled_back: false,
+        backup: null,
+        hunks: [],
+        suggested: false,
       });
       await useProjectStore.getState().openProject(${JSON.stringify(PROJ)});
       return true;
@@ -120,6 +140,13 @@ async function main() {
     await callAi(`useAiStore.getState().attachFile(${JSON.stringify(root)}, 'main.tex')`);
     const mainMessages = await callAi(`useAiStore.getState().messages.map(m => m.text).join('\\n')`);
     assert(!mainMessages.includes("q2-en-diagnosis"));
+
+    await callAi(`useAiStore.getState().attachFile(${JSON.stringify(root)}, 'main.tex')`);
+    await callAi(`await useAiStore.getState().fixIssue(${JSON.stringify(issueForQ2)}, 4)`);
+    const fixActive = await callAi(`useAiStore.getState().activeFile`);
+    const fixMessages = await callAi(`useAiStore.getState().messages.map(m => m.text).join('\\n')`);
+    assert.equal(fixActive, "contents/q2_en.tex");
+    assert(fixMessages.includes("q2-en-fix"));
 
     const issueForMain = {
       severity: "error",
@@ -239,13 +266,15 @@ async function main() {
             ?? '/src/api/index.ts';
           const { api } = await import(apiUrl);
           if (window.__v088OriginalDiagnose) api.aiDiagnose = window.__v088OriginalDiagnose;
+          if (window.__v088OriginalFix) api.aiFix = window.__v088OriginalFix;
           delete window.__v088OriginalDiagnose;
+          delete window.__v088OriginalFix;
         })()`,
         awaitPromise: true,
       }).catch(() => {});
     }
     client?.close();
-    await rm(PROJ, { recursive: true, force: true }).catch(() => {});
+    await rm(PROJ_NATIVE, { recursive: true, force: true }).catch(() => {});
   }
 }
 

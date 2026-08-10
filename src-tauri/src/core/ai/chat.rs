@@ -554,6 +554,28 @@ fn question_requests_edit(question: &str) -> bool {
     let has_english_inquiry = words
         .iter()
         .any(|word| ENGLISH_INQUIRY_TERMS.contains(word));
+    const META_TARGET_WORDS: &[&str] = &["tool", "tools", "json", "api", "prompt"];
+    const META_DESCRIPTOR_WORDS: &[&str] = &[
+        "example", "examples", "sample", "samples", "format", "schema", "call", "calls",
+        "usage",
+    ];
+    let is_english_meta_request = words
+        .iter()
+        .any(|word| META_TARGET_WORDS.contains(word))
+        && words
+            .iter()
+            .any(|word| META_DESCRIPTOR_WORDS.contains(word));
+    let is_chinese_meta_request = (question.contains("工具")
+        || question.contains("调用")
+        || question.contains("json")
+        || question.contains("api"))
+        && (question.contains("示例")
+            || question.contains("例子")
+            || question.contains("格式")
+            || question.contains("用法"));
+    if is_english_meta_request || is_chinese_meta_request {
+        return false;
+    }
     for (index, word) in words.iter().enumerate() {
         if !ENGLISH_EDIT_TERMS.contains(word) {
             continue;
@@ -648,25 +670,32 @@ fn markdown_fence_body(line: &str) -> Option<&str> {
     (indent <= 3).then(|| &line[indent..])
 }
 
-fn is_markdown_fence_closer(line: &str) -> bool {
-    markdown_fence_body(line).is_some_and(|body| {
-        body.starts_with("```") && body["```".len()..].trim().is_empty()
+#[derive(Clone, Copy)]
+struct MarkdownFence<'a> {
+    marker: u8,
+    len: usize,
+    info: &'a str,
+}
+
+fn markdown_fence(line: &str) -> Option<MarkdownFence<'_>> {
+    let body = markdown_fence_body(line)?;
+    let marker = *body.as_bytes().first()?;
+    if marker != b'`' {
+        return None;
+    }
+    let len = body.bytes().take_while(|byte| *byte == marker).count();
+    (len >= 3).then_some(MarkdownFence {
+        marker,
+        len,
+        info: &body[len..],
     })
 }
 
-fn is_json_fence_opener(line: &str) -> bool {
-    let Some(body) = markdown_fence_body(line) else {
-        return false;
-    };
-    let Some(language) = body.strip_prefix("```") else {
-        return false;
-    };
-    !language.starts_with('`') && matches!(language.trim(), "json" | "JSON")
-}
-
-fn is_markdown_fence_opener(line: &str) -> bool {
-    markdown_fence_body(line).is_some_and(|body| {
-        body.starts_with("```") && !body.starts_with("````") && !is_markdown_fence_closer(line)
+fn is_matching_fence_closer(line: &str, opener: MarkdownFence<'_>) -> bool {
+    markdown_fence(line).is_some_and(|candidate| {
+        candidate.marker == opener.marker
+            && candidate.len >= opener.len
+            && candidate.info.trim().is_empty()
     })
 }
 
@@ -680,16 +709,16 @@ fn fenced_json_tool_calls(reply: &str) -> (Vec<ToolCall>, Vec<(usize, usize)>) {
     while line_start < reply.len() {
         let (line_end, next_line) = markdown_line_end(reply, line_start);
         let line = &reply[line_start..line_end];
-        if !is_markdown_fence_opener(line) {
+        let Some(opener) = markdown_fence(line).filter(|fence| !fence.info.trim().is_empty()) else {
             line_start = next_line;
             continue;
-        }
+        };
         let content_start = next_line;
         let mut cursor = next_line;
         let mut closing = None;
         while cursor < reply.len() {
             let (line_end, next_line) = markdown_line_end(reply, cursor);
-            if is_markdown_fence_closer(&reply[cursor..line_end]) {
+            if is_matching_fence_closer(&reply[cursor..line_end], opener) {
                 closing = Some((cursor, line_end, next_line));
                 break;
             }
@@ -698,7 +727,7 @@ fn fenced_json_tool_calls(reply: &str) -> (Vec<ToolCall>, Vec<(usize, usize)>) {
         let Some((closing_start, closing_end, next_after_closing)) = closing else {
             break;
         };
-        if is_json_fence_opener(line) {
+        if matches!(opener.info.trim(), "json" | "JSON") {
             let mut fenced_calls = Vec::new();
             parse_json_objects(&reply[content_start..closing_start], &mut fenced_calls);
             fenced_calls.retain(is_known_tool);
@@ -1607,6 +1636,13 @@ mod tests {
     fn edit_intent_requires_an_explicit_request() {
         assert!(!question_requests_edit("What does the replace tool do?"));
         assert!(!question_requests_edit("What does the write tool do?"));
+        assert!(!question_requests_edit(
+            "Please generate an example JSON tool call"
+        ));
+        assert!(!question_requests_edit(
+            "Please generate an example JSON tool call for a file"
+        ));
+        assert!(!question_requests_edit("请生成一个工具调用示例"));
         assert!(!question_requests_edit("Replace tool: what does it do?"));
         assert!(!question_requests_edit("Replace: how does it work?"));
         assert!(!question_requests_edit("请解释如何用 replace 工具修改文本"));
@@ -1663,6 +1699,18 @@ mod tests {
 
         let four_space_indent = format!("    ```json\n{tool}\n    ```");
         assert!(parse_tool_calls_with_mode(&four_space_indent, true).is_empty());
+
+        let tilde_fence = format!("~~~json\n{tool}\n~~~");
+        assert!(parse_tool_calls_with_mode(&tilde_fence, true).is_empty());
+
+        let outside_tool =
+            "{\"tool\":\"replace\",\"file\":\"main.tex\",\"old\":\"a\",\"new\":\"b\"}";
+        let longer_closer_then_text = format!(
+            "```json\n{tool}\n````\n```text\n{outside_tool}\n```"
+        );
+        let calls = parse_tool_calls_with_mode(&longer_closer_then_text, true);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].tool, "read_file");
     }
 
     #[test]

@@ -14,7 +14,21 @@ pub mod settings;
 pub mod synctex;
 pub mod word_count;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+fn serialize_positive_line<S>(line: &Option<usize>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    line.filter(|line| *line > 0).serialize(serializer)
+}
+
+fn deserialize_positive_line<'de, D>(deserializer: D) -> Result<Option<usize>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<usize>::deserialize(deserializer)?.filter(|line| *line > 0))
+}
 
 /// Severity of a reported issue. Order matters for filtering/UI grouping.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -48,6 +62,11 @@ pub struct Issue {
     /// Path relative to the project root (forward slashes).
     pub file: Option<String>,
     /// 1-based real line number in `file`.
+    #[serde(
+        default,
+        serialize_with = "serialize_positive_line",
+        deserialize_with = "deserialize_positive_line"
+    )]
     pub line: Option<usize>,
     pub col: Option<usize>,
     /// Human-readable message (Chinese for the UI).
@@ -82,7 +101,7 @@ impl Issue {
     }
 
     pub fn with_line(mut self, line: usize) -> Self {
-        self.line = Some(line);
+        self.line = (line > 0).then_some(line);
         self
     }
 
@@ -120,6 +139,7 @@ pub struct SourceContext {
 impl SourceContext {
     /// Build a context window around `line` (1-based) from a full file body.
     pub fn around(file: &str, line: Option<usize>, body: &str, radius: usize) -> Self {
+        let line = line.filter(|line| *line > 0);
         let lines: Vec<&str> = body.lines().collect();
         if line.is_none() {
             return SourceContext {
@@ -160,21 +180,23 @@ impl SourceContext {
     /// Render the window as one text block (line numbers included).
     pub fn render(&self) -> String {
         let mut out = String::new();
-        if self.line.is_none() {
+        let line = self.line.filter(|line| *line > 0);
+        if line.is_none() {
             for (i, line) in self.after.iter().enumerate() {
                 out.push_str(&format!("{} | {}\n", i + 1, line));
             }
             return out;
         }
-        let start = self.line.unwrap_or(1).saturating_sub(self.before.len());
+        let line = line.unwrap_or(1);
+        let start = line.saturating_sub(self.before.len());
         for (i, l) in self.before.iter().enumerate() {
             out.push_str(&format!("{} | {}\n", start + i, l));
         }
         if let Some(f) = &self.focus {
-            out.push_str(&format!("{} | {}   <<<< 此处出错\n", self.line.unwrap_or(0), f));
+            out.push_str(&format!("{} | {}   <<<< 此处出错\n", line, f));
         }
         for (i, l) in self.after.iter().enumerate() {
-            out.push_str(&format!("{} | {}\n", self.line.unwrap_or(0) + 1 + i, l));
+            out.push_str(&format!("{} | {}\n", line + 1 + i, l));
         }
         out
     }
@@ -235,7 +257,7 @@ pub fn round_f64(v: f64, decimals: usize) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::SourceContext;
+    use super::{Issue, IssueKind, Severity, SourceContext};
 
     #[test]
     fn unknown_line_context_does_not_mark_first_line_as_error() {
@@ -250,5 +272,37 @@ mod tests {
         assert!(rendered.contains("1 | \\documentclass{article}"));
         assert!(!rendered.contains("0 |"));
         assert!(!rendered.contains("<<<< 此处出错"));
+    }
+
+    #[test]
+    fn zero_line_is_normalized_to_unknown_everywhere() {
+        let issue = Issue::new(Severity::Error, IssueKind::CompileError, "x").with_line(0);
+        assert_eq!(issue.line, None);
+
+        let mut direct = issue.clone();
+        direct.line = Some(0);
+        let serialized = serde_json::to_value(&direct).unwrap();
+        assert!(serialized["line"].is_null());
+        let deserialized: Issue = serde_json::from_value(serde_json::json!({
+            "severity": "error",
+            "file": "main.tex",
+            "line": 0,
+            "col": null,
+            "message": "x",
+            "raw": null,
+            "kind": "compile_error",
+            "rule_id": null,
+            "fix_hint": null
+        }))
+        .unwrap();
+        assert_eq!(deserialized.line, None);
+
+        let ctx = SourceContext::around("main.tex", Some(0), "first\nsecond\n", 2);
+        assert_eq!(ctx.line, None);
+        assert!(ctx.focus.is_none());
+        let rendered = ctx.render();
+        assert!(rendered.contains("1 | first"));
+        assert!(!rendered.contains("0 |"));
+        assert!(!rendered.contains("<<<<"));
     }
 }

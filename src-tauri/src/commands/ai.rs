@@ -1,6 +1,8 @@
 //! AI commands: diagnose an issue, run the fix loop, manage provider settings.
 
-use crate::core::ai::{diagnose, fix_loop, rollback_from_backup, AiDiagnosis, AiSettings, ChatMsg};
+use crate::core::ai::{
+    AiDiagnosis, AiSettings, ChatMsg, MAX_FIX_ROUNDS, diagnose, fix_loop, rollback_from_backup,
+};
 use crate::core::{FixReport, Issue, SourceContext};
 use crate::state::AppState;
 use tauri::{AppHandle, Emitter, State};
@@ -260,7 +262,8 @@ pub async fn tb_ai_fix(
         "tb://ai-status",
         serde_json::json!({ "kind": "fix", "status": "start", "apply": apply }),
     );
-    let report = fix_loop(&issue, &proj, &settings, max_rounds.unwrap_or(3), apply).await;
+    let max_rounds = max_rounds.unwrap_or(MAX_FIX_ROUNDS).clamp(1, MAX_FIX_ROUNDS);
+    let report = fix_loop(&issue, &proj, &settings, max_rounds, apply).await;
     let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "fix", "status": "done", "ok": report.ok, "suggested": report.suggested }));
     Ok(report)
 }
@@ -312,7 +315,8 @@ pub async fn tb_fix_rule_issue(
         "tb://ai-status",
         serde_json::json!({ "kind": "fix", "status": "start", "apply": apply }),
     );
-    let report = fix_loop(&issue, &proj, &settings, max_rounds.unwrap_or(3), apply).await;
+    let max_rounds = max_rounds.unwrap_or(MAX_FIX_ROUNDS).clamp(1, MAX_FIX_ROUNDS);
+    let report = fix_loop(&issue, &proj, &settings, max_rounds, apply).await;
     let _ = app.emit("tb://ai-status", serde_json::json!({ "kind": "fix", "status": "done", "ok": report.ok, "suggested": report.suggested }));
     Ok(report)
 }
