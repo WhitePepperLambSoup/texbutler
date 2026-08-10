@@ -554,28 +554,129 @@ fn question_requests_edit(question: &str) -> bool {
     let has_english_inquiry = words
         .iter()
         .any(|word| ENGLISH_INQUIRY_TERMS.contains(word));
-    const META_TARGET_WORDS: &[&str] = &["tool", "tools", "json", "api", "prompt"];
-    const META_DESCRIPTOR_WORDS: &[&str] = &[
-        "example", "examples", "sample", "samples", "format", "schema", "call", "calls",
-        "usage",
+    const META_SUBJECT_WORDS: &[&str] = &[
+        "tool",
+        "tools",
+        "json",
+        "api",
+        "prompt",
+        "call",
+        "calls",
+        "command",
+        "commands",
+        "operation",
+        "operations",
+        "editing",
+        "modifying",
+        "replacing",
+        "replacement",
+        "replacements",
+        "inserting",
+        "deleting",
     ];
-    let is_english_meta_request = words
+    const META_DESCRIPTOR_WORDS: &[&str] = &[
+        "example",
+        "examples",
+        "sample",
+        "samples",
+        "format",
+        "schema",
+        "usage",
+        "demo",
+        "demos",
+        "demonstration",
+        "demonstrations",
+        "tutorial",
+        "tutorials",
+        "walkthrough",
+        "walkthroughs",
+    ];
+    let has_english_meta_subject = words
         .iter()
-        .any(|word| META_TARGET_WORDS.contains(word))
-        && words
-            .iter()
-            .any(|word| META_DESCRIPTOR_WORDS.contains(word));
-    let is_chinese_meta_request = (question.contains("工具")
+        .any(|word| META_SUBJECT_WORDS.contains(word));
+    let has_english_meta_descriptor = words
+        .iter()
+        .any(|word| META_DESCRIPTOR_WORDS.contains(word));
+    let is_english_meta_request = has_english_meta_subject && has_english_meta_descriptor;
+    let has_chinese_meta_subject = question.contains("工具")
         || question.contains("调用")
         || question.contains("json")
-        || question.contains("api"))
-        && (question.contains("示例")
-            || question.contains("例子")
-            || question.contains("格式")
-            || question.contains("用法"));
-    if is_english_meta_request || is_chinese_meta_request {
+        || question.contains("api")
+        || question.contains("命令")
+        || question.contains("操作");
+    let has_chinese_meta_descriptor = question.contains("示例")
+        || question.contains("例子")
+        || question.contains("格式")
+        || question.contains("用法")
+        || question.contains("范例")
+        || question.contains("样例")
+        || question.contains("演示")
+        || question.contains("教程")
+        || question.contains("教学");
+    let is_chinese_meta_request = has_chinese_meta_subject && has_chinese_meta_descriptor;
+    let generate_position = question.find("生成");
+    let later_tool_operation = [
+        "修改",
+        "替换",
+        "添加",
+        "删除",
+        "调整",
+        "重写",
+        "编辑",
+        "插入",
+        "移除",
+        "修复",
+        "read_file",
+        "insert_before",
+        "insert_after",
+        "replace",
+        "delete_line",
+    ]
+    .iter()
+    .filter_map(|operation| question.find(operation))
+    .any(|operation| generate_position.is_some_and(|generate| generate < operation));
+    let is_generated_operation_example = generate_position.is_some()
+        && later_tool_operation
+        && has_chinese_meta_descriptor;
+    if is_english_meta_request || is_chinese_meta_request || is_generated_operation_example {
         return false;
     }
+    const ENGLISH_DOCUMENT_TARGETS: &[&str] = &[
+        "this",
+        "it",
+        "file",
+        "files",
+        "document",
+        "documents",
+        "source",
+        "selection",
+        "text",
+        "content",
+        "title",
+        "abstract",
+        "appendix",
+        "section",
+        "paragraph",
+        "line",
+        "date",
+        "format",
+        "bibliography",
+        "citation",
+        "equation",
+        "figure",
+        "table",
+        "preamble",
+        "package",
+        "macro",
+        "heading",
+        "caption",
+    ];
+    let has_english_document_target = words
+        .iter()
+        .any(|word| ENGLISH_DOCUMENT_TARGETS.contains(word))
+        || [".tex", ".bib", ".sty", ".cls"]
+            .iter()
+            .any(|extension| question.contains(extension));
     for (index, word) in words.iter().enumerate() {
         if !ENGLISH_EDIT_TERMS.contains(word) {
             continue;
@@ -598,7 +699,7 @@ fn question_requests_edit(question: &str) -> bool {
         let direct_imperative = index == 0
             && !has_english_inquiry
             && first_chinese_inquiry.is_none();
-        if requested || direct_imperative {
+        if (requested || direct_imperative) && has_english_document_target {
             return true;
         }
     }
@@ -647,7 +748,44 @@ fn question_requests_edit(question: &str) -> bool {
         && CHINESE_EDIT_TERMS
             .iter()
             .any(|term| question.trim_start().starts_with(term));
-    requested || direct_imperative
+    const CHINESE_DOCUMENT_TARGETS: &[&str] = &[
+        "这个",
+        "这段",
+        "这里",
+        "它",
+        "文件",
+        "文档",
+        "源码",
+        "选区",
+        "文本",
+        "内容",
+        "标题",
+        "摘要",
+        "附录",
+        "章节",
+        "段落",
+        "这一行",
+        "日期",
+        "格式",
+        "参考文献",
+        "引用",
+        "公式",
+        "图片",
+        "图表",
+        "表格",
+        "导言区",
+        "宏包",
+        "宏",
+        "小节",
+        "说明文字",
+    ];
+    let has_chinese_document_target = CHINESE_DOCUMENT_TARGETS
+        .iter()
+        .any(|target| question.contains(target))
+        || [".tex", ".bib", ".sty", ".cls"]
+            .iter()
+            .any(|extension| question.contains(extension));
+    (requested || direct_imperative) && has_chinese_document_target
 }
 
 fn is_known_tool(call: &ToolCall) -> bool {
@@ -1643,6 +1781,11 @@ mod tests {
             "Please generate an example JSON tool call for a file"
         ));
         assert!(!question_requests_edit("请生成一个工具调用示例"));
+        assert!(!question_requests_edit(
+            "Please generate a demonstration of a replace call"
+        ));
+        assert!(!question_requests_edit("请生成一个 replace 调用教程"));
+        assert!(!question_requests_edit("请生成一个 replace 演示"));
         assert!(!question_requests_edit("Replace tool: what does it do?"));
         assert!(!question_requests_edit("Replace: how does it work?"));
         assert!(!question_requests_edit("请解释如何用 replace 工具修改文本"));
@@ -1657,6 +1800,10 @@ mod tests {
     fn explicit_edit_commands_can_target_formats_and_examples() {
         assert!(question_requests_edit("Replace the date format"));
         assert!(question_requests_edit("Generate an example appendix"));
+        assert!(question_requests_edit("Replace the example appendix"));
+        assert!(question_requests_edit(
+            "Please replace the sample section in main.tex"
+        ));
         assert!(question_requests_edit("修改格式"));
         assert!(question_requests_edit("调整格式"));
 
@@ -1764,6 +1911,43 @@ mod tests {
         assert!(explain_edits.is_empty());
         assert!(result.contains("```JSON"));
         let _ = std::fs::remove_dir_all(&explain_dir);
+    }
+
+    #[test]
+    fn run_edit_chat_keeps_paraphrased_meta_tool_examples_inert() {
+        let reply = "Here is the requested demonstration.\n```json\n{\"tool\":\"replace\",\"file\":\"main.tex\",\"old\":\"a\",\"new\":\"b\"}\n```";
+        for (case, question) in [
+            (
+                "fenced-meta-demonstration",
+                "Please generate a demonstration of a replace call",
+            ),
+            ("fenced-meta-tutorial-zh", "请生成一个 replace 调用教程"),
+            ("fenced-meta-demonstration-zh", "请生成一个 replace 演示"),
+        ] {
+            let (dir, project) = chat_runner_fixture(case);
+            let mut rounds = PresetModelRounds::new(&[reply]);
+            let mut edits = Vec::new();
+            let result = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(run_edit_chat(
+                    &mut rounds,
+                    &project,
+                    Some("main.tex"),
+                    None,
+                    question,
+                    &[],
+                    &mut |rel, snapshot, diff| {
+                        edits.push((rel.to_string(), snapshot.to_string(), diff.to_string()));
+                    },
+                ))
+                .unwrap();
+            assert_eq!(project.read_file("main.tex").unwrap(), "a\n", "{case}");
+            assert!(edits.is_empty(), "{case}");
+            assert!(result.contains("```json"), "{case}");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
     }
 
     #[test]
