@@ -539,21 +539,27 @@ fn question_requests_edit(question: &str) -> bool {
         "update",
         "fix",
     ];
+    const ENGLISH_INQUIRY_TERMS: &[&str] = &[
+        "explain",
+        "explanation",
+        "describe",
+        "show",
+        "what",
+        "how",
+        "why",
+        "format",
+        "example",
+        "examples",
+    ];
     let words: Vec<_> = question
         .split(|ch: char| !ch.is_ascii_alphabetic())
         .filter(|word| !word.is_empty())
         .collect();
-    let mut word_cursor = 0usize;
+    let has_english_inquiry = words
+        .iter()
+        .any(|word| ENGLISH_INQUIRY_TERMS.contains(word));
     for (index, word) in words.iter().enumerate() {
-        let word_start = question[word_cursor..]
-            .find(*word)
-            .map(|offset| word_cursor + offset)
-            .unwrap_or(word_cursor);
-        word_cursor = word_start + word.len();
         if !ENGLISH_EDIT_TERMS.contains(word) {
-            continue;
-        }
-        if first_chinese_inquiry.is_some_and(|inquiry| inquiry < word_start) {
             continue;
         }
         let requested_after = index > 0 && words[index - 1] == "please";
@@ -567,18 +573,14 @@ fn question_requests_edit(question: &str) -> bool {
             && words[index - 3] == "i"
             && matches!(words[index - 2], "want" | "need")
             && words[index - 1] == "to";
-        let describes_a_tool = words
-            .get(index + 1)
-            .is_some_and(|next| matches!(*next, "tool" | "format" | "example" | "examples"));
-        if index == 0
-            || requested_after
+        let requested = requested_after
             || requested_by_question
             || requested_for_help
-            || requested_for_self
-        {
-            if describes_a_tool {
-                continue;
-            }
+            || requested_for_self;
+        let direct_imperative = index == 0
+            && !has_english_inquiry
+            && first_chinese_inquiry.is_none();
+        if requested || direct_imperative {
             return true;
         }
     }
@@ -613,18 +615,15 @@ fn question_requests_edit(question: &str) -> bool {
     if first_chinese_inquiry.is_some_and(|inquiry| inquiry < first_edit) {
         return false;
     }
-    if CHINESE_REQUEST_PREFIXES
+    let requested = CHINESE_REQUEST_PREFIXES
         .iter()
-        .any(|prefix| question.contains(prefix))
-    {
-        return true;
-    }
-    !CHINESE_INQUIRY_TERMS
-        .iter()
-        .any(|term| question.contains(term))
+        .filter_map(|prefix| question.find(prefix))
+        .any(|prefix| prefix < first_edit);
+    let direct_imperative = first_chinese_inquiry.is_none()
         && CHINESE_EDIT_TERMS
             .iter()
-            .any(|term| question.trim_start().starts_with(term))
+            .any(|term| question.trim_start().starts_with(term));
+    requested || direct_imperative
 }
 
 fn is_known_tool(call: &ToolCall) -> bool {
@@ -1607,6 +1606,7 @@ mod tests {
         assert!(!question_requests_edit("What does the replace tool do?"));
         assert!(!question_requests_edit("What does the write tool do?"));
         assert!(!question_requests_edit("Replace tool: what does it do?"));
+        assert!(!question_requests_edit("Replace: how does it work?"));
         assert!(!question_requests_edit("请解释如何用 replace 工具修改文本"));
         assert!(!question_requests_edit("Please inspect the file."));
         assert!(!question_requests_edit("Show me the JSON tool format."));
