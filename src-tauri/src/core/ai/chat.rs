@@ -124,6 +124,7 @@ async fn run_edit_chat<R: ModelRoundSource>(
     // drifted), and a fresh round with the real content usually succeeds.
     let mut last_reason = String::new();
     let mut read_rounds = 0usize;
+    let allow_fenced = question_requests_edit(question);
     for attempt in 0..2 {
         let mut question_text = question.to_string();
         if attempt == 1 {
@@ -157,7 +158,12 @@ async fn run_edit_chat<R: ModelRoundSource>(
         });
         let reply = loop {
             let reply = rounds.next_reply(&messages).await?;
-            let (reads, _edits) = partition_tool_calls(parse_tool_calls(&reply));
+            let calls = if allow_fenced {
+                parse_tool_calls_with_mode(&reply, true)
+            } else {
+                parse_tool_calls(&reply)
+            };
+            let (reads, _edits) = partition_tool_calls(calls);
             if reads.is_empty() {
                 break reply;
             }
@@ -181,7 +187,7 @@ async fn run_edit_chat<R: ModelRoundSource>(
                 // no diff — maybe the AI emitted structured tool calls
                 // (declarative edits: far more reliable than free-form
                 // diffs for insert/replace/delete operations)
-                match execute_tool_calls(project, &reply, on_edit).await {
+                match execute_tool_calls(project, &reply, allow_fenced, on_edit).await {
                     ToolOutcome::Applied(n, failures, skipped, final_text) => {
                         let mut out = final_text;
                         if n > 0 {
@@ -292,6 +298,10 @@ fn render_read_results(project: &Project, reads: &[ToolCall]) -> String {
 }
 
 fn user_facing_tool_text(reply: &str) -> String {
+    user_facing_tool_text_with_mode(reply, false)
+}
+
+fn user_facing_tool_text_with_mode(reply: &str, allow_fenced: bool) -> String {
     let marker = "【工具调用】";
     let mut removed = Vec::new();
     let trimmed = reply.trim_start();
@@ -315,6 +325,10 @@ fn user_facing_tool_text(reply: &str) -> String {
             removed.push((cursor + start, cursor + end));
             cursor += end;
         }
+    }
+    if allow_fenced {
+        let (_, spans) = fenced_json_tool_calls(reply);
+        removed.extend(spans);
     }
     let cleaned = if removed.is_empty() {
         reply.trim().to_string()
@@ -484,8 +498,132 @@ fn parse_first_json_object(scan: &str) -> Option<(ToolCall, usize)> {
 }
 
 fn parse_tool_calls(reply: &str) -> Vec<ToolCall> {
+    parse_tool_calls_with_mode(reply, false)
+}
+
+fn question_requests_edit(question: &str) -> bool {
+    let question = question.to_lowercase();
+    const NON_EDIT_TERMS: &[&str] = &[
+        "explain",
+        "explanation",
+        "inspect",
+        "show",
+        "example",
+        "examples",
+        "describe",
+        "what is",
+        "how does",
+        "解释",
+        "说明",
+        "查看",
+        "检查",
+        "展示",
+        "展示格式",
+        "格式示例",
+        "示例",
+        "例子",
+        "演示",
+        "介绍",
+    ];
+    if NON_EDIT_TERMS.iter().any(|term| question.contains(term)) {
+        return false;
+    }
+    const EDIT_TERMS: &[&str] = &[
+        "edit",
+        "modify",
+        "change",
+        "replace",
+        "add",
+        "delete",
+        "remove",
+        "adjust",
+        "rewrite",
+        "generate",
+        "write",
+        "insert",
+        "update",
+        "fix",
+        "修改",
+        "改",
+        "替换",
+        "换成",
+        "添加",
+        "加上",
+        "删除",
+        "调整",
+        "重写",
+        "生成",
+        "写一段",
+        "编写",
+        "编辑",
+        "插入",
+        "移除",
+        "修复",
+    ];
+    EDIT_TERMS.iter().any(|term| question.contains(term))
+}
+
+fn is_known_tool(call: &ToolCall) -> bool {
+    matches!(
+        call.tool.as_str(),
+        "read_file" | "insert_before" | "insert_after" | "replace" | "delete_line"
+    )
+}
+
+/// Return known tool calls and their complete Markdown fence spans for
+/// properly closed ```json / ```JSON blocks.
+fn fenced_json_tool_calls(reply: &str) -> (Vec<ToolCall>, Vec<(usize, usize)>) {
+    let mut calls = Vec::new();
+    let mut spans = Vec::new();
+    let mut cursor = 0usize;
+    while let Some(offset) = reply[cursor..].find("```") {
+        let start = cursor + offset;
+        let tag_end = if reply[start..].starts_with("```json") {
+            start + "```json".len()
+        } else if reply[start..].starts_with("```JSON") {
+            start + "```JSON".len()
+        } else {
+            cursor = start + "```".len();
+            continue;
+        };
+        let content_start = if reply[tag_end..].starts_with("\r\n") {
+            tag_end + 2
+        } else if reply[tag_end..].starts_with('\n') {
+            tag_end + 1
+        } else {
+            cursor = tag_end;
+            continue;
+        };
+        let Some(close_offset) = reply[content_start..].find("```") else {
+            break;
+        };
+        let end = content_start + close_offset + "```".len();
+        let mut fenced_calls = Vec::new();
+        parse_json_objects(
+            &reply[content_start..content_start + close_offset],
+            &mut fenced_calls,
+        );
+        fenced_calls.retain(is_known_tool);
+        if !fenced_calls.is_empty() {
+            calls.extend(fenced_calls);
+            spans.push((start, end));
+        }
+        cursor = end;
+    }
+    (calls, spans)
+}
+
+fn parse_tool_calls_with_mode(reply: &str, allow_fenced: bool) -> Vec<ToolCall> {
     let mut out = Vec::new();
     let marker = "【工具调用】";
+    // Marker parsing historically consumes JSON after the first marker. To
+    // preserve that behavior without double-applying a fenced call, only add
+    // opt-in fences that appear before the first marker.
+    if allow_fenced {
+        let fence_prefix_end = reply.find(marker).unwrap_or(reply.len());
+        let (fenced, _) = fenced_json_tool_calls(&reply[..fence_prefix_end]);
+        out.extend(fenced);
+    }
     let trimmed = reply.trim_start();
     let mut rest = reply;
     // Bare JSON without the marker: the AI sometimes emits the tool-call
@@ -529,9 +667,14 @@ fn parse_tool_calls(reply: &str) -> Vec<ToolCall> {
 async fn execute_tool_calls(
     project: &Project,
     reply: &str,
+    allow_fenced: bool,
     on_edit: &mut (impl FnMut(&str, &str, &str) + ?Sized),
 ) -> ToolOutcome {
-    let calls = parse_tool_calls(reply);
+    let calls = if allow_fenced {
+        parse_tool_calls_with_mode(reply, true)
+    } else {
+        parse_tool_calls(reply)
+    };
     if calls.is_empty() {
         return ToolOutcome::None;
     }
@@ -592,7 +735,11 @@ async fn execute_tool_calls(
         }
     }
     if per_file.is_empty() {
-        let mut final_text = user_facing_tool_text(reply);
+        let mut final_text = if allow_fenced {
+            user_facing_tool_text_with_mode(reply, true)
+        } else {
+            user_facing_tool_text(reply)
+        };
         if final_text.is_empty() {
             final_text = "修改请求已处理。".into();
         }
@@ -631,7 +778,11 @@ async fn execute_tool_calls(
         applied += 1;
         on_edit(rel, &snap.to_string_lossy().to_string(), &diff);
     }
-    let mut final_text = user_facing_tool_text(reply);
+    let mut final_text = if allow_fenced {
+        user_facing_tool_text_with_mode(reply, true)
+    } else {
+        user_facing_tool_text(reply)
+    };
     if final_text.is_empty() {
         final_text = "修改请求已处理。".into();
     }
@@ -1331,6 +1482,82 @@ mod tests {
     }
 
     #[test]
+    fn fenced_read_tool_after_prose_is_parsed_only_for_edit_request() {
+        let reply = "我先读取文件。\n```json\n{\"tool\":\"read_file\",\"file\":\"main.tex\"}\n```";
+        assert!(parse_tool_calls(reply).is_empty());
+        let calls = parse_tool_calls_with_mode(reply, true);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].tool, "read_file");
+    }
+
+    #[test]
+    fn explanation_example_in_fenced_json_is_not_executed() {
+        let reply = "解释工具格式：\n```json\n{\"tool\":\"replace\",\"file\":\"main.tex\",\"old\":\"a\",\"new\":\"b\"}\n```";
+        assert!(parse_tool_calls_with_mode(reply, false).is_empty());
+    }
+
+    #[test]
+    fn only_explicit_edit_actions_enable_fenced_tool_calls() {
+        assert!(question_requests_edit("Please replace the title."));
+        assert!(question_requests_edit("请修改摘要。"));
+        assert!(!question_requests_edit("Explain the tool format."));
+        assert!(!question_requests_edit("给我一个 JSON 示例。"));
+    }
+
+    #[test]
+    fn run_edit_chat_executes_fenced_tools_only_for_edit_intent() {
+        let (edit_dir, edit_project) = chat_runner_fixture("fenced-edit");
+        let reply = "我来修改文件。\n```JSON\n{\"tool\":\"replace\",\"file\":\"main.tex\",\"old\":\"a\",\"new\":\"b\"}\n```\n已完成。";
+        let mut edit_rounds = PresetModelRounds::new(&[reply]);
+        let mut edits = Vec::new();
+        let result = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(run_edit_chat(
+                &mut edit_rounds,
+                &edit_project,
+                Some("main.tex"),
+                None,
+                "Please edit this file",
+                &[],
+                &mut |rel, snapshot, diff| {
+                    edits.push((rel.to_string(), snapshot.to_string(), diff.to_string()));
+                },
+            ))
+            .unwrap();
+        assert_eq!(edit_project.read_file("main.tex").unwrap(), "b\n");
+        assert_eq!(edits.len(), 1);
+        assert!(!result.contains("```JSON"));
+        assert!(!result.contains("replace"));
+        let _ = std::fs::remove_dir_all(&edit_dir);
+
+        let (explain_dir, explain_project) = chat_runner_fixture("fenced-explain");
+        let mut explain_rounds = PresetModelRounds::new(&[reply]);
+        let mut explain_edits = Vec::new();
+        let result = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(run_edit_chat(
+                &mut explain_rounds,
+                &explain_project,
+                Some("main.tex"),
+                None,
+                "Explain the tool format",
+                &[],
+                &mut |rel, snapshot, diff| {
+                    explain_edits.push((rel.to_string(), snapshot.to_string(), diff.to_string()));
+                },
+            ))
+            .unwrap();
+        assert_eq!(explain_project.read_file("main.tex").unwrap(), "a\n");
+        assert!(explain_edits.is_empty());
+        assert!(result.contains("```JSON"));
+        let _ = std::fs::remove_dir_all(&explain_dir);
+    }
+
+    #[test]
     fn parses_read_file_and_separates_it_from_edits() {
         let reply = "【工具调用】{\"tool\":\"read_file\",\"file\":\"contents/abstract.tex\"}\n\
                      【工具调用】{\"tool\":\"replace\",\"file\":\"main.tex\",\"old\":\"a\",\"new\":\"b\"}";
@@ -1724,7 +1951,7 @@ mod tests {
             .enable_all()
             .build()
             .unwrap()
-            .block_on(execute_tool_calls(&proj, reply, &mut on_edit));
+            .block_on(execute_tool_calls(&proj, reply, false, &mut on_edit));
         match outcome {
             ToolOutcome::Applied(n, failures, skipped, _) => {
                 assert_eq!(n, 1, "one file must be edited: {failures:?} {skipped}");
