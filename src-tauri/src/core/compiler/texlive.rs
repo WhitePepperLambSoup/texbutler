@@ -26,6 +26,35 @@ fn tail(text: &str, max_chars: usize) -> &str {
     &text[start..]
 }
 
+fn is_absolute_path(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    Path::new(path).is_absolute()
+        || (bytes.len() >= 3
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && (bytes[2] == b'/' || bytes[2] == b'\\'))
+}
+
+fn parsed_failure_issues(log_text: &str, console_text: &str) -> Vec<Issue> {
+    let mut issues = crate::core::log_parser::parse_log_str(log_text);
+    let console_issues = crate::core::log_parser::parse_log_str(console_text);
+    if issues.is_empty() {
+        issues = console_issues;
+    } else if !issues.iter().any(|issue| issue.severity == Severity::Error) {
+        issues.extend(
+            console_issues
+                .into_iter()
+                .filter(|issue| issue.severity == Severity::Error),
+        );
+    }
+    for issue in &mut issues {
+        if issue.line == Some(0) {
+            issue.line = None;
+        }
+    }
+    issues
+}
+
 /// Build a useful failure issue from the persisted log and the engine's
 /// console output. The helper is pure so it can be tested without TeX Live.
 pub(crate) fn synthesize_failure_issues(
@@ -35,16 +64,12 @@ pub(crate) fn synthesize_failure_issues(
     log_text: &str,
     console_text: &str,
 ) -> Vec<Issue> {
-    let mut issues = crate::core::log_parser::parse_log_str(log_text);
-    if issues.is_empty() {
-        issues = crate::core::log_parser::parse_log_str(console_text);
-    }
-
+    let mut issues = parsed_failure_issues(log_text, console_text);
     let main_rel = main.to_string_lossy().replace('\\', "/");
     for issue in &mut issues {
         if let Some(file) = issue.file.as_deref() {
             let file = file.replace('\\', "/");
-            if file == main_rel || file.ends_with(&format!("/{main_rel}")) {
+            if is_absolute_path(&file) && file.ends_with(&format!("/{main_rel}")) {
                 issue.file = Some(main_rel.clone());
             }
         }
@@ -68,6 +93,36 @@ pub(crate) fn synthesize_failure_issues(
     )
     .with_file(main_rel)
     .with_raw(raw)]
+}
+
+fn synthesize_failure_issues_for_project(
+    project: &Project,
+    main: &Path,
+    engine_name: &str,
+    exit_code: Option<i32>,
+    log_text: &str,
+    console_text: &str,
+) -> Vec<Issue> {
+    let main_rel = main.to_string_lossy().replace('\\', "/");
+    let mut issues = parsed_failure_issues(log_text, console_text);
+    if issues.is_empty() {
+        return synthesize_failure_issues(main, engine_name, exit_code, log_text, console_text);
+    }
+    for issue in &mut issues {
+        let Some(file) = issue.file.as_deref() else {
+            continue;
+        };
+        let Some(resolved) = project.resolve(file) else {
+            issue.file = Some(main_rel.clone());
+            continue;
+        };
+        let Some(relative) = resolved.strip_prefix(&project.root).ok() else {
+            issue.file = Some(main_rel.clone());
+            continue;
+        };
+        issue.file = Some(relative.to_string_lossy().replace('\\', "/"));
+    }
+    issues
 }
 
 pub struct SystemTexliveCompiler {
@@ -249,7 +304,8 @@ impl Compiler for SystemTexliveCompiler {
             String::new()
         };
         let issues = if !ok {
-            synthesize_failure_issues(
+            synthesize_failure_issues_for_project(
+                project,
                 main,
                 engine_name,
                 last_status.and_then(|s| s.code()),
@@ -304,6 +360,112 @@ mod tests {
             .as_deref()
             .unwrap()
             .starts_with(NO_ENGINE_OUTPUT_MARKER));
+    }
+
+    #[test]
+    fn failure_diagnostics_merge_console_error_when_log_only_has_warning() {
+        let issues = synthesize_failure_issues(
+            Path::new("q2_en.tex"),
+            "xelatex",
+            Some(1),
+            "Overfull \\hbox (2pt too wide) in paragraph at lines 3--4\n",
+            "q2_en.tex:7: Undefined control sequence.\n",
+        );
+
+        assert!(issues.iter().any(|issue| issue.severity == Severity::Warning));
+        assert!(issues.iter().any(|issue| {
+            issue.severity == Severity::Error
+                && issue.line == Some(7)
+                && issue
+                    .raw
+                    .as_deref()
+                    .unwrap_or_default()
+                    .contains("Undefined control sequence")
+        }));
+    }
+
+    #[test]
+    fn failure_diagnostics_normalize_nested_project_path() {
+        let root = std::env::temp_dir().join(format!("tb-texlive-normalize-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let project = Project::create(&root, "p").unwrap();
+        let nested = project.root.join("chapters").join("intro.tex");
+        std::fs::create_dir_all(nested.parent().unwrap()).unwrap();
+        std::fs::write(&nested, "content").unwrap();
+        let console = format!(
+            "{}:12: Undefined control sequence.\n",
+            nested.to_string_lossy().replace('\\', "/")
+        );
+
+        let issues = synthesize_failure_issues_for_project(
+            &project,
+            Path::new("main.tex"),
+            "xelatex",
+            Some(1),
+            "",
+            &console,
+        );
+
+        assert_eq!(issues[0].file.as_deref(), Some("chapters/intro.tex"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn failure_diagnostics_keep_nested_file_named_like_main() {
+        let root = std::env::temp_dir().join(format!("tb-texlive-nested-main-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let project = Project::create(&root, "p").unwrap();
+        let nested = project.root.join("chapters").join("main.tex");
+        std::fs::create_dir_all(nested.parent().unwrap()).unwrap();
+        std::fs::write(&nested, "content").unwrap();
+        let console = format!(
+            "{}:12: Undefined control sequence.\n",
+            nested.to_string_lossy().replace('\\', "/")
+        );
+
+        let issues = synthesize_failure_issues_for_project(
+            &project,
+            Path::new("main.tex"),
+            "xelatex",
+            Some(1),
+            "",
+            &console,
+        );
+
+        assert_eq!(issues[0].file.as_deref(), Some("chapters/main.tex"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn failure_diagnostics_replace_external_path_with_main_file() {
+        let root = std::env::temp_dir().join(format!("tb-texlive-external-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let project = Project::create(&root, "p").unwrap();
+
+        let issues = synthesize_failure_issues_for_project(
+            &project,
+            Path::new("main.tex"),
+            "xelatex",
+            Some(1),
+            "",
+            "C:/outside/other.tex:4: Undefined control sequence.\n",
+        );
+
+        assert_eq!(issues[0].file.as_deref(), Some("main.tex"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn failure_diagnostics_clear_zero_line_number() {
+        let issues = synthesize_failure_issues(
+            Path::new("q2_en.tex"),
+            "xelatex",
+            Some(1),
+            "",
+            "q2_en.tex:0: Undefined control sequence.\n",
+        );
+
+        assert_eq!(issues[0].line, None);
     }
 
     #[test]
