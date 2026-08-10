@@ -1849,14 +1849,16 @@ fn create_owned_directory_relative(
     )
 }
 
-fn merge_staged_tree_trusted_with<F>(
+fn merge_staged_tree_trusted_with<F, R>(
     stage: &Path,
     destination_path: &Path,
     mut plan: TrustedMergePlan,
     mut copier: F,
+    mut retain_directory: R,
 ) -> Result<(), String>
 where
     F: FnMut(&Path, &mut std::fs::File) -> Result<(), String>,
+    R: FnMut(&OwnedObject) -> Result<TrustedDirectory, String>,
 {
     let mut created = CreatedEntries::default();
     for entry in plan.entries {
@@ -1884,13 +1886,14 @@ where
                     }
                 }
             };
-            let trusted = TrustedDirectory::from_handle(
-                directory
-                    .handle
-                    .try_clone()
-                    .map_err(|error| format!("could not retain template directory: {error}"))?,
-            )?;
             created.dirs.push(directory);
+            let trusted = match retain_directory(created.dirs.last().expect("just pushed")) {
+                Ok(trusted) => trusted,
+                Err(error) => {
+                    created.rollback();
+                    return Err(error);
+                }
+            };
             plan.directories.insert(entry.relative, trusted);
         } else {
             let file = {
@@ -1925,13 +1928,26 @@ fn merge_staged_tree_trusted(
 ) -> Result<(), String> {
     destination.validate_path(project, destination_path)?;
     let plan = inspect_merge_conflicts_trusted(stage, destination)?;
-    merge_staged_tree_trusted_with(stage, destination_path, plan, |source, target| {
-        let mut source = std::fs::File::open(source)
-            .map_err(|error| format!("could not open staged template file: {error}"))?;
-        std::io::copy(&mut source, target)
-            .map(|_| ())
-            .map_err(|error| format!("could not copy template file: {error}"))
-    })
+    merge_staged_tree_trusted_with(
+        stage,
+        destination_path,
+        plan,
+        |source, target| {
+            let mut source = std::fs::File::open(source)
+                .map_err(|error| format!("could not open staged template file: {error}"))?;
+            std::io::copy(&mut source, target)
+                .map(|_| ())
+                .map_err(|error| format!("could not copy template file: {error}"))
+        },
+        |directory| {
+            TrustedDirectory::from_handle(
+                directory
+                    .handle
+                    .try_clone()
+                    .map_err(|error| format!("could not retain template directory: {error}"))?,
+            )
+        },
+    )
 }
 
 #[cfg(test)]
@@ -3082,6 +3098,42 @@ mod tests {
         assert!(
             !directory.exists(),
             "failed directory acquisition must not leave residue"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn trusted_merge_directory_retention_failure_rolls_back_all_created_entries() {
+        let root = test_root("trusted-directory-retention-failure");
+        let stage = root.join("stage");
+        let destination = root.join("project");
+        write_fixture(&stage.join("a.tex"), b"created first\n");
+        write_fixture(&stage.join("nested/main.tex"), b"nested\n");
+        write_fixture(&destination.join("main.tex"), b"project\n");
+        let project = Project::open(&destination).unwrap();
+        let trusted = TrustedDirectory::open_validated(&project, &destination).unwrap();
+        let plan = inspect_merge_conflicts_trusted(&stage, trusted).unwrap();
+        let injected = "injected directory retention failure".to_string();
+
+        let error = merge_staged_tree_trusted_with(
+            &stage,
+            &destination,
+            plan,
+            |source, target| {
+                let mut source = std::fs::File::open(source).unwrap();
+                std::io::copy(&mut source, target).unwrap();
+                Ok(())
+            },
+            |_directory| Err(injected.clone()),
+        )
+        .unwrap_err();
+
+        assert_eq!(error, injected);
+        assert!(!destination.join("a.tex").exists());
+        assert!(!destination.join("nested").exists());
+        assert_eq!(
+            std::fs::read(destination.join("main.tex")).unwrap(),
+            b"project\n"
         );
         std::fs::remove_dir_all(root).unwrap();
     }

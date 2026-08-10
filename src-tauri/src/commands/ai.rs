@@ -221,6 +221,28 @@ pub async fn tb_ai_diagnose(
 /// Run the AI fix loop on one issue (rounds ≤ max_rounds, auto rollback).
 /// `apply: true` (default) writes the diff and recompiles; `apply: false`
 /// is suggest mode — the proposal is returned without touching the disk.
+fn load_ai_fix_inputs(
+    state: &AppState,
+    issue_index: usize,
+    after_project_lock: impl FnOnce(),
+) -> Result<(Issue, AiSettings, crate::core::project::Project), String> {
+    let guard = state.project.read().map_err(|e| e.to_string())?;
+    after_project_lock();
+    let project = guard
+        .as_ref()
+        .ok_or_else(|| "尚未打开项目".to_string())?
+        .clone();
+    let last = state.last_result.read().map_err(|e| e.to_string())?;
+    let result = last.as_ref().ok_or_else(|| "还没有编译结果".to_string())?;
+    let issue = result
+        .issues
+        .get(issue_index)
+        .cloned()
+        .ok_or_else(|| "问题索引越界".to_string())?;
+    let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
+    Ok((issue, settings, project))
+}
+
 #[tauri::command]
 pub async fn tb_ai_fix(
     app: AppHandle,
@@ -229,22 +251,7 @@ pub async fn tb_ai_fix(
     max_rounds: Option<u32>,
     apply: Option<bool>,
 ) -> Result<FixReport, String> {
-    let (mut issue, settings, proj) = {
-        let last = state.last_result.read().map_err(|e| e.to_string())?;
-        let r = last.as_ref().ok_or_else(|| "还没有编译结果".to_string())?;
-        let issue = r
-            .issues
-            .get(issue_index)
-            .cloned()
-            .ok_or_else(|| "问题索引越界".to_string())?;
-        let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
-        let guard = state.project.read().map_err(|e| e.to_string())?;
-        let proj = guard
-            .as_ref()
-            .ok_or_else(|| "尚未打开项目".to_string())?
-            .clone();
-        (issue, settings, proj)
-    };
+    let (mut issue, settings, proj) = load_ai_fix_inputs(&state, issue_index, || {})?;
     if settings.api_key.is_none()
         && !matches!(
             settings.provider,
@@ -966,6 +973,48 @@ pub struct AiSettingsView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ai_fix_input_loading_acquires_project_before_waiting_for_compile_result() {
+        let root = std::env::temp_dir().join(format!(
+            "tb-ai-command-lock-order-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("main.tex"), "main\n").unwrap();
+        let project = crate::core::project::Project::open(&root).unwrap();
+        let state = std::sync::Arc::new(AppState::new());
+        *state.project.write().unwrap() = Some(project);
+        *state.last_result.write().unwrap() = Some(
+            crate::core::compiler::CompileResult::failed(
+                root.join("main.log"),
+                crate::core::compiler::EngineUsed::Tectonic,
+                "lock order test",
+            ),
+        );
+
+        let result_guard = state.last_result.write().unwrap();
+        let (before_project_tx, before_project_rx) = std::sync::mpsc::channel();
+        let worker_state = std::sync::Arc::clone(&state);
+        let worker = std::thread::spawn(move || {
+            load_ai_fix_inputs(&worker_state, 0, || {
+                before_project_tx.send(()).unwrap();
+            })
+        });
+
+        before_project_rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("AI fix loading must acquire the project before waiting for last_result");
+        assert!(
+            state.project.try_write().is_err(),
+            "AI fix loading must hold the project while pairing it with last_result"
+        );
+
+        drop(result_guard);
+        assert!(worker.join().unwrap().is_ok());
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn manual_patch_resolves_truncated_ai_path_and_returns_canonical_relative_path() {
