@@ -121,6 +121,114 @@ async function main() {
     const mainMessages = await callAi(`useAiStore.getState().messages.map(m => m.text).join('\\n')`);
     assert(!mainMessages.includes("q2-en-diagnosis"));
 
+    const issueForMain = {
+      severity: "error",
+      file: "main.tex",
+      line: 1,
+      message: "Main session race fixture",
+      kind: "compile_error",
+    };
+    const race = JSON.parse(await exec(`(async () => {
+      const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+      const aiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+        ?? '/src/store/aiStore.ts';
+      const projectUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+        ?? '/src/store/projectStore.ts';
+      const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        ?? '/src/api/index.ts';
+      const { useAiStore } = await import(aiUrl);
+      const { useProjectStore } = await import(projectUrl);
+      const { api } = await import(apiUrl);
+      const originalOpenFile = useProjectStore.getState().openFile;
+      const originalDiagnose = api.aiDiagnose;
+      const originalFix = api.aiFix;
+      let releaseOpenFile;
+      let diagnoseCalls = 0;
+      let fixCalls = 0;
+      useProjectStore.setState({
+        openFile: async (file) => {
+          if (file === 'contents/q2_en.tex') {
+            await new Promise((resolve) => { releaseOpenFile = resolve; });
+          }
+          return originalOpenFile(file);
+        },
+      });
+      api.aiDiagnose = async () => {
+        diagnoseCalls += 1;
+        return { ok: true, explanation: 'race-q2-diagnosis', suggestion: '', confidence: 'high', raw: '' };
+      };
+      api.aiFix = async () => {
+        fixCalls += 1;
+        return { ok: true, rounds: 1, summary: 'race-main-fix', diff: null, issues_after: [], rolled_back: false, hunks: [], suggested: false };
+      };
+      try {
+        useAiStore.getState().attachFile(${JSON.stringify(root)}, 'main.tex');
+        const diagnose = useAiStore.getState().diagnoseIssue(${JSON.stringify(issueForQ2)}, 1);
+        await Promise.resolve();
+        const fix = useAiStore.getState().fixIssue(${JSON.stringify(issueForMain)}, 2);
+        await Promise.resolve();
+        releaseOpenFile();
+        await Promise.all([diagnose, fix]);
+        const ai = useAiStore.getState();
+        return JSON.stringify({
+          diagnoseCalls,
+          fixCalls,
+          activeFile: ai.activeFile,
+          messages: ai.messages.map((message) => message.text),
+        });
+      } finally {
+        useProjectStore.setState({ openFile: originalOpenFile });
+        api.aiDiagnose = originalDiagnose;
+        api.aiFix = originalFix;
+      }
+    })()`));
+    assert.equal(race.diagnoseCalls, 1);
+    assert.equal(race.fixCalls, 0);
+    assert.equal(race.activeFile, "contents/q2_en.tex");
+    assert(race.messages.some((message) => message.includes("race-q2-diagnosis")));
+
+    const openFileFailure = JSON.parse(await exec(`(async () => {
+      const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+      const aiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/aiStore.ts') && new URL(name).search)
+        ?? '/src/store/aiStore.ts';
+      const projectUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/store/projectStore.ts') && new URL(name).search)
+        ?? '/src/store/projectStore.ts';
+      const apiUrl = [...resources].reverse().find((name) => new URL(name).pathname.endsWith('/src/api/index.ts') && new URL(name).search)
+        ?? '/src/api/index.ts';
+      const { useAiStore } = await import(aiUrl);
+      const { useProjectStore } = await import(projectUrl);
+      const { api } = await import(apiUrl);
+      const originalOpenFile = useProjectStore.getState().openFile;
+      const originalDiagnose = api.aiDiagnose;
+      let diagnoseCalls = 0;
+      useProjectStore.setState({
+        openFile: async (file) => {
+          if (file === 'contents/q2_en.tex') throw new Error('fixture openFile failure');
+          return originalOpenFile(file);
+        },
+      });
+      api.aiDiagnose = async () => {
+        diagnoseCalls += 1;
+        return { ok: true, explanation: 'openfile-failure-diagnosis', suggestion: '', confidence: 'high', raw: '' };
+      };
+      try {
+        useAiStore.getState().attachFile(${JSON.stringify(root)}, 'main.tex');
+        await useAiStore.getState().diagnoseIssue(${JSON.stringify(issueForQ2)}, 3);
+        const ai = useAiStore.getState();
+        return JSON.stringify({
+          diagnoseCalls,
+          activeFile: ai.activeFile,
+          messages: ai.messages.map((message) => message.text),
+        });
+      } finally {
+        useProjectStore.setState({ openFile: originalOpenFile });
+        api.aiDiagnose = originalDiagnose;
+      }
+    })()`));
+    assert.equal(openFileFailure.diagnoseCalls, 1);
+    assert.equal(openFileFailure.activeFile, "main.tex");
+    assert(openFileFailure.messages.some((message) => message.includes("openfile-failure-diagnosis")));
+
     console.log("E2E-DONE PASS", { suite, active });
   } finally {
     if (originalDiagnose && client) {

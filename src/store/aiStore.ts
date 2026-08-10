@@ -587,7 +587,11 @@ export const useAiStore = create<AiState>((set, get) => ({
         || (node.is_dir && exists(node.children)));
     if (!project.root || !exists(project.files)) return;
 
-    await project.openFile(normalized);
+    try {
+      await project.openFile(normalized);
+    } catch {
+      return;
+    }
     const latest = useProjectStore.getState();
     if (latest.root === project.root && latest.tabs.some((tab) => tab.path === normalized)) {
       get().attachFile(latest.root, normalized);
@@ -639,9 +643,10 @@ export const useAiStore = create<AiState>((set, get) => ({
 
   async diagnoseIssue(issue, index) {
     if (get().busy) return;
-    await get().focusIssueFile(issue.file ?? null);
-    const context = captureRequestContext();
     set({ busy: true, busyKind: "diagnose" });
+    try {
+      await get().focusIssueFile(issue.file ?? null);
+      const context = captureRequestContext();
     const t = useI18n.getState().t;
     appendMessageToRequest(context, {
       role: "user",
@@ -664,14 +669,17 @@ export const useAiStore = create<AiState>((set, get) => ({
     } catch (e) {
       appendMessageToRequest(context, { role: "assistant", kind: "error", text: useI18n.getState().t("ai.diagFailed", { e: String(e) }) });
     }
-    set({ busy: false, busyKind: null });
+    } finally {
+      set({ busy: false, busyKind: null });
+    }
   },
 
   async fixIssue(issue, index) {
     if (get().busy) return;
-    await get().focusIssueFile(issue.file ?? null);
-    const context = captureRequestContext();
     set({ busy: true, busyKind: "fix" });
+    try {
+      await get().focusIssueFile(issue.file ?? null);
+      const context = captureRequestContext();
     const t = useI18n.getState().t;
     appendMessageToRequest(context, {
       role: "user",
@@ -704,7 +712,9 @@ export const useAiStore = create<AiState>((set, get) => ({
     } catch (e) {
       appendMessageToRequest(context, { role: "assistant", kind: "error", text: useI18n.getState().t("ai.fixFailedMsg", { e: String(e) }) });
     }
-    set({ busy: false, busyKind: null });
+    } finally {
+      set({ busy: false, busyKind: null });
+    }
   },
 
   async acceptDiff() {
