@@ -60,16 +60,26 @@ pub fn apply_unified_diff(original: &str, diff: &str) -> Result<String, String> 
     }
 
     let mut result = original.to_string();
+    let mut changed = false;
     // Apply hunks bottom-up so line numbers stay valid. Report which hunk
     // failed so the user/AI knows exactly what could not be applied.
     let total = hunks.len();
     for (i, hunk) in hunks.iter().rev().enumerate() {
         match apply_hunk(&result, hunk) {
-            Ok(r) => result = r,
+            Ok(next) => {
+                if next != result {
+                    result = next;
+                    changed = true;
+                }
+            }
             Err(e) => return Err(format!("第 {}/{} 个 hunk 无法应用：{e}", total - i, total)),
         }
     }
-    Ok(result)
+    if changed {
+        Ok(result)
+    } else {
+        Err("diff 没有实际修改（只有上下文行）".into())
+    }
 }
 
 /// Compare a diff line against the file content, tolerating trailing
@@ -193,7 +203,7 @@ fn apply_hunk(original: &str, hunk: &[&str]) -> Result<String, String> {
     // append remaining old lines
     out.extend(target.iter().skip(old_idx).cloned());
     if !applied_any {
-        return Err("diff 没有实际修改（只有上下文行）".into());
+        return Ok(original.to_string());
     }
     Ok(out.join("\n"))
 }
@@ -1554,6 +1564,21 @@ mod tests {
         let diff = "@@ -1,3 +1,3 @@\n a\n-b\n+B\n c\n";
         let result = apply_unified_diff(original, diff).unwrap();
         assert_eq!(result, "a\nB\nc");
+    }
+
+    #[test]
+    fn mixed_real_and_noop_hunks_apply_real_change() {
+        let original = "a\nunchanged\nb\n";
+        let diff = "@@ -1,1 +1,1 @@\n-a\n+A\n@@ -2,1 +2,1 @@\n-unchanged\n+unchanged\n";
+        assert_eq!(apply_unified_diff(original, diff).unwrap(), "A\nunchanged\nb");
+    }
+
+    #[test]
+    fn all_noop_hunks_are_rejected_before_compile() {
+        let diff = "@@ -1,1 +1,1 @@\n-a\n+a\n@@ -2,1 +2,1 @@\n-b\n+b\n";
+        assert!(apply_unified_diff("a\nb\n", diff)
+            .unwrap_err()
+            .contains("没有实际修改"));
     }
 
     #[test]

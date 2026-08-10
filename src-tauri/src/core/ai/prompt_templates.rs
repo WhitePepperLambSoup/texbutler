@@ -102,7 +102,7 @@ diff 输出完后，另起一行输出逐条修改解释，格式为：\n\
         }
         p.push_str(&dep_block);
     }
-    p.push_str("\n记住：\n1. 只输出 unified diff 文本；\n2. 保持文件其余部分不变；\n3. 修改必须能真正消除该错误（注意中文 LaTeX 的坑：`%` 要转义、中文字体无斜体、表格单元格内不要用 `\\textbf{...&...}`）。");
+    p.push_str("\n记住：\n1. 只输出 unified diff 文本；\n2. 保持文件其余部分不变；\n3. 修改必须能真正消除该错误（注意中文 LaTeX 的坑：`%` 要转义、中文字体无斜体、表格单元格内不要用 `\\textbf{...&...}`）；\n4. 不要输出 `-X`/`+X` 内容相同的 no-op 配对，也不要输出只有上下文行的 hunk。");
     p.push_str("\n针对特定错误类型的处理约定：\n- `Undefined control sequence`（未定义命令）：删除该命令所在行，或把该命令替换为已定义的等价命令；**不允许把该行原样保留（删除行与新增行内容相同等于没有修改）**。\n- 缺少宏包（如 xcolor）：在导言区添加 `\\usepackage{...}` 一行。\n- 文件缺失/图片无法读取：不要修改引用，直接输出说明。");
     p
 }
@@ -139,6 +139,15 @@ mod tests {
         assert!(p.contains("unified diff"));
         assert!(p.contains("---"));
         assert!(p.contains("文件清单"));
+    }
+
+    #[test]
+    fn fix_prompt_rejects_noop_hunks() {
+        let issue = Issue::new(Severity::Error, IssueKind::CompileError, "x");
+        let ctx = crate::core::SourceContext::around("main.tex", Some(1), "\\foo", 2);
+        let p = fix_prompt(&issue, &ctx, 1, None, &["main.tex".to_string()], None, &[]);
+        assert!(p.contains("不要输出 `-X`/`+X` 内容相同的 no-op 配对"));
+        assert!(p.contains("不要输出只有上下文行的 hunk"));
     }
 
     #[test]
