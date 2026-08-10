@@ -608,6 +608,12 @@ fn question_requests_edit(question: &str) -> bool {
         .filter_map(|term| question.find(term))
         .min()
         .unwrap_or(usize::MAX);
+    let is_chinese_question = question.trim_start().starts_with("请问")
+        || (first_chinese_inquiry.is_some()
+            && question.chars().any(|ch| matches!(ch, '?' | '？')));
+    if is_chinese_question {
+        return false;
+    }
     if first_chinese_inquiry.is_some_and(|inquiry| inquiry < first_edit) {
         return false;
     }
@@ -1621,6 +1627,17 @@ mod tests {
         assert!(!question_requests_edit("Replace: how does it work?"));
         assert!(!question_requests_edit("What does the replace tool do?"));
         assert!(!question_requests_edit("请解释如何用 replace 工具修改文本"));
+    }
+
+    #[test]
+    fn chinese_question_forms_do_not_request_edits() {
+        assert!(!question_requests_edit("请问修改格式的工具是什么？"));
+        assert!(!question_requests_edit("请问修改格式的工具怎么用？"));
+        assert!(!question_requests_edit("修改格式的工具是什么？"));
+
+        assert!(question_requests_edit("请修改格式"));
+        assert!(question_requests_edit("修改格式"));
+        assert!(question_requests_edit("调整格式"));
     }
 
     #[test]
