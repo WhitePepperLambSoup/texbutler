@@ -126,9 +126,13 @@ export default function ProblemsPanel() {
                     <button
                       className="btn-mini"
                       disabled={busy}
-                      onClick={() => {
+                      onClick={async () => {
                         setAiBusyIdx(i);
-                        void diagnoseIssue(issue, i).finally(() => setAiBusyIdx(null));
+                        try {
+                          await diagnoseIssue(issue, i);
+                        } finally {
+                          setAiBusyIdx(null);
+                        }
                       }}
                     >
                       {aiBusyIdx === i ? "…" : t("problems.aiExplain")}
@@ -136,9 +140,13 @@ export default function ProblemsPanel() {
                     <button
                       className="btn-mini btn-primary"
                       disabled={busy}
-                      onClick={() => {
+                      onClick={async () => {
                         setAiBusyIdx(i);
-                        void fixIssue(issue, i).finally(() => setAiBusyIdx(null));
+                        try {
+                          await fixIssue(issue, i);
+                        } finally {
+                          setAiBusyIdx(null);
+                        }
                       }}
                     >
                       {aiBusyIdx === i ? "…" : t("problems.aiFix")}

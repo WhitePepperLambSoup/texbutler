@@ -108,6 +108,7 @@ interface AiState {
   newSession: () => void;
   switchSession: (id: string | null) => void;
   attachFile: (projectRoot: string, file: string | null) => void;
+  focusIssueFile: (file: string | null) => Promise<void>;
   recordFileBinding: () => void;
   renameSession: (id: string, name: string) => void;
   deleteSession: (id: string) => void;
@@ -573,6 +574,26 @@ export const useAiStore = create<AiState>((set, get) => ({
     persistScopedBindings(fileSessions);
   },
 
+  async focusIssueFile(file) {
+    if (!file || !/\.tex$/i.test(file)) return;
+    const normalized = file.replace(/\\/g, "/");
+    if (normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized)
+      || normalized.split("/").some((part) => part === ".." || part === "")) return;
+
+    const project = useProjectStore.getState();
+    type ProjectNode = { path: string; is_dir: boolean; children: ProjectNode[] };
+    const exists = (nodes: ProjectNode[]): boolean =>
+      nodes.some((node) => (!node.is_dir && node.path === normalized)
+        || (node.is_dir && exists(node.children)));
+    if (!project.root || !exists(project.files)) return;
+
+    await project.openFile(normalized);
+    const latest = useProjectStore.getState();
+    if (latest.root === project.root && latest.tabs.some((tab) => tab.path === normalized)) {
+      get().attachFile(latest.root, normalized);
+    }
+  },
+
   /** Called when a message is sent: bind the active conversation to the
    *  active file so switching back restores it. */
   recordFileBinding() {
@@ -618,6 +639,7 @@ export const useAiStore = create<AiState>((set, get) => ({
 
   async diagnoseIssue(issue, index) {
     if (get().busy) return;
+    await get().focusIssueFile(issue.file ?? null);
     const context = captureRequestContext();
     set({ busy: true, busyKind: "diagnose" });
     const t = useI18n.getState().t;
@@ -647,6 +669,7 @@ export const useAiStore = create<AiState>((set, get) => ({
 
   async fixIssue(issue, index) {
     if (get().busy) return;
+    await get().focusIssueFile(issue.file ?? null);
     const context = captureRequestContext();
     set({ busy: true, busyKind: "fix" });
     const t = useI18n.getState().t;
