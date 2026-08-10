@@ -508,7 +508,6 @@ fn question_requests_edit(question: &str) -> bool {
         "怎么",
         "如何",
         "工具",
-        "格式",
         "示例",
         "例子",
         "解释",
@@ -547,9 +546,6 @@ fn question_requests_edit(question: &str) -> bool {
         "what",
         "how",
         "why",
-        "format",
-        "example",
-        "examples",
     ];
     let words: Vec<_> = question
         .split(|ch: char| !ch.is_ascii_alphabetic())
@@ -1613,6 +1609,18 @@ mod tests {
         assert!(question_requests_edit(
             "Please modify the file and explain the change"
         ));
+    }
+
+    #[test]
+    fn explicit_edit_commands_can_target_formats_and_examples() {
+        assert!(question_requests_edit("Replace the date format"));
+        assert!(question_requests_edit("Generate an example appendix"));
+        assert!(question_requests_edit("修改格式"));
+        assert!(question_requests_edit("调整格式"));
+
+        assert!(!question_requests_edit("Replace: how does it work?"));
+        assert!(!question_requests_edit("What does the replace tool do?"));
+        assert!(!question_requests_edit("请解释如何用 replace 工具修改文本"));
     }
 
     #[test]
