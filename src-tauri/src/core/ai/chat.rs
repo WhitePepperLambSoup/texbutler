@@ -503,6 +503,26 @@ fn parse_tool_calls(reply: &str) -> Vec<ToolCall> {
 
 fn question_requests_edit(question: &str) -> bool {
     let question = question.to_lowercase();
+    const CHINESE_INQUIRY_TERMS: &[&str] = &[
+        "什么",
+        "怎么",
+        "如何",
+        "工具",
+        "格式",
+        "示例",
+        "例子",
+        "解释",
+        "说明",
+        "查看",
+        "检查",
+        "展示",
+        "演示",
+        "介绍",
+    ];
+    let first_chinese_inquiry = CHINESE_INQUIRY_TERMS
+        .iter()
+        .filter_map(|term| question.find(term))
+        .min();
     const ENGLISH_EDIT_TERMS: &[&str] = &[
         "edit",
         "modify",
@@ -523,8 +543,17 @@ fn question_requests_edit(question: &str) -> bool {
         .split(|ch: char| !ch.is_ascii_alphabetic())
         .filter(|word| !word.is_empty())
         .collect();
+    let mut word_cursor = 0usize;
     for (index, word) in words.iter().enumerate() {
+        let word_start = question[word_cursor..]
+            .find(*word)
+            .map(|offset| word_cursor + offset)
+            .unwrap_or(word_cursor);
+        word_cursor = word_start + word.len();
         if !ENGLISH_EDIT_TERMS.contains(word) {
+            continue;
+        }
+        if first_chinese_inquiry.is_some_and(|inquiry| inquiry < word_start) {
             continue;
         }
         let requested_after = index > 0 && words[index - 1] == "please";
@@ -538,12 +567,18 @@ fn question_requests_edit(question: &str) -> bool {
             && words[index - 3] == "i"
             && matches!(words[index - 2], "want" | "need")
             && words[index - 1] == "to";
+        let describes_a_tool = words
+            .get(index + 1)
+            .is_some_and(|next| matches!(*next, "tool" | "format" | "example" | "examples"));
         if index == 0
             || requested_after
             || requested_by_question
             || requested_for_help
             || requested_for_self
         {
+            if describes_a_tool {
+                continue;
+            }
             return true;
         }
     }
@@ -570,28 +605,20 @@ fn question_requests_edit(question: &str) -> bool {
         return false;
     }
     const CHINESE_REQUEST_PREFIXES: &[&str] = &["请", "麻烦", "帮我", "请帮", "我想", "我要", "需要", "把"];
+    let first_edit = CHINESE_EDIT_TERMS
+        .iter()
+        .filter_map(|term| question.find(term))
+        .min()
+        .unwrap_or(usize::MAX);
+    if first_chinese_inquiry.is_some_and(|inquiry| inquiry < first_edit) {
+        return false;
+    }
     if CHINESE_REQUEST_PREFIXES
         .iter()
         .any(|prefix| question.contains(prefix))
     {
         return true;
     }
-    const CHINESE_INQUIRY_TERMS: &[&str] = &[
-        "什么",
-        "怎么",
-        "如何",
-        "工具",
-        "格式",
-        "示例",
-        "例子",
-        "解释",
-        "说明",
-        "查看",
-        "检查",
-        "展示",
-        "演示",
-        "介绍",
-    ];
     !CHINESE_INQUIRY_TERMS
         .iter()
         .any(|term| question.contains(term))
@@ -614,21 +641,32 @@ fn markdown_line_end(reply: &str, start: usize) -> (usize, usize) {
     }
 }
 
+fn markdown_fence_body(line: &str) -> Option<&str> {
+    let line = line.trim_end_matches('\r');
+    let indent = line.bytes().take_while(|byte| *byte == b' ').count();
+    (indent <= 3).then(|| &line[indent..])
+}
+
 fn is_markdown_fence_closer(line: &str) -> bool {
-    line.trim() == "```"
+    markdown_fence_body(line).is_some_and(|body| {
+        body.starts_with("```") && body["```".len()..].trim().is_empty()
+    })
 }
 
 fn is_json_fence_opener(line: &str) -> bool {
-    let line = line.trim_end_matches('\r').trim_start();
-    let Some(language) = line.strip_prefix("```") else {
+    let Some(body) = markdown_fence_body(line) else {
+        return false;
+    };
+    let Some(language) = body.strip_prefix("```") else {
         return false;
     };
     !language.starts_with('`') && matches!(language.trim(), "json" | "JSON")
 }
 
 fn is_markdown_fence_opener(line: &str) -> bool {
-    let line = line.trim_end_matches('\r').trim_start();
-    line.starts_with("```") && !line.starts_with("````") && !is_markdown_fence_closer(line)
+    markdown_fence_body(line).is_some_and(|body| {
+        body.starts_with("```") && !body.starts_with("````") && !is_markdown_fence_closer(line)
+    })
 }
 
 /// Return known tool calls and their complete Markdown fence spans for
@@ -1568,6 +1606,8 @@ mod tests {
     fn edit_intent_requires_an_explicit_request() {
         assert!(!question_requests_edit("What does the replace tool do?"));
         assert!(!question_requests_edit("What does the write tool do?"));
+        assert!(!question_requests_edit("Replace tool: what does it do?"));
+        assert!(!question_requests_edit("请解释如何用 replace 工具修改文本"));
         assert!(!question_requests_edit("Please inspect the file."));
         assert!(!question_requests_edit("Show me the JSON tool format."));
         assert!(question_requests_edit(
@@ -1589,6 +1629,15 @@ mod tests {
 
         let unterminated = format!("```json\n{tool}\nincidental ``` backticks");
         assert!(parse_tool_calls_with_mode(&unterminated, true).is_empty());
+
+        let three_space_indent = format!("   ```json\n{tool}\n   ```");
+        assert_eq!(
+            parse_tool_calls_with_mode(&three_space_indent, true).len(),
+            1
+        );
+
+        let four_space_indent = format!("    ```json\n{tool}\n    ```");
+        assert!(parse_tool_calls_with_mode(&four_space_indent, true).is_empty());
     }
 
     #[test]
