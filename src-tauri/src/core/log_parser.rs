@@ -146,7 +146,13 @@ fn find_file_line(s: &str) -> Option<(String, usize)> {
             }
             while k > 0 {
                 let c = bytes[k - 1];
-                if c.is_ascii_alphanumeric() || c == b'.' || c == b'_' || c == b'-' || c == b'/' {
+                if c.is_ascii_alphanumeric()
+                    || c == b'.'
+                    || c == b'_'
+                    || c == b'-'
+                    || c == b'~'
+                    || c == b'/'
+                {
                     k -= 1;
                 } else {
                     break;
@@ -173,7 +179,14 @@ fn find_file_line(s: &str) -> Option<(String, usize)> {
                         k = m - 2;
                         break;
                     }
-                    if !(c.is_ascii_alphanumeric() || c == b'.' || c == b'_' || c == b'-' || c == b'/' || c == b' ') {
+                    if !(c.is_ascii_alphanumeric()
+                        || c == b'.'
+                        || c == b'_'
+                        || c == b'-'
+                        || c == b'~'
+                        || c == b'/'
+                        || c == b' ')
+                    {
                         break;
                     }
                     m -= 1;
@@ -350,6 +363,22 @@ mod tests {
         assert_eq!(
             found,
             Some(("C:/Users/20806/AppData/Local/Temp/tb-xe-repro/main.tex".to_string(), 8))
+        );
+    }
+
+    #[test]
+    fn find_file_line_handles_windows_short_path() {
+        let line = concat!(
+            "C:/Users/RUNNER~1/AppData/Local/Temp/tb-texlive/p/chapters/main.tex:12: ",
+            "Undefined control sequence"
+        );
+        let found = find_file_line(line);
+        assert_eq!(
+            found,
+            Some((
+                "C:/Users/RUNNER~1/AppData/Local/Temp/tb-texlive/p/chapters/main.tex".to_string(),
+                12
+            ))
         );
     }
 
