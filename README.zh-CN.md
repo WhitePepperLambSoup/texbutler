@@ -4,7 +4,7 @@
 
 **本地 LaTeX 桌面编译器 + AI 辅助工具**，面向中文学术 / 报告用户。开箱即用：不需要手动安装 TeX Live，也能编译出 PDF。
 
-![液态玻璃界面](docs/readme%20showcase.png)
+![TeXButler 界面](assets/screenshot-project/cn.png)
 
 ## 核心价值
 
