@@ -2,22 +2,37 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 语义化版本约定。
 
-## [0.7.0] - 2026-08-08
+## [0.7.0] - 2026-08-11
 
 ### 模板市场 / Template Marketplace
 
-- **41 个高校与科研模板**：覆盖国内 985/211、双一流、科研院所、海外 QS 前 100 与通用分类（山东大学、ANU、北京大学、中科院等），GitHub 来源逐一验证，支持分类筛选与关键词搜索。 / **41 university & research templates**: covering domestic 985/211, Double First-Class, research institutes, overseas QS top 100 and general categories (Shandong University, ANU, Peking University, CAS and more), each GitHub-sourced and verified, with category filters and keyword search.
-- **7 个内置模板**：经典 article/ctexart/report/beamer 之外预装北大 pkuthss、国科大 ucasthesis、山大 sdu-thesis、ANU 论文模板，开箱即用。 / **7 built-in templates**: classic article/ctexart/report/beamer plus pre-installed Peking University pkuthss, UCAS ucasthesis, SDU sdu-thesis and ANU thesis templates.
-- **按需下载**：大体积模板在模板市场一键下载并安全解压（路径穿越与 zip 炸弹防护），下载后立即可创建项目。 / **Download on demand**: large templates are one-click downloaded in the marketplace and safely extracted (traversal and zip-bomb guards), ready to create projects immediately.
+- **169 个模板市场条目**：覆盖国内 985 高校、海外 QS 前 100、期刊、幻灯片、海报、简历、信件、报告与课程作业，支持分类、搜索、下载后结构验证和可信状态显示。 / **169 marketplace entries**: universities, QS top-100 institutions, journals, slides, posters, CVs, letters, reports and coursework, with filtering, search, post-download structure validation and verified status.
+- **8 个内置模板真机验证**：常用中英文文档以及北大、国科大、山大、ANU 等论文模板均完成实际编译验证。 / **8 built-in templates verified with real compilers**, including common Chinese/English documents and PKU, UCAS, SDU and ANU thesis templates.
+- **按需下载**：大体积模板一键下载并安全解压，具备路径穿越、非本机盘符、zip 炸弹及无效文档结构防护。 / **Download on demand** with traversal, foreign-drive, zip-bomb and invalid-document guards.
+- **恢复“新建文件”工作流**：文件创建在当前打开目录中，`.tex` 可选 6 种起始模板，其他扩展名可创建空白文件；创建后自动打开并建立对应 AI 对话。 / **Restored New File workflow** creates in the current directory, offers six `.tex` starters and opens the matching AI chat.
+- **模板导入当前项目**：模板市场不再错误地进入新建项目流程；导入具备冲突检测、可信目录句柄、失败回滚和残留清理。 / **Import templates into the open project** with conflict detection, trusted handles and rollback.
 
 ### 写作助手 / Writing Assistants
 
 - **中文排版规则**：自动检测中英文之间缺失空格（跳过数字与数学模式），一键批量修复。 / **CJK spacing rule**: detects missing spaces between CJK and ASCII letters (skipping numbers and math mode), one-click batch fix.
 - **全文中英互译**：整篇翻译保持 LaTeX 结构，翻译期间新输入不会被覆盖，翻译后自动保存并编译验证。 / **Full-document translation**: whole-document AI translation preserves LaTeX structure, never overwrites input typed during translation, auto-saves and recompiles to verify.
 - **术语与引用安全**：AI 修复上下文自动注入 `\input/\include` 依赖链，索引防幻觉。 / **Citation safety**: AI fix context injects the `\input/\include` dependency chain, hallucination-guarded indexes.
+- **学术工作流扩展**：加入引用跳转、TODO/FIXME 面板、CSV/TSV 转 booktabs、DOI/arXiv 抓取 BibTeX，以及压缩、扩展和学术化润色。 / **Academic workflow additions** include reference navigation, TODO scanning, CSV/TSV tables, DOI/arXiv BibTeX retrieval and academic polishing.
+
+### AI 对话与安全编辑 / AI Chat & Safe Editing
+
+- **AI 对话布局重建**：消息区、输入区、工具栏和操作菜单重新布局，修复遮挡、错位、输入框被挤压及窄窗口不可用。 / **Rebuilt AI conversation layout** fixes overlap, misalignment, crushed inputs and narrow-window usability.
+- **按项目和文件持久化会话**：每个文档拥有独立对话；打开、切换、重启或异步返回时，消息和 AI 动作始终路由回来源文件。 / **Project-and-file scoped persistent chats** keep messages and asynchronous actions attached to their source document.
+- **可靠的一键诊断与修复**：错误文件自动聚焦，支持安全的项目路径和唯一 basename 纠正；修复最多三轮，空补丁与 no-op hunk 在写盘前拒绝。 / **Reliable diagnose/fix flow** focuses the source file, resolves safe project paths, caps fixes at three rounds and rejects empty/no-op patches.
+- **工具调用安全门控**：只有明确修改文档内容时才允许 fenced 工具调用；教程、演示、schema 示例和工具格式说明不会误改文件。 / **Tool-call intent gating** keeps tutorials, demonstrations and schema examples inert.
+- **并发与路径安全**：拒绝越界、歧义和非本机盘符路径；项目切换与 AI 修复采用一致锁顺序，避免死锁和旧会话覆盖。 / **Concurrency and path safety** prevents escapes, ambiguous targets, lock inversion and stale-session writes.
 
 ### 编辑器与界面 / Editor & UI
 
+- **工具栏溢出菜单与响应式布局**：编辑工具不再与标签栏互相挤压，窄窗口自动收纳和折叠，弹层触发区保持可点击。 / **Overflow menus and responsive layout** prevent tool/tab collisions and keep popovers usable.
+- **可靠的指针分隔条**：文件树、PDF、AI 与底部面板的拖动在松开、取消、失焦或按键丢失时可靠结束，尺寸变化方向与鼠标一致。 / **Reliable pointer splitters** end correctly and resize in the pointer direction.
+- **PDF 预览保持可用**：无 PDF 时不占隐藏宽度，生成 PDF、切换项目或重新编译后预览面板不会消失。 / **Persistent PDF preview** avoids hidden width and survives project or compile changes.
+- **主题与可读性**：修复液态玻璃外观栏点击，降低更多编辑/AI 菜单透明度，并增强浅色、深色与玻璃主题的文字对比度。 / **Theme and contrast fixes** improve appearance controls, popover opacity and text readability.
 - **Enter 发送 / Shift+Enter 换行**：AI 对话快捷键对齐主流聊天应用，中文输入法候选词确认不会误发送。 / **Enter to send / Shift+Enter for newline**: AI chat shortcuts match mainstream chat apps; IME candidate confirmation never misfires.
 - **公式悬浮预览**：鼠标悬停公式源码（`$...$`/`$$...$$`/`\[...\]`/`\(...\)`）即时渲染 KaTeX。 / **Formula hover preview**: hover any formula source to render it instantly with KaTeX.
 - **环境自动补全**：输入 `\begin{...}` 自动补 `\end{...}`（逐字输入与整串粘贴双路径均生效）。 / **Environment auto-close**: typing `\begin{...}` auto-inserts `\end{...}` (works for both character-by-character and pasted input).
@@ -28,6 +43,13 @@
 - **欢迎页与最近项目**：启动无项目时显示最近打开列表，一键恢复（失败打开自动清理）。 / **Welcome screen & recent projects**: shows recently opened projects for one-click restore (failed opens are cleaned up automatically).
 - **图片拖放导入**：PNG/JPG/PDF 直接拖入编辑器自动压缩导入并打开插图对话框。 / **Drag-and-drop image import**: drop PNG/JPG/PDF onto the editor to auto-compress, import and open the figure dialog.
 - **液态玻璃竖条移除**：主题切换后左侧残留装饰竖条已移除。 / **Liquid-glass polish**: the leftover decorative bar on the left of the liquid glass theme is removed.
+
+### 编译、可靠性与安全 / Compilation, Reliability & Security
+
+- **编译内容等于编辑器所见**：编译前保存所有 dirty 标签，并修复多文件项目主文件检测选错入口的问题。 / **Compile what the editor shows** by saving dirty tabs and selecting the correct main document.
+- **系统 TeX 诊断增强**：合并 `.log` 与 stdout/stderr，保留 XeLaTeX 等引擎的真实错误文件、行号和原始证据；未知行号不再显示伪造的第 0 行。 / **Improved system-TeX diagnostics** preserve real files, lines and console evidence without inventing line zero.
+- **异步项目隔离**：编译、文件刷新、AI 回复和会话切换绑定项目代次，旧项目结果不会覆盖当前项目。 / **Generation-scoped async state** prevents stale project results.
+- **纵深文件安全**：符号链接、路径穿越、zip 炸弹、模板竞态、快照回滚及失败清理均有独立防护和回归测试。 / **Defense-in-depth file safety** covers symlinks, traversal, zip bombs, template races and rollback failures.
 
 ## [0.6.1] - 2026-08-07
 
