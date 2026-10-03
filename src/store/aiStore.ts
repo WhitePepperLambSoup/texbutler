@@ -271,6 +271,9 @@ export const useAiStore = create<AiState>((set, get) => ({
     if (get().busy) return;
     const context = captureRequestContext();
     set({ busy: true, busyKind: "diagnose" });
+    // the backend reads files from disk: save first so the AI sees (and can
+    // safely edit) exactly what the editor shows
+    await saveBeforeAi();
     const st = useProjectStore.getState();
     get().recordFileBinding();
     appendMessageToRequest(context, { role: "user", kind: "plain", text: q });
@@ -346,6 +349,7 @@ export const useAiStore = create<AiState>((set, get) => ({
           true,
         );
       }
+      if (editedThisRound) void recompileAfterAiChange(context);
     } catch (e) {
       const errorText = useI18n.getState().t("ai.chatFailed", { e: String(e) });
       if (answerMessageId != null) {
@@ -379,8 +383,8 @@ export const useAiStore = create<AiState>((set, get) => ({
           candidate.backup === edit.backup && editBelongsToRequest(candidate, context)
         )),
       }));
-      // refresh the rule-issue list so it no longer shows stale entries
-      if (projectRootsMatch(useProjectStore.getState().root, context.projectRoot)) await useCompileStoreRefresh();
+      // refresh problems + PDF so they no longer show the rolled-back state
+      void recompileAfterAiChange(context);
       appendMessageToRequest(context, { role: "assistant", kind: "plain", text: useI18n.getState().t("ai.editRolledBack", { file: edit.file }) });
     } catch (e) {
       appendMessageToRequest(context, { role: "assistant", kind: "error", text: useI18n.getState().t("ai.chatFailed", { e: String(e) }) });
@@ -401,6 +405,7 @@ export const useAiStore = create<AiState>((set, get) => ({
         kind: "plain",
         text: useI18n.getState().t("ai.timelineRestored", { file: rel }),
       });
+      void recompileAfterAiChange(context);
       return rel;
     } catch (e) {
       appendMessageToRequest(context, {
@@ -414,9 +419,12 @@ export const useAiStore = create<AiState>((set, get) => ({
 
   async fixRuleIssueForSession(issue, maxRounds = 3, apply = true) {
     const context = captureRequestContext();
+    await saveBeforeAi();
     try {
       const report = await api.fixRuleIssue(issue, maxRounds, apply);
       if (projectRootsMatch(useProjectStore.getState().root, context.projectRoot)) {
+        // the fix rewrote the file on disk: show it in the editor
+        if (report.ok && issue.file) await useProjectStore.getState().reloadTab(issue.file);
         const { useCompileStore } = await import("./compileStore");
         await useCompileStore.getState().runCheck();
       }
@@ -443,6 +451,7 @@ export const useAiStore = create<AiState>((set, get) => ({
 
   async applyHunk(file, patch) {
     const context = captureRequestContext();
+    await saveBeforeAi();
     try {
       await api.aiApplyPatch(file, patch);
       appendMessageToRequest(context, {
@@ -451,7 +460,7 @@ export const useAiStore = create<AiState>((set, get) => ({
         text: useI18n.getState().t("ai.hunkApplied", { file }),
       });
       await useProjectStore.getState().reloadTab(file);
-      await useCompileStoreRefresh();
+      void recompileAfterAiChange(context);
     } catch (e) {
       appendMessageToRequest(context, {
         role: "assistant",
@@ -678,6 +687,7 @@ export const useAiStore = create<AiState>((set, get) => ({
     if (get().busy) return;
     set({ busy: true, busyKind: "fix" });
     try {
+      await saveBeforeAi();
       await get().focusIssueFile(issue.file ?? null);
       const context = captureRequestContext();
     const t = useI18n.getState().t;
@@ -689,7 +699,10 @@ export const useAiStore = create<AiState>((set, get) => ({
     });
     try {
       const report: FixReport = await api.aiFix(index, 3, !get().suggestMode);
-      if (report.diff) {
+      // Only a SUCCESSFUL fix (already written + compiled) or a suggestion
+      // gets the keep/undo bar; a failed fix was rolled back server-side and
+      // must not be presented as something to "apply".
+      if (report.diff && (report.ok || report.suggested)) {
         setRequestDiffPending(context, report);
         appendMessageToRequest(context, {
           role: "assistant",
@@ -701,11 +714,19 @@ export const useAiStore = create<AiState>((set, get) => ({
           diff: report.diff,
           report,
         });
+        if (!report.suggested) {
+          // the fix is already on disk: show it in the editor and rebuild
+          if (report.hunks?.[0]?.file ?? issue.file) {
+            await useProjectStore.getState().reloadTab(report.hunks?.[0]?.file ?? issue.file!);
+          }
+          void recompileAfterAiChange(context);
+        }
       } else {
         appendMessageToRequest(context, {
           role: "assistant",
           kind: "error",
           text: report.summary,
+          diff: report.diff ?? null,
           report,
         });
       }
@@ -751,6 +772,7 @@ export const useAiStore = create<AiState>((set, get) => ({
           kind: "plain",
           text: useI18n.getState().t("ai.rolledBack", { file: rel }),
         });
+        void recompileAfterAiChange(context);
       } catch (e) {
         appendMessageToRequest(context, {
           role: "assistant",
@@ -806,9 +828,37 @@ export const useAiStore = create<AiState>((set, get) => ({
   },
 }));
 
+async function saveBeforeAi() {
+  try {
+    await useProjectStore.getState().saveAll();
+  } catch {
+    /* a failed save surfaces on the next explicit save; do not block the AI */
+  }
+}
+
 async function useCompileStoreRefresh() {
   const { useCompileStore } = await import("./compileStore");
   await useCompileStore.getState().refreshDiagnostics();
+}
+
+/** After the AI changed (or restored) files: rebuild once so the problems
+ *  list, status bar and PDF reflect the new content. The fix loop compiles
+ *  internally, but that result never reaches the UI. */
+async function recompileAfterAiChange(context: AiRequestContext) {
+  if (!projectRootsMatch(useProjectStore.getState().root, context.projectRoot)) return;
+  const { useCompileStore } = await import("./compileStore");
+  const cs = useCompileStore.getState();
+  if (!cs.running) {
+    void cs.compile(cs.lastTarget);
+    return;
+  }
+  // a build is in flight (e.g. "undo" right after a fix): rebuild once it
+  // finishes, otherwise the UI would keep showing the pre-undo result
+  const unsub = useCompileStore.subscribe((s) => {
+    if (s.running) return;
+    unsub();
+    void s.compile(s.lastTarget);
+  });
 }
 
 onEvent(events.aiStatus, (p: { kind?: string; status?: string; ok?: boolean }) => {

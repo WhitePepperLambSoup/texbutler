@@ -47,6 +47,11 @@ import { FileIcon } from "./ProjectTree";
 // blocked the editor shows "loading" forever. Bundling it makes the editor
 // work fully offline (same promise as the built-in tectonic bundle).
 import * as monacoLocal from "monaco-editor/esm/vs/editor/editor.api";
+// `editor.api` is only the bare API: without this import NO editor feature
+// is registered (suggest/autocomplete, hover, find & replace, folding,
+// links/Ctrl+Click, bracket matching, context menu, comment toggling…).
+// `edcore.main` = every editor contribution, still without language packs.
+import "monaco-editor/esm/vs/editor/edcore.main";
 import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 
 self.MonacoEnvironment = {
@@ -422,8 +427,36 @@ export default function EditorPane() {
     const cursorSub = editor.onDidChangeCursorSelection(reportCursor);
     reportCursor();
 
-    // editor-local shortcuts as Monaco commands (not window listeners)
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyB, () => wrapSelection("\\textbf{", "}"));
+    // an EMPTY file gives Monaco nothing to detect the line ending from, so
+    // it would use the Windows default (CRLF); keep new files LF like the
+    // templates (files that already contain CRLF keep it)
+    const lfForEmpty = () => {
+      const model = editor.getModel();
+      if (model && model.getValueLength() === 0) model.setEOL(monaco.editor.EndOfLineSequence.LF);
+    };
+    lfForEmpty();
+    const modelSub = editor.onDidChangeModel(lfForEmpty);
+
+    // Editor-local shortcuts. Standalone Monaco keeps ONE keybinding registry
+    // for every editor instance, so a plain addCommand/addAction keybinding
+    // fires in whichever editor registered last (the split pane, or a stale
+    // instance). The context key below exists only in THIS editor's scope.
+    editor.createContextKey("tbMainEditor", true);
+    const boldAction = editor.addAction({
+      id: "texbutler.bold",
+      label: t("fmt.bold"),
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyB],
+      precondition: "tbMainEditor",
+      contextMenuGroupId: "1_modification",
+      run: (ed) => wrapIn(ed as CodeEditor, "\\textbf{", "}"),
+    });
+    const askAction = editor.addAction({
+      id: "texbutler.askAi",
+      label: t("editor.askAi"),
+      precondition: "tbMainEditor",
+      contextMenuGroupId: "navigation",
+      run: () => askAboutSelection(),
+    });
 
     // typing `\begin{env}` (complete with braces) auto-inserts the matching
     // `\end{env}` two lines below, with the cursor left inside. Listens to
@@ -436,9 +469,15 @@ export default function EditorPane() {
       const model = editor.getModel();
       if (!model) return;
       const ch = e.changes[e.changes.length - 1];
-      if (!ch || !ch.text) return;
-      const lineText = model.getLineContent(ch.range.endLineNumber);
-      const col = ch.range.endColumn + ch.text.length;
+      // only plain typing / short single-line inserts can complete a \begin
+      if (!ch || !ch.text || ch.text.includes("\n") || ch.text.length > 64) return;
+      // end of the inserted text in the NEW model (the change range is in
+      // old coordinates; using its end broke on replacements and threw
+      // "Illegal value for lineNumber" after deletions)
+      const lineNo = ch.range.startLineNumber;
+      if (lineNo > model.getLineCount()) return;
+      const lineText = model.getLineContent(lineNo);
+      const col = ch.range.startColumn + ch.text.length;
       const before = lineText.slice(0, col - 1);
       const m = before.match(/\\begin\{([^}]+)\}$/);
       if (!m) return;
@@ -449,8 +488,8 @@ export default function EditorPane() {
       const lineCount = model.getLineCount();
       const near = [
         lineText.slice(col - 1).trimStart(),
-        ch.range.endLineNumber + 1 <= lineCount ? model.getLineContent(ch.range.endLineNumber + 1).trimStart() : "",
-        ch.range.endLineNumber + 2 <= lineCount ? model.getLineContent(ch.range.endLineNumber + 2).trimStart() : "",
+        lineNo + 1 <= lineCount ? model.getLineContent(lineNo + 1).trimStart() : "",
+        lineNo + 2 <= lineCount ? model.getLineContent(lineNo + 2).trimStart() : "",
       ].some((s) => s.startsWith(`\\end{${env}}`));
       if (near) return;
       envClosing = true;
@@ -458,11 +497,11 @@ export default function EditorPane() {
       try {
         editor.executeEdits("env-close", [
           {
-            range: new monaco.Range(ch.range.endLineNumber, col, ch.range.endLineNumber, col),
+            range: new monaco.Range(lineNo, col, lineNo, col),
             text: `\n\n\\end{${env}}\n`,
           },
         ]);
-        editor.setPosition({ lineNumber: ch.range.endLineNumber, column: col });
+        editor.setPosition({ lineNumber: lineNo, column: col });
       } finally {
         envClosing = false;
       }
@@ -506,6 +545,9 @@ export default function EditorPane() {
       dom?.removeEventListener("paste", onPaste);
       envAutoClose.dispose();
       cursorSub.dispose();
+      modelSub.dispose();
+      boldAction.dispose();
+      askAction.dispose();
       unregister();
       useUiStore.getState().setCursor(null);
       if (editorRef.current === editor) editorRef.current = null;
@@ -524,8 +566,11 @@ export default function EditorPane() {
 
   /** Wrap the current selection with a command pair (Ctrl+Shift+B = bold). */
   const wrapSelection = (prefix: string, suffix = "}") => {
-    const ed = editorRef.current;
-    if (!ed) return;
+    if (editorRef.current) wrapIn(editorRef.current, prefix, suffix);
+  };
+
+  /** Wrap `ed`'s selection; the action passes its OWN editor instance. */
+  function wrapIn(ed: CodeEditor, prefix: string, suffix = "}") {
     const sel = ed.getSelection();
     if (!sel) return;
     const text = ed.getModel()?.getValueInRange(sel) ?? "";
@@ -536,7 +581,7 @@ export default function EditorPane() {
     }
     ed.pushUndoStop();
     ed.focus();
-  };
+  }
 
   /** Insert a line-level block at the start of the cursor line. */
   const insertLine = (text: string) => {

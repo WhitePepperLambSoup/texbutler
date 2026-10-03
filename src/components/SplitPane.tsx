@@ -44,7 +44,16 @@ export default function SplitPane({ file }: { file: string }) {
   };
 
   const onMount: OnMount = (editor, monaco) => {
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => void save().catch(() => undefined));
+    // Monaco keybindings are global across editor instances; this context
+    // key exists only in the split editor, so Ctrl+S here saves THIS file
+    editor.createContextKey("tbSplitEditor", true);
+    editor.addAction({
+      id: "texbutler.saveSplit",
+      label: t("editor.save"),
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
+      precondition: "tbSplitEditor",
+      run: () => void save().catch(() => undefined),
+    });
   };
 
   const name = file.split("/").pop() ?? file;
@@ -71,6 +80,10 @@ export default function SplitPane({ file }: { file: string }) {
           <X size={15} />
         </button>
       </div>
+      {/* mount only once the file is loaded: a model created from "" takes
+          the platform EOL (CRLF on Windows) and the first edit would then
+          rewrite the whole file with \r\n line endings */}
+      {tab ? (
       <Editor
         key={file}
         language="latex"
@@ -86,6 +99,9 @@ export default function SplitPane({ file }: { file: string }) {
         }}
         options={{ ...EDITOR_OPTIONS, fontSize: 13 }}
       />
+      ) : (
+        <div className="editor-empty">{t("common.loading")}</div>
+      )}
     </div>
   );
 }

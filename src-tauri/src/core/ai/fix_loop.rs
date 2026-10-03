@@ -649,6 +649,39 @@ fn is_unrepairable_engine_failure(issue: &Issue) -> bool {
         .unwrap_or(false)
 }
 
+/// Whitespace-only typography rules with a deterministic fix.
+fn is_typography_rule(issue: &Issue) -> bool {
+    matches!(issue.rule_id.as_deref(), Some("paragraph") | Some("cjk_spacing"))
+}
+
+/// Compile the project's main document on a blocking thread.
+async fn compile_main(project: &Project) -> CompileResult {
+    let settings = crate::core::settings::Settings::load();
+    let scheduler = CompilerScheduler::new_with_passes(settings.engine, settings.texlive_passes);
+    let proj_clone = project.clone();
+    let main_name = project.main_file.clone();
+    tokio::task::spawn_blocking(move || scheduler.compile(&proj_clone, std::path::Path::new(&main_name), &|| false))
+        .await
+        .unwrap_or_else(|_| {
+            CompileResult::failed(project.log_path(), crate::core::compiler::EngineUsed::Tectonic, "编译任务异常")
+        })
+}
+
+/// True when `after` contains an error message that `before` did not have
+/// (compared as a multiset of messages: inserted lines shift line numbers).
+fn introduces_new_errors(before: &[Issue], after: &[Issue]) -> bool {
+    use std::collections::HashMap;
+    let count = |issues: &[Issue]| {
+        let mut m: HashMap<String, usize> = HashMap::new();
+        for i in issues.iter().filter(|i| i.severity == crate::core::Severity::Error) {
+            *m.entry(i.message.clone()).or_default() += 1;
+        }
+        m
+    };
+    let (b, a) = (count(before), count(after));
+    a.iter().any(|(msg, n)| *n > b.get(msg).copied().unwrap_or(0))
+}
+
 /// The full fix loop. `compile` is injected so tests can stub it.
 /// `apply: true` (default) writes the diff and recompiles; `apply: false`
 /// is suggest mode — the AI diff is returned without touching the disk.
@@ -766,6 +799,43 @@ pub async fn fix_loop(
                             issues_after: det_result.issues,
                             rolled_back: false,
                             backup: snap_det,
+                            hunks: vec![],
+                            suggested: false,
+                        };
+                    }
+                    // Typography rule fixes (blank lines / CJK spacing) are
+                    // judged by whether they introduce NEW compile errors.
+                    // Requiring the whole project to compile reverted them
+                    // whenever an unrelated error existed elsewhere, and a
+                    // chapter fragment was then handed to the AI, which
+                    // "fixed" it by adding a \documentclass.
+                    if is_typography_rule(&current_issue) {
+                        let _ = project.write_file(&file, &current_content);
+                        let baseline = compile_main(project).await;
+                        if !baseline.ok && !introduces_new_errors(&baseline.issues, &det_result.issues) {
+                            let _ = project.write_file(&file, &det_content);
+                            return FixReport {
+                                ok: true,
+                                rounds: round,
+                                diff: Some("确定性修复（无需 AI）：".to_string()),
+                                summary: "已自动修复该排版问题。项目中原本就存在其他编译错误（与本次修复无关），请在编译错误列表中另行处理。".to_string(),
+                                issues_after: det_result.issues,
+                                rolled_back: false,
+                                backup: snap_det,
+                                hunks: vec![],
+                                suggested: false,
+                            };
+                        }
+                        // the edit itself breaks compilation: keep the
+                        // original file and stop — no AI rewrite of prose
+                        return FixReport {
+                            ok: false,
+                            rounds: round,
+                            diff: None,
+                            summary: "自动修复会引入新的编译错误（例如在命令参数中插入了空行），已撤销，文件保持原样。请手动调整。".to_string(),
+                            issues_after: det_result.issues,
+                            rolled_back: true,
+                            backup: None,
                             hunks: vec![],
                             suggested: false,
                         };
@@ -1208,9 +1278,15 @@ pub fn list_snapshots(project: &Project) -> Result<Vec<SnapshotInfo>, String> {
 /// `Project::write_file` (path-traversal safe).
 pub fn rollback_from_backup(project: &Project, backup: &str) -> Result<String, String> {
     let backup_dir = project.backup_dir();
+    let backup_canon =
+        std::fs::canonicalize(&backup_dir).unwrap_or_else(|_| backup_dir.clone());
     let path = std::path::Path::new(backup);
+    // `snapshot()` returns a CANONICAL path (on Windows the verbatim
+    // `\\?\C:\...` form), so accept the canonical backup dir as well —
+    // comparing only against the plain dir rejected every AI rollback.
     let rel_to_backup = path
         .strip_prefix(&backup_dir)
+        .or_else(|_| path.strip_prefix(&backup_canon))
         .map_err(|_| "备份路径不在项目备份目录内".to_string())?;
     // reject traversal components: `<backup_dir>/../../x` must not read (or
     // later write) files outside the backup dir even though the prefix matches
@@ -1237,8 +1313,6 @@ pub fn rollback_from_backup(project: &Project, backup: &str) -> Result<String, S
     let Ok(canon) = std::fs::canonicalize(path) else {
         return Err("备份文件不存在".into());
     };
-    let backup_canon =
-        std::fs::canonicalize(&backup_dir).unwrap_or_else(|_| backup_dir.clone());
     if !canon.starts_with(&backup_canon) {
         return Err("备份路径越界（符号链接指向备份目录外）".into());
     }
@@ -1359,6 +1433,24 @@ mod tests {
         let mut hunks = build_hunks(&diff, "main.tex");
         attach_explanations(&mut hunks, "无解释段的回复");
         assert!(hunks[0].why.is_empty());
+    }
+
+    #[test]
+    fn introduces_new_errors_ignores_preexisting_and_line_shifts() {
+        let err = |msg: &str, line: usize| {
+            Issue::new(crate::core::Severity::Error, crate::core::IssueKind::CompileError, msg.to_string()).with_line(line)
+        };
+        let before = vec![err("Undefined control sequence", 3)];
+        // same error, shifted by an inserted blank line → not new
+        assert!(!introduces_new_errors(&before, &[err("Undefined control sequence", 4)]));
+        // an additional error caused by the edit → new
+        assert!(introduces_new_errors(
+            &before,
+            &[err("Undefined control sequence", 4), err("Paragraph ended before \\textbf was complete", 9)]
+        ));
+        // warnings never count
+        let warn = Issue::new(crate::core::Severity::Warning, crate::core::IssueKind::CompileError, "w");
+        assert!(!introduces_new_errors(&[], &[warn]));
     }
 
     #[test]
@@ -1731,6 +1823,23 @@ mod tests {
         std::fs::write(&snap, "\\end{document}\n").unwrap();
         let ok = rollback_from_backup(&proj, snap.to_string_lossy().as_ref());
         assert!(ok.is_ok());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn snapshot_then_rollback_round_trips() {
+        // regression: snapshot() returns the CANONICAL path (`\\?\C:\...` on
+        // Windows) and rollback compared it with the plain backup dir, so
+        // every AI-edit rollback failed with "备份路径不在项目备份目录内"
+        let root = std::env::temp_dir().join(format!("tb-snapshot-rt-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("chapters")).unwrap();
+        let proj = crate::core::project::Project::open(&root).unwrap();
+        proj.write_file("chapters/intro.tex", "original\n").unwrap();
+        let snap = snapshot(&proj, "chapters/intro.tex", "original\n").unwrap();
+        proj.write_file("chapters/intro.tex", "edited by AI\n").unwrap();
+        let rel = rollback_from_backup(&proj, snap.to_string_lossy().as_ref()).expect("rollback must accept snapshot paths");
+        assert_eq!(rel.replace('\\', "/"), "chapters/intro.tex");
+        assert_eq!(proj.read_file("chapters/intro.tex").unwrap(), "original\n");
         let _ = std::fs::remove_dir_all(&root);
     }
 

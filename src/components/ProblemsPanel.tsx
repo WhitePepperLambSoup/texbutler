@@ -25,6 +25,9 @@ import { toast } from "../store/feedbackStore";
 import { useT } from "../i18n";
 import * as actions from "../actions";
 
+/** Rule ids the backend repairs deterministically (no AI call). */
+const DETERMINISTIC_RULES = new Set(["paragraph", "cjk_spacing"]);
+
 function SeverityIcon({ severity }: { severity: Issue["severity"] }) {
   const props = { size: 15, className: "problem-sev-icon", "aria-label": severityLabel(severity) };
   if (severity === "error") return <XCircle {...props} />;
@@ -193,11 +196,17 @@ export default function ProblemsPanel() {
                     <button
                       className="btn btn-sm btn-primary"
                       disabled={aiBusy}
-                      title={t("problems.ruleFixTitle")}
+                      title={DETERMINISTIC_RULES.has(issue.rule_id ?? "") ? t("problems.ruleFixTitle") : t("problems.ruleAiFixTitle")}
                       onClick={() => void withBusy(i, () => useAiStore.getState().fixRuleIssueForSession(issue, 3, true))}
                     >
-                      {busyIdx === i ? <Loader2 size={12} className="spinner" /> : <Wrench size={13} />}
-                      {t("problems.ruleFix")}
+                      {busyIdx === i ? (
+                        <Loader2 size={12} className="spinner" />
+                      ) : DETERMINISTIC_RULES.has(issue.rule_id ?? "") ? (
+                        <Wrench size={13} />
+                      ) : (
+                        <Bot size={13} />
+                      )}
+                      {DETERMINISTIC_RULES.has(issue.rule_id ?? "") ? t("problems.ruleFix") : t("problems.aiFix")}
                     </button>
                   )}
                 </span>

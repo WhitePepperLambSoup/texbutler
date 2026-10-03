@@ -26,6 +26,20 @@
 - 跳转（问题、大纲、TODO、Ctrl+点击引用）改为等待目标文件真正加载后再定位，不再依赖延时。/ Jumps wait for the target file instead of fixed timeouts.
 - App 只订阅所需状态，输入时不再整页重渲染。/ Narrow store subscriptions: typing no longer re-renders the whole app.
 
+### 端到端测试中发现并修复 / Fixed during end-to-end testing
+
+- **编辑器功能全部缺失（自 v0.4.0 起）**：本地打包 Monaco 时只加载了 `editor.api`，导致自动补全（含 `\ref`/`\cite` 补全）、公式悬停预览、Ctrl+点击跳转、Ctrl+F 查找替换、代码折叠、括号匹配和右键菜单都不可用；现已完整加载。/ **Editor features were missing since v0.4.0**: autocomplete, hover preview, Ctrl+Click, find/replace, folding, bracket matching and the context menu are back.
+- **AI 回滚全部失败**：AI 修改的快照路径是 Windows 规范路径（`\\?\C:\…`），回滚校验与之不匹配，“回滚修改 / 撤销修改”一律报“备份路径不在项目备份目录内”而文件不变。/ **AI rollbacks always failed** on Windows because of verbatim snapshot paths.
+- **长路径项目无法定位编译错误**：TeX 日志每 79 列强制换行，项目路径较长时错误文件被截断，点击问题无法跳转；同时错误信息不再以整段绝对路径开头。/ **Compile errors in long-path projects** now resolve to the right file and show a clean message.
+- **排版规则一键修复被误回滚**：项目中只要存在其它无关的编译错误，段落/中英空格修复就会被撤销并转交 AI（AI 甚至会给章节文件补 `\documentclass`）；现在仅当修复本身引入新错误时才撤销。/ **Typography rule fixes** are kept unless they introduce new compile errors.
+- **AI 修复的提示与实际行为不符**：修复其实已写入并编译通过，界面却显示“接受后才会写入”“应用并确认”；改为“保留修改 / 撤销修改”，失败的修复不再显示应用按钮；修复、撤销、回滚后自动重新编译，问题列表和 PDF 同步刷新；差异视图不再把 AI 的说明文字显示成删除行。/ **AI fix wording and refresh** now match what actually happens.
+- **AI 操作前自动保存**：AI 读取的是磁盘文件，此前看不到未保存的修改，且可能与编辑器缓冲冲突。/ **Unsaved edits are saved before AI requests.**
+- **外部修改检测**：其它程序（git、同步盘、其它编辑器）修改了已打开的文件时，未改动的标签自动同步；有未保存修改时给出提示与“载入磁盘版本”，不再在下次保存时静默覆盖外部修改。/ **External file changes** are detected instead of being silently overwritten.
+- **分屏编辑会把整个文件改成 CRLF 换行**；新建空文件同样统一为 LF。/ **Split view no longer converts files to CRLF.**
+- **多编辑器快捷键串台**：Monaco 快捷键在多个编辑器实例间共享，加粗、分屏保存会作用到错误的编辑器。/ **Editor shortcuts** are scoped to their own editor.
+- **模板导入**：导入到项目时默认进入以模板命名的新子文件夹（此前导入根目录必与 `main.tex` 冲突），冲突错误改为中文提示。/ **Template import** defaults to a new sub-folder.
+- 新增 `scripts/e2e/` 端到端测试（核心 42 项、AI 15 项、扩展 9 项）。/ Added end-to-end suites under `scripts/e2e/`.
+
 ## [0.7.0] - 2026-08-11
 
 ### 模板市场 / Template Marketplace

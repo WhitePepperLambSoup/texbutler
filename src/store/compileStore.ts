@@ -19,6 +19,8 @@ interface CompileState {
   target: string;
   /** Number of successful compiles in this project (persisted stats). */
   compileCount: number;
+  /** Target of the most recent compile (rebuilt after AI edits). */
+  lastTarget: string;
 
   setTarget: (target: string) => void;
   /** Compile the selected target (`compile()` without args does the same). */
@@ -48,6 +50,7 @@ export const useCompileStore = create<CompileState>((set, get) => ({
   elapsedSec: null,
   target: "main",
   compileCount: 0,
+  lastTarget: "main",
 
   setTarget(target) {
     set({ target });
@@ -57,6 +60,7 @@ export const useCompileStore = create<CompileState>((set, get) => ({
     if (get().running) return;
     const target = requested ?? get().target;
     if (!useProjectStore.getState().root) return;
+    set({ lastTarget: target });
     // save every dirty tab first: the compile must reflect exactly what
     // the editor shows right now, not whatever is on disk
     const ps = useProjectStore.getState();
@@ -172,7 +176,7 @@ useProjectStore.subscribe((project) => {
     startedAt: null,
     elapsedSec: null,
     ...(rootChanged
-      ? { target: "main", compileCount: loadStats(project.root)?.compiles ?? 0 }
+      ? { target: "main", lastTarget: "main", compileCount: loadStats(project.root)?.compiles ?? 0 }
       : {}),
   });
 });
@@ -215,6 +219,8 @@ onEvent(events.fileChanged, () => {
     const st = useProjectStore.getState();
     if (st.root) {
       void st.refresh();
+      // open files edited by other programs (git, sync tools, editors)
+      void st.syncWithDisk();
     }
     const cs = useCompileStore.getState();
     if (cs.lastResult) {

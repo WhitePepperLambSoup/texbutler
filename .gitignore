@@ -45,3 +45,10 @@ release/
 
 src-tauri/resources/bundle/*
 !src-tauri/resources/bundle/README.txt
+
+# E2E harness outputs (scripts/e2e)
+scripts/e2e/proj/
+scripts/e2e/newproj/
+scripts/e2e/shots/
+scripts/e2e/results/
+scripts/e2e/extra.png

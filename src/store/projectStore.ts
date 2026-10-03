@@ -25,6 +25,9 @@ export interface Tab {
   path: string;
   content: string;
   dirty: boolean;
+  /** Last content known to be on disk (read or written by us). Used to
+   *  detect changes made by other programs. */
+  disk?: string;
 }
 
 interface ProjectState {
@@ -51,6 +54,8 @@ interface ProjectState {
   /** Save every dirty tab; resolves to the number of files written. */
   saveAll: () => Promise<number>;
   reloadTab: (rel: string) => Promise<void>;
+  /** Re-read open tabs after an external file-system change. */
+  syncWithDisk: () => Promise<void>;
   /** Load a file into a tab WITHOUT switching the active tab (split view). */
   ensureTab: (rel: string) => Promise<void>;
   closeTab: (rel: string) => Promise<void>;
@@ -171,7 +176,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     const finalContent = draft !== null && draft !== content ? draft : content;
     const restored = draft !== null && draft !== content;
     set({
-      tabs: [...cur.tabs, { path: rel, content: finalContent, dirty: restored }],
+      tabs: [...cur.tabs, { path: rel, content: finalContent, dirty: restored, disk: content }],
       activeTab: rel,
     });
     saveFlow({ lastFile: rel });
@@ -198,7 +203,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     const stillSame = latest.content === tab.content;
     set({
       tabs: cur.tabs.map((t) =>
-        t.path === tab.path ? { ...t, dirty: stillSame ? false : t.dirty } : t
+        t.path === tab.path ? { ...t, dirty: stillSame ? false : t.dirty, disk: tab.content } : t
       ),
     });
     if (stillSame) {
@@ -226,8 +231,41 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     const content = await api.readFile(rel);
     if (reloadTabSeq.get(requestKey) !== requestSeq) return;
     set((s) => s.root === requestRoot && projectGeneration === requestGeneration
-      ? { tabs: s.tabs.map((t) => (t.path === rel && !t.dirty ? { ...t, content, dirty: false } : t)) }
+      ? { tabs: s.tabs.map((t) => (t.path === rel && !t.dirty ? { ...t, content, dirty: false, disk: content } : t)) }
       : s);
+  },
+
+  async syncWithDisk() {
+    const requestGeneration = projectGeneration;
+    const t = useI18n.getState().t;
+    for (const tab of get().tabs) {
+      let disk: string;
+      try {
+        disk = await api.readFile(tab.path);
+      } catch {
+        continue; // deleted / unreadable: keep the buffer, the user can save it back
+      }
+      if (projectGeneration !== requestGeneration) return;
+      const cur = get().tabs.find((x) => x.path === tab.path);
+      if (!cur || cur.disk === undefined || disk === cur.disk) continue;
+      if (!cur.dirty) {
+        // clean buffer: follow the disk silently (git checkout, other editors)
+        set((s) => ({ tabs: s.tabs.map((x) => (x.path === tab.path ? { ...x, content: disk, disk } : x)) }));
+        continue;
+      }
+      // unsaved local edits: never discard them silently, but make sure the
+      // user knows a save would overwrite the external change
+      set((s) => ({ tabs: s.tabs.map((x) => (x.path === tab.path ? { ...x, disk } : x)) }));
+      toast.info(t("editor.externalChanged", { file: tab.path }), {
+        label: t("editor.externalReload"),
+        run: () => {
+          clearDraft(get().root, tab.path);
+          set((s) => ({
+            tabs: s.tabs.map((x) => (x.path === tab.path ? { ...x, content: disk, disk, dirty: false } : x)),
+          }));
+        },
+      });
+    }
   },
 
   async ensureTab(rel: string) {
@@ -237,7 +275,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       // re-read inside set: a concurrent openFile may have added the tab
       set((s) => {
         if (s.tabs.some((t) => t.path === rel)) return s;
-        return { tabs: [...s.tabs, { path: rel, content, dirty: false }] };
+        return { tabs: [...s.tabs, { path: rel, content, dirty: false, disk: content }] };
       });
     } catch {
       /* missing file — the split pane shows empty */

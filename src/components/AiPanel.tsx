@@ -89,22 +89,38 @@ export function renderText(text: string): string {
 /** Highlight a unified diff for the AI-applied edit: added lines green,
  * removed lines red, context grey — so the user can SEE what changed. */
 function DiffHighlight({ diff }: { diff: string }) {
-  const rows = diff.split("\n").map((line, i) => {
+  // Track each hunk's declared line counts: text after the last hunk (the
+  // AI's explanation, often a `- ` bullet list) is NOT part of the diff and
+  // must not be painted as deleted lines.
+  let oldLeft = 0;
+  let newLeft = 0;
+  const rows = diff.replace(/\n+$/, "").split("\n").map((line, i) => {
     let cls = "ctx";
     let text = line;
-    if (line.startsWith("+") && !line.startsWith("+++")) {
-      cls = "add";
-      text = line.slice(1);
-    } else if (line.startsWith("-") && !line.startsWith("---")) {
-      cls = "del";
-      text = line.slice(1);
-    } else if (line.startsWith("@@")) {
+    const header = line.match(/^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/);
+    if (header) {
       cls = "hunk";
+      oldLeft = header[1] === undefined ? 1 : Number(header[1]);
+      newLeft = header[2] === undefined ? 1 : Number(header[2]);
+    } else if (oldLeft > 0 || newLeft > 0) {
+      if (line.startsWith("+")) {
+        cls = "add";
+        text = line.slice(1);
+        newLeft--;
+      } else if (line.startsWith("-")) {
+        cls = "del";
+        text = line.slice(1);
+        oldLeft--;
+      } else {
+        text = line.startsWith(" ") ? line.slice(1) : line;
+        oldLeft--;
+        newLeft--;
+      }
     } else if (line.startsWith("+++") || line.startsWith("---")) {
       cls = "head";
       text = line.slice(4);
-    } else if (line.startsWith(" ")) {
-      text = line.slice(1);
+    } else {
+      cls = "note";
     }
     return (
       <div key={i} className={`diff-line ${cls}`}>
@@ -393,7 +409,7 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
             ) : (
               <div className="ai-text" dangerouslySetInnerHTML={{ __html: renderText(m.text) }} />
             )}
-            {m.diff && <pre className="ai-diff">{m.diff}</pre>}
+            {m.diff && <DiffHighlight diff={m.diff} />}
             {/* collaborative edit: the AI changed a file — roll back right
                 inside the message bubble. Only the newest applied message
                 shows the buttons. */}

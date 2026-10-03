@@ -124,7 +124,9 @@ export default function App() {
 
       <StatusBar />
 
-      {modal?.kind === "settings" && <SettingsModal initialSection={modal.section} onClose={closeModal} />}
+      {modal?.kind === "settings" && (
+        <SettingsModal key={modal.section ?? "general"} initialSection={modal.section} onClose={closeModal} />
+      )}
       {modal?.kind === "newProject" && <NewProjectModal onClose={closeModal} />}
       {modal?.kind === "newFile" && root && <NewFileModal onClose={closeModal} />}
       {palette && <CommandPalette mode={palette} />}

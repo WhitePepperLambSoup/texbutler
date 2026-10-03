@@ -34,6 +34,37 @@ pub fn parse_log(log_path: &Path) -> Vec<Issue> {
     parse_log_str(&content)
 }
 
+/// TeX hard-wraps log lines at `max_print_line` (79 in TeX Live and MiKTeX).
+/// Long absolute paths (`C:/Users/<name>/Documents/...`) are therefore split
+/// mid-path, and the parser would otherwise report a meaningless fragment
+/// like `e-edd9/proj/main.tex` as the error file. Re-join every line that is
+/// exactly 79 columns (bytes for pdfTeX, characters for XeTeX/LuaTeX) with
+/// its continuation — unless the next line clearly starts a new record.
+const MAX_PRINT_LINE: usize = 79;
+
+fn unwrap_log_lines(content: &str) -> Vec<String> {
+    let lines: Vec<&str> = content.lines().collect();
+    let mut out = Vec::with_capacity(lines.len());
+    let mut buf = String::new();
+    for (i, line) in lines.iter().enumerate() {
+        buf.push_str(line);
+        let wrapped = line.len() == MAX_PRINT_LINE || line.chars().count() == MAX_PRINT_LINE;
+        let next_starts_record = lines.get(i + 1).map_or(true, |next| {
+            next.starts_with('!')
+                || next.is_empty()
+                || (next.starts_with("l.") && next[2..].starts_with(|c: char| c.is_ascii_digit()))
+        });
+        if wrapped && !next_starts_record {
+            continue;
+        }
+        out.push(std::mem::take(&mut buf));
+    }
+    if !buf.is_empty() {
+        out.push(buf);
+    }
+    out
+}
+
 /// Parse log text (unit-testable).
 pub fn parse_log_str(content: &str) -> Vec<Issue> {
     let mut issues = Vec::new();
@@ -41,7 +72,7 @@ pub fn parse_log_str(content: &str) -> Vec<Issue> {
     let mut current: Option<RawBlock> = None;
     let mut context_file: Option<String> = None;
 
-    for line in content.lines() {
+    for line in unwrap_log_lines(content) {
         let trimmed = line.trim_end();
 
         // Track `(./file.tex` context markers. Lines like `(./main.tex` open
@@ -211,10 +242,39 @@ fn clean_context_file(s: &str) -> String {
     s.trim_end_matches(')').trim().to_string()
 }
 
+/// For `-file-line-error` records (`<path>:<line>: <message>`) return just
+/// the message part; other headers are returned unchanged. Without this the
+/// user-facing message started with the full absolute path.
+fn strip_file_line_prefix(header: &str) -> &str {
+    if find_file_line(header).is_none() {
+        return header;
+    }
+    let bytes = header.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b':' {
+            let mut j = i + 1;
+            while j < bytes.len() && bytes[j].is_ascii_digit() {
+                j += 1;
+            }
+            if j > i + 1 && j < bytes.len() && bytes[j] == b':' {
+                let rest = header[j + 1..].trim_start();
+                if !rest.is_empty() {
+                    return rest;
+                }
+            }
+        }
+        i += 1;
+    }
+    header
+}
+
 /// Classify a raw error block into a human-readable issue.
 fn classify(block: &RawBlock) -> Option<Issue> {
-    let header = &block.header;
-    let full = std::iter::once(header.as_str())
+    // message text without the `<path>:<line>:` prefix; file/line are still
+    // resolved from the full original header below
+    let header = &strip_file_line_prefix(&block.header).to_string();
+    let full = std::iter::once(block.header.as_str())
         .chain(block.body.iter().map(|s| s.as_str()))
         .collect::<Vec<_>>();
     let raw_text = full.join("\n");
@@ -310,8 +370,8 @@ fn classify_error_keywords(header: &str, _full: &[&str]) -> (String, Option<Stri
     if h.contains("Fatal error") {
         return ("致命错误：编译器无法继续（可能是环境或资源问题）。".to_string(), Some("检查工作目录是否可写、资源是否完整。".to_string()));
     }
-    if h.contains("! LaTeX Error") {
-        return ("LaTeX 错误：".to_string() + h.trim_start_matches("! "), None);
+    if h.contains("! LaTeX Error") || h.starts_with("LaTeX Error") {
+        return ("LaTeX 错误：".to_string() + h.trim_start_matches("! ").trim_start_matches("LaTeX Error: "), None);
     }
     if h.contains("! ") {
         return (h.trim_start_matches("! ").to_string(), None);
@@ -442,6 +502,46 @@ mod tests {
     fn overfull_is_warning() {
         let issues = parse_log_str("Overfull \\hbox (12.34567pt too wide) in paragraph at lines 5--6\n");
         assert_eq!(issues[0].severity, Severity::Warning);
+    }
+
+    #[test]
+    fn rejoins_paths_wrapped_at_max_print_line() {
+        // real TeX Live output for a project under a long Windows path: the
+        // file:line:error record is split at column 79
+        let path = "C:/Users/20806/AppData/Local/Temp/claude/D--reasonix-program-idea-tex/bc5e745e-edd9-47b4-b4ca-5d5c05f802f6/scratchpad/e2e/proj/broken.tex";
+        let record = format!("{path}:3: Undefined control sequence.");
+        let wrapped: Vec<String> = record
+            .as_bytes()
+            .chunks(MAX_PRINT_LINE)
+            .map(|c| String::from_utf8(c.to_vec()).unwrap())
+            .collect();
+        assert!(wrapped.len() >= 2 && wrapped[0].len() == MAX_PRINT_LINE);
+        let log = format!("{}\nl.3 Hello \\undefinedmacro\n\n", wrapped.join("\n"));
+        let issues = parse_log_str(&log);
+        assert_eq!(issues[0].file.as_deref(), Some(path));
+        assert_eq!(issues[0].line, Some(3));
+        assert!(issues[0].message.contains("未定义的控制序列"));
+    }
+
+    #[test]
+    fn file_line_error_message_drops_the_path_prefix() {
+        let log = "C:/Users/me/Documents/thesis/main.tex:1: LaTeX Error: Missing \\begin{document}.\n\nl.1 x\n";
+        let issues = parse_log_str(log);
+        assert_eq!(issues[0].file.as_deref(), Some("C:/Users/me/Documents/thesis/main.tex"));
+        assert_eq!(issues[0].line, Some(1));
+        assert!(!issues[0].message.contains("C:/Users"), "{}", issues[0].message);
+        assert!(issues[0].message.starts_with("LaTeX 错误：Missing \\begin{document}"), "{}", issues[0].message);
+        let undefined = parse_log_str("./main.tex:8: Undefined control sequence.\nl.8 \\foo\n");
+        assert!(undefined[0].message.contains("未定义的控制序列"), "{}", undefined[0].message);
+    }
+
+    #[test]
+    fn a_79_column_line_does_not_swallow_the_next_error() {
+        let line79 = "x".repeat(MAX_PRINT_LINE);
+        let log = format!("{line79}\n! Undefined control sequence.\nl.7 \\foo\n");
+        let issues = parse_log_str(&log);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].line, Some(7));
     }
 
     #[test]

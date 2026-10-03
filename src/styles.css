@@ -2074,6 +2074,12 @@ html[data-theme="light"] .diff-line.del {
 .diff-line.ctx {
   color: var(--fg-dim);
 }
+.diff-line.note {
+  font-family: var(--font-ui);
+  color: var(--fg);
+  background: var(--surface-2);
+  white-space: pre-wrap;
+}
 .diff-mark {
   width: 14px;
   flex-shrink: 0;

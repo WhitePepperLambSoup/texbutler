@@ -2477,7 +2477,7 @@ pub fn tb_import_project_template(
             let directory = template_root.join(&id);
             let legacy = template_root.join(format!("{id}.tex"));
             let resolved = resolve_user_template(&directory, &legacy)?;
-            merge_resolved_template(&project, &target_dir, resolved)
+            import_or_merge_template(&project, &target_dir, resolved)
         }
         TemplateSource::Market => {
             let id = template_id.trim();
@@ -2486,8 +2486,31 @@ pub fn tb_import_project_template(
             }
             let downloaded = market_download_dir().join(id);
             let resolved = resolve_market_template(id, &downloaded)?;
-            merge_resolved_template(&project, &target_dir, resolved)
+            import_or_merge_template(&project, &target_dir, resolved)
         }
+    }
+}
+
+/// Merge into an existing folder, or import into a NEW sub-folder (created
+/// inside the project). Importing a whole template into the project root
+/// almost always collides with the project's own `main.tex`, so the UI
+/// proposes a fresh sub-folder — which the merge path used to reject.
+fn import_or_merge_template(
+    project: &Project,
+    target_dir: &str,
+    resolved: ResolvedTemplate<'_>,
+) -> Result<ImportedTemplate, String> {
+    let trimmed = target_dir.trim();
+    let is_new_dir = !trimmed.is_empty()
+        && trimmed != "."
+        && project
+            .resolve(trimmed)
+            .map(|path| std::fs::symlink_metadata(path).is_err())
+            .unwrap_or(false);
+    if is_new_dir {
+        import_resolved_template(project, trimmed, resolved)
+    } else {
+        merge_resolved_template(project, target_dir, resolved)
     }
 }
 
@@ -2757,6 +2780,30 @@ mod tests {
             std::fs::read(project_root.join("thesis/chapters/a.tex")).unwrap(),
             b"chapter\n"
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn import_or_merge_creates_new_subfolder_and_still_merges_existing() {
+        let root = test_root("import-or-merge");
+        let project_root = root.join("project");
+        let source_root = root.join("source");
+        write_fixture(&project_root.join("main.tex"), b"\\documentclass{article}\n");
+        write_fixture(&source_root.join("main.tex"), b"\\documentclass{report}\n");
+        let project = Project::open(&project_root).unwrap();
+
+        // project root: conflicts with the project's own main.tex
+        assert!(import_or_merge_template(&project, "", ResolvedTemplate::Directory(&source_root)).is_err());
+        // a new nested folder is created and imported into
+        let imported =
+            import_or_merge_template(&project, "templates/report", ResolvedTemplate::Directory(&source_root)).unwrap();
+        assert_eq!(imported.main_file, "templates/report/main.tex");
+        assert_eq!(
+            std::fs::read(project_root.join("templates/report/main.tex")).unwrap(),
+            b"\\documentclass{report}\n"
+        );
+        // the project's own main.tex is untouched
+        assert_eq!(std::fs::read(project_root.join("main.tex")).unwrap(), b"\\documentclass{article}\n");
         std::fs::remove_dir_all(root).unwrap();
     }
 

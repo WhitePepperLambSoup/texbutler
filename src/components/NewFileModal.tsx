@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { api, type MarketTemplate } from "../api";
 import { useProjectStore } from "../store/projectStore";
-import { dialog } from "../store/feedbackStore";
+import { dialog, toast } from "../store/feedbackStore";
 import { useT } from "../i18n";
 import { currentDirectory, joinProjectRelative, validateFileName } from "../fileDestination";
 import Modal from "./ui/Modal";
@@ -43,6 +43,23 @@ const NewFileModal: NewFileModalComponent = ({ onClose }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const currentDir = currentDirectory(activeTab);
+  // template imports go into a NEW sub-folder by default: importing a whole
+  // template into the project root collides with the project's own main.tex
+  const [importDir, setImportDir] = useState("");
+  const [importDirEdited, setImportDirEdited] = useState(false);
+  useEffect(() => {
+    if (importDirEdited || !selectedTemplate) return;
+    const slug = selectedTemplate.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "template";
+    setImportDir(joinProjectRelative(currentDir, slug));
+  }, [selectedTemplate, currentDir, importDirEdited]);
+
+  const friendlyError = (e: unknown) => {
+    const msg = String(e);
+    const conflict = msg.match(/conflicts with existing entries:\s*(.+)$/);
+    if (conflict) return t("newFile.importConflict", { files: conflict[1] });
+    if (/already exists/.test(msg)) return t("newFile.importExists");
+    return msg;
+  };
 
   const loadTemplates = async () => {
     const [users, market] = await Promise.all([
@@ -92,16 +109,18 @@ const NewFileModal: NewFileModalComponent = ({ onClose }) => {
     }
     setBusy(true);
     try {
-      const result = await api.importProjectTemplate(
-        currentDir,
-        selectedTemplate,
-        tab === "user" ? "user" : "market",
-      );
+      const target = importDir.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+      if (target.split("/").some((part) => part === ".." || part === ".")) {
+        setError(t("newFile.importDirInvalid"));
+        return;
+      }
+      const result = await api.importProjectTemplate(target, selectedTemplate, tab === "user" ? "user" : "market");
       await useProjectStore.getState().refresh();
       await useProjectStore.getState().openFile(result.main_file);
+      toast.success(t("newFile.imported", { file: result.main_file }));
       onClose();
     } catch (e) {
-      setError(String(e));
+      setError(friendlyError(e));
     } finally {
       setBusy(false);
     }
@@ -177,10 +196,27 @@ const NewFileModal: NewFileModalComponent = ({ onClose }) => {
           </div>
 
           <div className="new-file-panel">
-            <div className="new-file-destination">
-              <span>{t("newFile.currentDirectory")}</span>
-              <code>{currentDir || "/"}</code>
-            </div>
+            {tab === "basic" ? (
+              <div className="new-file-destination">
+                <span>{t("newFile.currentDirectory")}</span>
+                <code>{currentDir || "/"}</code>
+              </div>
+            ) : (
+              <label className="field">
+                <span className="field-label">{t("newFile.importDir")}</span>
+                <input
+                  className="input new-file-import-dir"
+                  value={importDir}
+                  placeholder={t("newFile.importDirPlaceholder")}
+                  spellCheck={false}
+                  onChange={(event) => {
+                    setImportDir(event.target.value);
+                    setImportDirEdited(true);
+                  }}
+                />
+                <span className="field-hint">{t("newFile.importDirHint")}</span>
+              </label>
+            )}
             {tab === "basic" && (
               <>
                 <label className="field new-file-name-row">
