@@ -18,7 +18,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { aiEditBelongsToScope, useAiStore } from "../store/aiStore";
+import { aiEditBelongsToScope, sessionIsMeaningful, useAiStore } from "../store/aiStore";
 import { useUiStore } from "../store/uiStore";
 import { dialog, toast } from "../store/feedbackStore";
 import { usePopover } from "../hooks/usePopover";
@@ -254,7 +254,7 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
             disabled={busy}
           >
             <option value="">{t("ai.sessionScratch")}</option>
-            {sessions.map((session) => (
+            {sessions.filter((session) => session.id === sessionId || sessionIsMeaningful(session)).map((session) => (
               <option key={session.id} value={session.id}>
                 {session.name}
               </option>

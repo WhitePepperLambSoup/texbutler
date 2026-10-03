@@ -29,6 +29,14 @@ export interface AiSession {
   name: string;
   messages: AiMessage[];
   updatedAt: number;
+  /** Created with "new conversation" (kept even while empty). Sessions
+   *  auto-created by opening a file are only kept once they have messages. */
+  explicit?: boolean;
+}
+
+/** Worth persisting / listing: has content or was created on purpose. */
+export function sessionIsMeaningful(session: AiSession): boolean {
+  return session.messages.length > 0 || Boolean(session.explicit);
 }
 
 export interface AiEdit {
@@ -47,7 +55,8 @@ function loadSessions(): AiSession[] {
     const raw = localStorage.getItem(SESSIONS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as AiSession[]) : [];
+    // older versions persisted an empty session for every opened file
+    return Array.isArray(parsed) ? (parsed as AiSession[]).filter(sessionIsMeaningful) : [];
   } catch {
     return [];
   }
@@ -55,7 +64,7 @@ function loadSessions(): AiSession[] {
 
 function persistSessions(sessions: AiSession[]) {
   try {
-    localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions.filter(sessionIsMeaningful)));
   } catch {
     /* storage full / unavailable — sessions are best-effort */
   }
@@ -501,7 +510,7 @@ export const useAiStore = create<AiState>((set, get) => ({
 
   newSession() {
     const id = createSessionId();
-    const session: AiSession = { id, name: useI18n.getState().t("ai.sessionNew"), messages: [], updatedAt: Date.now() };
+    const session: AiSession = { id, name: useI18n.getState().t("ai.sessionNew"), messages: [], updatedAt: Date.now(), explicit: true };
     const state = get();
     const sessions = [session, ...state.sessions];
     const scoped = Boolean(state.activeProjectRoot && state.activeFile && /\.tex$/i.test(state.activeFile));

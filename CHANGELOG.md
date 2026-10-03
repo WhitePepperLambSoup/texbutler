@@ -38,6 +38,7 @@
 - **分屏编辑会把整个文件改成 CRLF 换行**；新建空文件同样统一为 LF。/ **Split view no longer converts files to CRLF.**
 - **多编辑器快捷键串台**：Monaco 快捷键在多个编辑器实例间共享，加粗、分屏保存会作用到错误的编辑器。/ **Editor shortcuts** are scoped to their own editor.
 - **模板导入**：导入到项目时默认进入以模板命名的新子文件夹（此前导入根目录必与 `main.tex` 冲突），冲突错误改为中文提示。/ **Template import** defaults to a new sub-folder.
+- **AI 会话列表被空会话塞满**：打开任意 `.tex` 文件都会保存一个空会话；现在按文件的会话有消息后才保存与显示，手动“新建会话”的除外，旧版本残留的空会话加载时清理。/ **Empty per-file AI conversations** are no longer persisted.
 - 新增 `scripts/e2e/` 端到端测试（核心 42 项、AI 15 项、扩展 9 项）。/ Added end-to-end suites under `scripts/e2e/`.
 
 ## [0.7.0] - 2026-08-11
