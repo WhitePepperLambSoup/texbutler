@@ -1,198 +1,215 @@
-import { useEffect, useState } from "react";
-import { api, type Issue } from "../api";
+import { useState } from "react";
+import {
+  AlertTriangle,
+  Bot,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Info,
+  Lightbulb,
+  Loader2,
+  Play,
+  RefreshCw,
+  ScrollText,
+  Wrench,
+  XCircle,
+} from "lucide-react";
+import type { Issue } from "../api";
 import { useCompileStore } from "../store/compileStore";
-import { useProjectStore } from "../store/projectStore";
 import { useAiStore } from "../store/aiStore";
+import { useUiStore } from "../store/uiStore";
 import { severityLabel } from "../store/projectStore";
+import { revealLocation } from "../editorBridge";
+import { toast } from "../store/feedbackStore";
 import { useT } from "../i18n";
+import * as actions from "../actions";
 
-type Tab = "compile" | "rules" | "ai";
+function SeverityIcon({ severity }: { severity: Issue["severity"] }) {
+  const props = { size: 15, className: "problem-sev-icon", "aria-label": severityLabel(severity) };
+  if (severity === "error") return <XCircle {...props} />;
+  if (severity === "warning") return <AlertTriangle {...props} />;
+  if (severity === "info") return <Info {...props} />;
+  return <Lightbulb {...props} />;
+}
 
 export default function ProblemsPanel() {
-  const [tab, setTab] = useState<Tab>("compile");
-  const { compileIssues, ruleIssues, runCheck, checkRunning, lastResult } = useCompileStore();
-  const { openFile } = useProjectStore();
-  const { diagnoseIssue, fixIssue, fixRuleIssueForSession, busy } = useAiStore();
-  const [aiBusyIdx, setAiBusyIdx] = useState<number | null>(null);
-  const [logOpen, setLogOpen] = useState(false);
-  const [logText, setLogText] = useState("");
   const t = useT();
-
-  // debounce rule check when editor content changes (500ms) — only the
-  // current file is scanned so typing stays responsive
-  const activeTab = useProjectStore((s) => s.activeTab);
-  const openContent = useProjectStore((s) => s.tabs.find((t) => t.path === s.activeTab)?.content ?? "");
-  useEffect(() => {
-    const root = useProjectStore.getState().root;
-    const file = useProjectStore.getState().activeTab;
-    if (!root || !file) return;
-    const t = window.setTimeout(() => {
-      void useCompileStore.getState().runCheck(file);
-    }, 500);
-    return () => window.clearTimeout(t);
-  }, [openContent, activeTab]);
+  const tab = useUiStore((s) => s.bottomTab);
+  const open = useUiStore((s) => s.panels.bottom);
+  const compileIssues = useCompileStore((s) => s.compileIssues);
+  const ruleIssues = useCompileStore((s) => s.ruleIssues);
+  const checkRunning = useCompileStore((s) => s.checkRunning);
+  const lastResult = useCompileStore((s) => s.lastResult);
+  const running = useCompileStore((s) => s.running);
+  const aiBusy = useAiStore((s) => s.busy);
+  const [busyIdx, setBusyIdx] = useState<number | null>(null);
 
   const issues = tab === "compile" ? compileIssues : ruleIssues;
+  const compileErrors = compileIssues.filter((i) => i.severity === "error").length;
+
+  const selectTab = (next: "compile" | "rules") => {
+    useUiStore.getState().setBottomTab(next);
+    useUiStore.getState().setPanel("bottom", true);
+  };
 
   const jump = (issue: Issue) => {
-    const file = issue.file ?? null;
-    const needOpen = !!file && file !== useProjectStore.getState().activeTab;
-    if (needOpen) {
-      void openFile(file);
-    }
-    if (issue.line) {
-      // Wait for the file (and Monaco model) to load before jumping.
-      window.setTimeout(() => {
-        window.dispatchEvent(
-          new CustomEvent("tb:goto-line", { detail: { line: issue.line } })
-        );
-      }, needOpen ? 250 : 50);
+    if (!issue.line && !issue.file) return;
+    void revealLocation(issue.file ?? null, issue.line ?? 1, issue.col ?? 1).catch(toast.error);
+  };
+
+  const withBusy = async (i: number, job: () => Promise<unknown>) => {
+    setBusyIdx(i);
+    useUiStore.getState().setPanel("ai", true);
+    try {
+      await job();
+    } finally {
+      setBusyIdx(null);
     }
   };
 
   return (
     <div className="problems-panel">
-      <div className="panel-header tabs">
+      <div className="panel-header problems-header" role="tablist">
         <button
+          role="tab"
+          aria-selected={tab === "compile"}
           className={`tab ${tab === "compile" ? "tab-active" : ""}`}
-          onClick={() => setTab("compile")}
+          onClick={() => selectTab("compile")}
         >
-          {t("problems.compile", { n: compileIssues.length })}
+          {t("problems.compileTab")}
+          <span className={`count-badge ${compileErrors > 0 ? "error" : ""}`}>{compileIssues.length}</span>
         </button>
         <button
+          role="tab"
+          aria-selected={tab === "rules"}
           className={`tab ${tab === "rules" ? "tab-active" : ""}`}
-          onClick={() => setTab("rules")}
+          onClick={() => selectTab("rules")}
         >
-          {t("problems.rules", { n: ruleIssues.length })}
-          {checkRunning ? " …" : ""}
+          {t("problems.rulesTab")}
+          {checkRunning ? (
+            <Loader2 size={12} className="spinner" />
+          ) : (
+            <span className={`count-badge ${ruleIssues.length > 0 ? "warn" : ""}`}>{ruleIssues.length}</span>
+          )}
         </button>
         <span className="toolbar-spacer" />
+        {tab === "rules" && (
+          <button
+            className="icon-btn icon-btn-sm"
+            title={t("problems.runRules")}
+            aria-label={t("problems.runRules")}
+            disabled={checkRunning}
+            onClick={() => void useCompileStore.getState().runCheck()}
+          >
+            <RefreshCw size={14} />
+          </button>
+        )}
         <button
-          className="btn-mini"
+          className="icon-btn icon-btn-sm"
           title={t("problems.logTitle")}
-          onClick={() => {
-            void api.readLog().then((tt) => {
-              setLogText(tt);
-              setLogOpen(true);
-            }).catch((e) => window.alert(String(e)));
-          }}
+          aria-label={t("problems.log")}
+          onClick={() => void actions.showCompileLog()}
         >
-          {t("problems.log")}
+          <ScrollText size={14} />
+        </button>
+        <button
+          className="icon-btn icon-btn-sm"
+          title={open ? t("problems.collapse") : t("problems.expand")}
+          aria-label={open ? t("problems.collapse") : t("problems.expand")}
+          onClick={() => useUiStore.getState().togglePanel("bottom")}
+        >
+          {open ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
         </button>
       </div>
-      <div className="problems-body">
-        {issues.length === 0 ? (
-          <div className="problems-empty">
-            {tab === "rules" && !checkRunning && (
-              <button onClick={() => void runCheck()}>{t("problems.runRules")}</button>
-            )}
-            {tab === "rules" && checkRunning && <span>{t("problems.rulesRunning")}</span>}
-            {tab === "compile" && (lastResult ? t("problems.noErrors") : t("problems.notCompiled"))}
-          </div>
-        ) : (
-          issues.map((issue, i) => (
-            <div
-              key={`${tab}-${i}`}
-              className={`problem-row sev-${issue.severity}`}
-              onClick={() => jump(issue)}
-            >
-              <span className="problem-sev">{severityLabel(issue.severity)}</span>
-              <span className="problem-loc">
-                {issue.file ?? "?"}:{issue.line ?? "?"}
-                {issue.col ? `:${issue.col}` : ""}
-              </span>
-              <span className="problem-main">
-                <span className="problem-msg" title={issue.raw ?? ""}>
-                  {issue.message}
-                </span>
-                {issue.fix_hint && (
-                  <span className="problem-hint">{issue.fix_hint}</span>
-                )}
-              </span>
-              <span className="problem-actions" onClick={(e) => e.stopPropagation()}>
-                <button
-                  className="btn-mini"
-                  title={t("problems.copy")}
-                  onClick={() => {
-                    void navigator.clipboard
-                      .writeText(issue.raw ?? issue.message)
-                      .catch(() => undefined);
-                  }}
-                >
-                  ⧉
-                </button>
-                {tab === "compile" && (
+      {open && (
+        <div className="problems-body">
+          {issues.length === 0 ? (
+            <div className="problems-empty">
+              {tab === "rules" ? (
+                checkRunning ? (
                   <>
-                    <button
-                      className="btn-mini"
-                      disabled={busy}
-                      onClick={async () => {
-                        setAiBusyIdx(i);
-                        try {
-                          await diagnoseIssue(issue, i);
-                        } finally {
-                          setAiBusyIdx(null);
-                        }
-                      }}
-                    >
-                      {aiBusyIdx === i ? "…" : t("problems.aiExplain")}
-                    </button>
-                    <button
-                      className="btn-mini btn-primary"
-                      disabled={busy}
-                      onClick={async () => {
-                        setAiBusyIdx(i);
-                        try {
-                          await fixIssue(issue, i);
-                        } finally {
-                          setAiBusyIdx(null);
-                        }
-                      }}
-                    >
-                      {aiBusyIdx === i ? "…" : t("problems.aiFix")}
-                    </button>
+                    <Loader2 size={15} className="spinner" /> {t("problems.rulesRunning")}
                   </>
-                )}
-                {tab === "rules" && (
-                  <button
-                    className="btn-mini btn-primary"
-                    disabled={busy}
-                    title={t("problems.ruleFixTitle")}
-                    onClick={() => {
-                      setAiBusyIdx(i);
-                      void fixRuleIssueForSession(issue, 3, true)
-                        .finally(() => setAiBusyIdx(null));
-                    }}
-                  >
-                    {aiBusyIdx === i ? "…" : t("problems.ruleFix")}
+                ) : (
+                  <>
+                    <CheckCircle2 size={15} className="ok" /> {t("problems.noRuleIssues")}
+                  </>
+                )
+              ) : lastResult ? (
+                <>
+                  <CheckCircle2 size={15} className="ok" /> {t("problems.noErrors")}
+                </>
+              ) : (
+                <>
+                  {t("problems.notCompiled")}
+                  <button className="btn btn-sm" disabled={running} onClick={() => actions.compile()}>
+                    <Play size={13} /> {t("toolbar.compile")}
                   </button>
+                </>
+              )}
+            </div>
+          ) : (
+            issues.map((issue, i) => (
+              <div
+                key={`${tab}-${i}`}
+                className={`problem-row sev-${issue.severity}`}
+                onClick={() => jump(issue)}
+                title={issue.raw ?? issue.message}
+              >
+                <SeverityIcon severity={issue.severity} />
+                <span className="problem-main">
+                  <span className="problem-msg">{issue.message}</span>
+                  {issue.fix_hint && <span className="problem-hint">{issue.fix_hint}</span>}
+                </span>
+                <span className={`problem-actions ${busyIdx === i ? "busy" : ""}`} onClick={(e) => e.stopPropagation()}>
+                  <button
+                    className="icon-btn icon-btn-sm"
+                    title={t("problems.copy")}
+                    aria-label={t("problems.copy")}
+                    onClick={() => void actions.copyText(issue.raw ?? issue.message)}
+                  >
+                    <Copy size={13} />
+                  </button>
+                  {tab === "compile" ? (
+                    <>
+                      <button
+                        className="btn btn-sm"
+                        disabled={aiBusy}
+                        onClick={() => void withBusy(i, () => useAiStore.getState().diagnoseIssue(issue, i))}
+                      >
+                        {busyIdx === i ? <Loader2 size={12} className="spinner" /> : <Bot size={13} />}
+                        {t("problems.aiExplain")}
+                      </button>
+                      <button
+                        className="btn btn-sm btn-primary"
+                        disabled={aiBusy}
+                        onClick={() => void withBusy(i, () => useAiStore.getState().fixIssue(issue, i))}
+                      >
+                        <Wrench size={13} /> {t("problems.aiFix")}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      className="btn btn-sm btn-primary"
+                      disabled={aiBusy}
+                      title={t("problems.ruleFixTitle")}
+                      onClick={() => void withBusy(i, () => useAiStore.getState().fixRuleIssueForSession(issue, 3, true))}
+                    >
+                      {busyIdx === i ? <Loader2 size={12} className="spinner" /> : <Wrench size={13} />}
+                      {t("problems.ruleFix")}
+                    </button>
+                  )}
+                </span>
+                {issue.file && (
+                  <span className="problem-loc">
+                    {issue.file}
+                    {issue.line ? `:${issue.line}` : ""}
+                  </span>
                 )}
-              </span>
-            </div>
-          ))
-        )}
-      </div>
-      {logOpen && (
-        <div className="modal-backdrop" onClick={() => setLogOpen(false)}>
-          <div className="modal log-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <span>{t("problems.logTitle")}</span>
-              <span className="panel-actions">
-                <button
-                  className="btn-mini"
-                  onClick={() => {
-                    void navigator.clipboard.writeText(logText).catch(() => undefined);
-                  }}
-                >
-                  {t("problems.copyAll")}
-                </button>
-                <button className="btn-mini" onClick={() => setLogOpen(false)}>
-                  ×
-                </button>
-              </span>
-            </div>
-            <pre className="log-viewer">{logText}</pre>
-          </div>
+              </div>
+            ))
+          )}
         </div>
       )}
     </div>

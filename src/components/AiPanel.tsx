@@ -1,31 +1,89 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpenText,
+  Bot,
   Eraser,
-  FileDiff,
   FileText,
   History,
+  ListChecks,
   MoreHorizontal,
   PanelRightClose,
   Pencil,
   Plus,
   RotateCcw,
+  ScanSearch,
   SendHorizontal,
+  Settings,
+  Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 import { aiEditBelongsToScope, useAiStore } from "../store/aiStore";
+import { useUiStore } from "../store/uiStore";
+import { dialog, toast } from "../store/feedbackStore";
+import { usePopover } from "../hooks/usePopover";
 import { api } from "../api";
 import { useT } from "../i18n";
 
-/** Minimal markdown-ish rendering for AI messages (bold, inline code, breaks). */
-function renderText(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function inline(s: string): string {
+  return escapeHtml(s)
     .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\n/g, "<br/>");
+    .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+}
+
+/** Small, safe markdown subset for AI replies: fenced code, headings,
+ *  bullet / numbered lists, inline code, bold. Everything is escaped first. */
+export function renderText(text: string): string {
+  const out: string[] = [];
+  const parts = text.split(/```[^\n]*\n?/);
+  parts.forEach((part, i) => {
+    if (i % 2 === 1) {
+      out.push(`<pre><code>${escapeHtml(part.replace(/\n$/, ""))}</code></pre>`);
+      return;
+    }
+    let list: "ul" | "ol" | null = null;
+    let para: string[] = [];
+    const flushPara = () => {
+      if (para.length) out.push(`<p>${para.map(inline).join("<br/>")}</p>`);
+      para = [];
+    };
+    const closeList = () => {
+      if (list) out.push(`</${list}>`);
+      list = null;
+    };
+    for (const line of part.split("\n")) {
+      const bullet = line.match(/^\s*[-*•]\s+(.*)$/);
+      const numbered = line.match(/^\s*\d+[.)、]\s+(.*)$/);
+      const heading = line.match(/^#{1,4}\s+(.*)$/);
+      if (bullet || numbered) {
+        flushPara();
+        const kind = bullet ? "ul" : "ol";
+        if (list !== kind) {
+          closeList();
+          out.push(`<${kind}>`);
+          list = kind;
+        }
+        out.push(`<li>${inline((bullet ?? numbered)![1])}</li>`);
+      } else if (heading) {
+        flushPara();
+        closeList();
+        out.push(`<h4>${inline(heading[1])}</h4>`);
+      } else if (!line.trim()) {
+        flushPara();
+        closeList();
+      } else {
+        closeList();
+        para.push(line);
+      }
+    }
+    flushPara();
+    closeList();
+  });
+  return out.join("");
 }
 
 /** Highlight a unified diff for the AI-applied edit: added lines green,
@@ -51,7 +109,7 @@ function DiffHighlight({ diff }: { diff: string }) {
     return (
       <div key={i} className={`diff-line ${cls}`}>
         <span className="diff-mark">{cls === "add" ? "+" : cls === "del" ? "−" : ""}</span>
-        <span className="diff-text">{text || "\u00A0"}</span>
+        <span className="diff-text">{text || " "}</span>
       </div>
     );
   });
@@ -59,21 +117,32 @@ function DiffHighlight({ diff }: { diff: string }) {
 }
 
 export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
-  const { messages, busy, busyKind, diffPending, acceptDiff, rejectDiff, applyHunk, clearMessages, suggestMode, toggleSuggestMode, pendingSelection, setSelection, askAi, lastEdits, rollbackEdit, restoreTimelineSnapshot, sessions, sessionId, newSession, switchSession, renameSession, deleteSession, activeProjectRoot, activeFile } =
-    useAiStore();
+  const {
+    messages, busy, busyKind, diffPending, acceptDiff, rejectDiff, applyHunk, clearMessages, suggestMode,
+    toggleSuggestMode, pendingSelection, setSelection, askAi, lastEdits, rollbackEdit, restoreTimelineSnapshot,
+    sessions, sessionId, newSession, switchSession, renameSession, deleteSession, activeProjectRoot, activeFile,
+    settings, loadSettings,
+  } = useAiStore();
   const [expandedRaw, setExpandedRaw] = useState<number | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const menuTriggerRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const menu = usePopover();
   const t = useT();
-  const [genInput, setGenInput] = useState("");
+  const [input, setInput] = useState("");
   const [snapshots, setSnapshots] = useState<{ path: string; ts: string; file: string }[] | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [usage, setUsage] = useState<{ prompt_tokens: number; completion_tokens: number } | null>(null);
+  const focusNonce = useUiStore((s) => s.aiFocusNonce);
   const newestAppliedId = messages.filter((m) => m.applied).slice(-1)[0]?.id ?? null;
-  const scopedLastEdits = lastEdits.filter((edit) => (
-    aiEditBelongsToScope(edit, sessionId, activeProjectRoot, activeFile)
-  ));
-  const [usage, setUsage] = useState<{ prompt_tokens: number; completion_tokens: number; requests: number; cost_usd: number } | null>(null);
+  const scopedLastEdits = lastEdits.filter((edit) => aiEditBelongsToScope(edit, sessionId, activeProjectRoot, activeFile));
+
+  useEffect(() => {
+    void loadSettings();
+  }, [loadSettings]);
+
+  const configured = useMemo(() => {
+    if (!settings) return true; // unknown yet: do not nag
+    return settings.provider.kind === "ollama" || Boolean(settings.api_key?.trim());
+  }, [settings]);
 
   const refreshUsage = async () => {
     try {
@@ -87,61 +156,80 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
     void refreshUsage();
   }, [messages.length]);
 
+  useEffect(() => {
+    bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, diffPending]);
+
+  // "Ask AI" from the editor / palette: focus the composer
+  useEffect(() => {
+    if (focusNonce > 0) window.requestAnimationFrame(() => inputRef.current?.focus());
+  }, [focusNonce]);
+
+  // auto-grow the composer up to its CSS max-height
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight + 2}px`;
+  }, [input]);
+
+  const send = (text = input) => {
+    if (busy || !text.trim()) return;
+    void askAi(text);
+    setInput("");
+  };
+
   const loadSnapshots = async () => {
     try {
-      const list = await api.aiSnapshots();
-      setSnapshots(list);
+      setSnapshots(await api.aiSnapshots());
     } catch {
       setSnapshots([]);
     }
   };
 
-  useEffect(() => {
-    bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, diffPending]);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onPointerDown = (event: MouseEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setMenuOpen(false);
-        menuTriggerRef.current?.focus();
-      }
-    };
-    window.addEventListener("mousedown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("mousedown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [menuOpen]);
-
-  const createGuide = () => {
-    const req = window.prompt(t("ai.guidePrompt"));
+  const createGuide = async () => {
+    const req = await dialog.prompt({
+      title: t("ai.guide"),
+      message: t("ai.guidePrompt"),
+      multiline: true,
+      confirmLabel: t("ai.guideGenerate"),
+    });
     if (!req) return;
-    void (async () => {
-      try {
-        const guide = await api.aiCreateGuide(req);
-        const preview = guide.length > 12000 ? `${guide.slice(0, 12000)}\n…（指南过长，仅预览前 12000 字符）` : guide;
-        const ok = window.confirm(`${t("ai.guideGenerated")}\n\n${preview}`);
-        if (ok) {
-          await api.writeFile("AI_GUIDE.md", guide);
-          window.alert(t("ai.guideSaved"));
-        }
-      } catch (e) {
-        window.alert(String(e));
-      }
-    })();
+    try {
+      toast.info(t("ai.guideGenerating"));
+      const guide = await api.aiCreateGuide(req);
+      const ok = await dialog.confirm({
+        title: t("ai.guideGenerated"),
+        message: guide.length > 4000 ? `${guide.slice(0, 4000)}\n…` : guide,
+        confirmLabel: t("ai.guideWrite"),
+      });
+      if (!ok) return;
+      await api.writeFile("AI_GUIDE.md", guide);
+      toast.success(t("ai.guideSaved"));
+    } catch (e) {
+      toast.error(e);
+    }
+  };
+
+  const suggestions = [
+    { icon: ScanSearch, text: t("ai.suggest.review") },
+    { icon: ListChecks, text: t("ai.suggest.structure") },
+    { icon: Sparkles, text: t("ai.suggest.abstract") },
+  ];
+
+  const pick = (fn: () => void) => () => {
+    menu.close();
+    fn();
   };
 
   return (
     <div className="ai-panel">
       <header className="ai-header">
         <div className="ai-header-main">
-          <span className="ai-heading">{t("ai.title")}</span>
+          <span className="ai-heading">
+            <Bot size={16} aria-hidden="true" />
+            {t("ai.title")}
+          </span>
           <select
             className="session-select"
             value={sessionId ?? ""}
@@ -156,37 +244,34 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
               </option>
             ))}
           </select>
-          <button
-            className="btn-mini icon-btn"
-            title={t("ai.sessionNew")}
-            aria-label={t("ai.sessionNew")}
-            onClick={newSession}
-            disabled={busy}
-          >
-            <Plus size={15} aria-hidden="true" />
+          <button className="icon-btn" title={t("ai.sessionNew")} aria-label={t("ai.sessionNew")} onClick={newSession} disabled={busy}>
+            <Plus size={16} aria-hidden="true" />
           </button>
-          <div className="ai-menu-anchor" ref={menuRef}>
+          <div className="ai-menu-anchor" ref={menu.anchorRef}>
             <button
-              ref={menuTriggerRef}
-              className="btn-mini icon-btn"
+              ref={menu.triggerRef}
+              className="icon-btn"
               title={t("ai.more")}
               aria-label={t("ai.more")}
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((open) => !open)}
+              aria-expanded={menu.open}
+              onClick={menu.toggle}
             >
               <MoreHorizontal size={16} aria-hidden="true" />
             </button>
-            {menuOpen && (
-              <div className="ai-menu">
+            {menu.open && (
+              <div className="ai-menu" role="menu">
                 <button
                   className="ai-menu-item"
                   disabled={!sessionId || busy}
-                  onClick={() => {
+                  onClick={pick(async () => {
                     if (!sessionId) return;
-                    const name = window.prompt(t("ai.sessionRename"), sessions.find((session) => session.id === sessionId)?.name ?? "");
-                    if (name) renameSession(sessionId, name);
-                    setMenuOpen(false);
-                  }}
+                    const name = await dialog.prompt({
+                      title: t("ai.sessionRename"),
+                      initial: sessions.find((session) => session.id === sessionId)?.name ?? "",
+                      confirmLabel: t("common.save"),
+                    });
+                    if (name?.trim()) renameSession(sessionId, name.trim());
+                  })}
                 >
                   <Pencil size={14} aria-hidden="true" />
                   <span>{t("ai.sessionRename")}</span>
@@ -194,70 +279,54 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
                 <button
                   className="ai-menu-item danger"
                   disabled={!sessionId || busy}
-                  onClick={() => {
-                    if (sessionId && window.confirm(t("ai.sessionDeleteConfirm"))) deleteSession(sessionId);
-                    setMenuOpen(false);
-                  }}
+                  onClick={pick(async () => {
+                    if (!sessionId) return;
+                    const ok = await dialog.confirm({
+                      title: t("ai.sessionDelete"),
+                      message: t("ai.sessionDeleteConfirm"),
+                      confirmLabel: t("common.delete"),
+                      danger: true,
+                    });
+                    if (ok) deleteSession(sessionId);
+                  })}
                 >
                   <Trash2 size={14} aria-hidden="true" />
                   <span>{t("ai.sessionDelete")}</span>
                 </button>
                 <div className="ai-menu-separator" />
-                <button
-                  className="ai-menu-item"
-                  onClick={() => {
-                    void loadSnapshots();
-                    setMenuOpen(false);
-                  }}
-                >
+                <button className="ai-menu-item" onClick={pick(() => void loadSnapshots())}>
                   <History size={14} aria-hidden="true" />
                   <span>{t("ai.timeline")}</span>
                 </button>
-                <button
-                  className="ai-menu-item"
-                  onClick={() => {
-                    createGuide();
-                    setMenuOpen(false);
-                  }}
-                >
+                <button className="ai-menu-item" title={t("ai.guideTitle")} onClick={pick(() => void createGuide())}>
                   <BookOpenText size={14} aria-hidden="true" />
                   <span>{t("ai.guide")}</span>
                 </button>
-                <button
-                  className="ai-menu-item"
-                  disabled={messages.length === 0}
-                  onClick={() => {
-                    clearMessages();
-                    setMenuOpen(false);
-                  }}
-                >
+                <button className="ai-menu-item" disabled={messages.length === 0} onClick={pick(clearMessages)}>
                   <Eraser size={14} aria-hidden="true" />
                   <span>{t("ai.clear")}</span>
                 </button>
                 <button
                   className="ai-menu-item"
                   disabled={!usage}
-                  onClick={() => {
-                    void (async () => {
-                      await api.tokenUsageReset();
-                      setUsage(null);
-                      void refreshUsage();
-                    })();
-                    setMenuOpen(false);
-                  }}
+                  onClick={pick(async () => {
+                    await api.tokenUsageReset();
+                    setUsage(null);
+                    void refreshUsage();
+                  })}
                 >
                   <RotateCcw size={14} aria-hidden="true" />
                   <span>{t("ai.usageReset")}</span>
                 </button>
+                <div className="ai-menu-separator" />
+                <button className="ai-menu-item" onClick={pick(() => useUiStore.getState().openModal({ kind: "settings", section: "ai" }))}>
+                  <Settings size={14} aria-hidden="true" />
+                  <span>{t("ai.configure")}</span>
+                </button>
               </div>
             )}
           </div>
-          <button
-            className="btn-mini icon-btn"
-            title={t("ai.collapse")}
-            aria-label={t("ai.collapse")}
-            onClick={onCollapse}
-          >
+          <button className="icon-btn" title={t("ai.collapse")} aria-label={t("ai.collapse")} onClick={onCollapse}>
             <PanelRightClose size={16} aria-hidden="true" />
           </button>
         </div>
@@ -267,46 +336,74 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
             <span>{activeFile ? activeFile.split("/").pop() : t("ai.sessionNoFile")}</span>
           </span>
           {busy ? (
-            <span className="ai-busy">{busyKind === "fix" ? t("ai.busyFix") : t("ai.busyDiagnose")}</span>
-          ) : usage ? (
+            <span className="ai-usage-compact">{busyKind === "fix" ? t("ai.busyFix") : t("ai.busyDiagnose")}</span>
+          ) : usage && usage.prompt_tokens + usage.completion_tokens > 0 ? (
             <span className="ai-usage-compact" title={t("ai.usageTitle")}>
               {t("ai.usageCompact", { n: usage.prompt_tokens + usage.completion_tokens })}
             </span>
           ) : null}
           <button
-            className={`btn-mini icon-btn ai-suggest-toggle ${suggestMode ? "active" : ""}`}
-            title={t("ai.suggestMode")}
-            aria-label={t("ai.suggestMode")}
-            aria-pressed={suggestMode}
+            className="switch ai-suggest-toggle"
+            role="switch"
+            aria-checked={suggestMode}
+            title={t("ai.suggestModeTitle")}
             onClick={toggleSuggestMode}
           >
-            <FileDiff size={15} aria-hidden="true" />
+            <span className="switch-track" />
+            {t("ai.suggestModeShort")}
           </button>
         </div>
       </header>
+
       <div className="ai-body" ref={bodyRef}>
         {messages.length === 0 && (
-          <div className="ai-empty">{t("ai.empty")}</div>
+          <div className="ai-empty">
+            <Bot size={30} />
+            <div className="ai-empty-title">{t("ai.emptyTitle")}</div>
+            <div>{t("ai.emptyBody")}</div>
+            {!configured ? (
+              <div className="ai-setup">
+                <span>{t("ai.notConfigured")}</span>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => useUiStore.getState().openModal({ kind: "settings", section: "ai" })}
+                >
+                  <Settings size={13} /> {t("ai.configure")}
+                </button>
+              </div>
+            ) : (
+              <div className="ai-suggestions">
+                {suggestions.map(({ icon: Icon, text }) => (
+                  <button key={text} className="ai-chip" disabled={busy || !activeFile} onClick={() => send(text)}>
+                    <Icon size={14} /> {text}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
         {messages.map((m) => (
-          <div key={m.id} className={`ai-msg ai-${m.role}`}>
-            <div
-              className="ai-text"
-              dangerouslySetInnerHTML={{ __html: renderText(m.text) }}
-            />
-            {m.diff && (
-              <pre className="ai-diff">{m.diff}</pre>
+          <div key={m.id} className={`ai-msg ai-${m.role} ${m.kind === "error" ? "ai-error" : ""}`}>
+            {m.role === "assistant" && !m.text && busy ? (
+              <span className="ai-typing" aria-label={t("ai.busyDiagnose")}>
+                <i />
+                <i />
+                <i />
+              </span>
+            ) : (
+              <div className="ai-text" dangerouslySetInnerHTML={{ __html: renderText(m.text) }} />
             )}
+            {m.diff && <pre className="ai-diff">{m.diff}</pre>}
             {/* collaborative edit: the AI changed a file — roll back right
-                inside the message bubble (compile-check then decide).
-                Only the newest applied message shows the buttons. */}
+                inside the message bubble. Only the newest applied message
+                shows the buttons. */}
             {m.role === "assistant" && m.applied && scopedLastEdits.length > 0 && m.id === newestAppliedId && (
               <div className="ai-msg-actions">
                 {scopedLastEdits.map((e) => (
                   <div key={e.file} className="ai-rollback-row">
                     {e.diff && <DiffHighlight diff={e.diff} />}
-                    <button className="btn-mini btn-danger" onClick={() => void rollbackEdit(e.file)}>
-                      {t("ai.rollback", { file: e.file })}
+                    <button className="btn btn-sm btn-danger" title={t("ai.rollbackTitle")} onClick={() => void rollbackEdit(e.file)}>
+                      <RotateCcw size={13} /> {t("ai.rollback", { file: e.file })}
                     </button>
                   </div>
                 ))}
@@ -314,7 +411,7 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
             )}
             {m.raw && (
               <div className="ai-raw-toggle">
-                <button className="btn-mini" onClick={() => setExpandedRaw(expandedRaw === m.id ? null : m.id)}>
+                <button className="btn btn-sm btn-ghost" onClick={() => setExpandedRaw(expandedRaw === m.id ? null : m.id)}>
                   {expandedRaw === m.id ? t("ai.rawToggleHide") : t("ai.rawToggleShow")}
                 </button>
                 {expandedRaw === m.id && <pre className="ai-raw">{m.raw}</pre>}
@@ -326,11 +423,11 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
           <div className="ai-diff-bar">
             <span>{diffPending.suggested ? t("ai.suggestBar", { n: diffPending.rounds }) : t("ai.diffBar", { n: diffPending.rounds })}</span>
             {!diffPending.suggested && (
-              <button className="btn-mini btn-primary" onClick={() => void acceptDiff()}>
+              <button className="btn btn-sm btn-primary" onClick={() => void acceptDiff()}>
                 {t("ai.diffApply")}
               </button>
             )}
-            <button className="btn-mini" onClick={rejectDiff}>
+            <button className="btn btn-sm" onClick={rejectDiff}>
               {t("ai.diffReject")}
             </button>
           </div>
@@ -340,13 +437,16 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
             {diffPending.hunks.map((h, i) => (
               <div key={i} className="ai-hunk">
                 <div className="ai-hunk-head">
-                  <span>{h.file}:{h.line}</span>
+                  <span>
+                    {h.file}:{h.line}
+                  </span>
                   {h.why && <span className="ai-hunk-why">{h.why}</span>}
                 </div>
                 {h.old && <pre className="ai-hunk-old">{h.old}</pre>}
                 {h.new && <pre className="ai-hunk-new">{h.new}</pre>}
                 <button
-                  className="btn-mini btn-primary"
+                  className="btn btn-sm btn-primary"
+                  style={{ alignSelf: "flex-start" }}
                   onClick={() => {
                     const patch = `--- a/${h.file}\n+++ b/${h.file}\n@@ -${Math.max(1, h.line - 1)},${h.old.split("\n").length} +${h.line},${h.new.split("\n").length} @@\n${h.old
                       .split("\n")
@@ -368,8 +468,8 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
           <div className="ai-hunks">
             <div className="ai-hunk-head">
               <span>{t("ai.timelineTitle")}</span>
-              <button className="btn-mini" onClick={() => setSnapshots(null)}>
-                {t("ai.timelineClose")}
+              <button className="icon-btn icon-btn-sm" aria-label={t("ai.timelineClose")} onClick={() => setSnapshots(null)}>
+                <X size={14} />
               </button>
             </div>
             {snapshots.length === 0 && <div className="ai-hunk-why">{t("ai.timelineEmpty")}</div>}
@@ -377,80 +477,64 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
               <div key={i} className="ai-hunk">
                 <div className="ai-hunk-head">
                   <span>{snap.file}</span>
-                  <span className="ai-hunk-why">
-                    {new Date(Number(snap.ts) * 1000).toLocaleString()}
-                  </span>
+                  <span>{new Date(Number(snap.ts) * 1000).toLocaleString()}</span>
                 </div>
                 <button
-                  className="btn-mini btn-primary"
+                  className="btn btn-sm"
+                  style={{ alignSelf: "flex-start" }}
                   onClick={() => {
                     void restoreTimelineSnapshot(snap.path).then((rel) => {
                       if (rel) void loadSnapshots();
                     });
                   }}
                 >
-                  {t("ai.timelineRestore")}
+                  <RotateCcw size={13} /> {t("ai.timelineRestore")}
                 </button>
               </div>
             ))}
           </div>
         )}
       </div>
+
       <div className="ai-generate">
+        {pendingSelection && (
+          <div className="ai-generate-actions">
+            <span className="ai-selection-chip" title={t("ai.askClearSel")}>
+              {t("ai.askSelection", { n: pendingSelection.length })}
+              <button className="icon-btn icon-btn-sm" aria-label={t("ai.askClearSel")} onClick={() => setSelection(null)}>
+                <X size={12} />
+              </button>
+            </span>
+          </div>
+        )}
         <div className="ai-chat-row">
           <textarea
+            ref={inputRef}
             className="ai-generate-input"
             placeholder={pendingSelection ? t("ai.askPlaceholderSel") : t("ai.askPlaceholder")}
-            value={genInput}
-            onChange={(e) => setGenInput(e.target.value)}
-            rows={3}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            rows={2}
             onKeyDown={(e) => {
-              // Enter sends (also Ctrl/Cmd+Enter for muscle memory);
-              // Shift+Enter inserts a newline. isComposing guards the IME
-              // confirmation Enter (Chinese input methods) from sending.
-              if (e.key === "Enter" && !e.shiftKey && !(e.nativeEvent as KeyboardEvent).isComposing) {
-                if (!busy && genInput.trim()) {
-                  e.preventDefault();
-                  void askAi(genInput);
-                  setGenInput("");
-                }
+              // Enter sends; Shift+Enter inserts a newline. isComposing
+              // guards the IME confirmation Enter (Chinese input methods).
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                send();
               }
             }}
           />
           <button
-            className="btn-mini btn-primary icon-btn ai-send-action"
-            disabled={busy || !genInput.trim()}
+            className="icon-btn btn-primary ai-send-action"
+            disabled={busy || !input.trim()}
             title={t("ai.askTitle")}
             aria-label={t("ai.askSend")}
-            onClick={() => {
-              void askAi(genInput);
-              setGenInput("");
-            }}
+            onClick={() => send()}
           >
-            <SendHorizontal size={16} aria-hidden="true" />
+            <SendHorizontal size={15} aria-hidden="true" />
           </button>
         </div>
-        <div className="ai-generate-actions">
-          {scopedLastEdits.map((e) => (
-            <button
-              key={e.file}
-              className="btn-mini btn-danger"
-              title={t("ai.rollbackTitle")}
-              onClick={() => void rollbackEdit(e.file)}
-            >
-              {t("ai.rollback", { file: e.file })}
-            </button>
-          ))}
-          {pendingSelection && (
-            <button
-              className="btn-mini"
-              title={t("ai.askClearSel")}
-              onClick={() => setSelection(null)}
-            >
-              {t("ai.askSelection", { n: pendingSelection.length })}
-            </button>
-          )}
-        </div>
+        <span className="ai-composer-hint">{t("ai.composerHint")}</span>
       </div>
     </div>
   );

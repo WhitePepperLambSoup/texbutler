@@ -3,6 +3,8 @@ import { api, onEvent, events, type CompileDoneEvent, type CompileProgress, type
 import { getProjectGeneration, useProjectStore } from "./projectStore";
 import { useI18n } from "../i18n";
 import { normalizeProjectRoot } from "./aiSessionBindings";
+import { loadStats, recordCompile } from "./stats";
+import { useUiStore } from "./uiStore";
 
 interface CompileState {
   running: boolean;
@@ -13,7 +15,13 @@ interface CompileState {
   checkRunning: boolean;
   startedAt: number | null;
   elapsedSec: number | null;
+  /** What the Compile button builds: "main", "current" or a root file. */
+  target: string;
+  /** Number of successful compiles in this project (persisted stats). */
+  compileCount: number;
 
+  setTarget: (target: string) => void;
+  /** Compile the selected target (`compile()` without args does the same). */
   compile: (target?: "main" | "current" | string) => Promise<void>;
   cancel: () => void;
   runCheck: (onlyFile?: string) => Promise<void>;
@@ -38,9 +46,17 @@ export const useCompileStore = create<CompileState>((set, get) => ({
   checkRunning: false,
   startedAt: null,
   elapsedSec: null,
+  target: "main",
+  compileCount: 0,
 
-  async compile(target?: "main" | "current" | string) {
+  setTarget(target) {
+    set({ target });
+  },
+
+  async compile(requested?: "main" | "current" | string) {
     if (get().running) return;
+    const target = requested ?? get().target;
+    if (!useProjectStore.getState().root) return;
     // save every dirty tab first: the compile must reflect exactly what
     // the editor shows right now, not whatever is on disk
     const ps = useProjectStore.getState();
@@ -142,6 +158,7 @@ useProjectStore.subscribe((project) => {
     && nextIdentity.generation === observedProjectIdentity.generation) {
     return;
   }
+  const rootChanged = nextIdentity.root !== observedProjectIdentity.root;
   observedProjectIdentity = nextIdentity;
   ruleCheckSeq += 1;
   diagnosticsSeq += 1;
@@ -154,6 +171,9 @@ useProjectStore.subscribe((project) => {
     checkRunning: false,
     startedAt: null,
     elapsedSec: null,
+    ...(rootChanged
+      ? { target: "main", compileCount: loadStats(project.root)?.compiles ?? 0 }
+      : {}),
   });
 });
 
@@ -166,17 +186,21 @@ onEvent<CompileDoneEvent>(events.compileDone, (payload) => {
   const r = payload.result;
   const startedAt = useCompileStore.getState().startedAt;
   const elapsedSec = startedAt ? Math.round((Date.now() - startedAt) / 100) / 10 : null;
+  const root = useProjectStore.getState().root;
   useCompileStore.setState({
     running: false,
     lastResult: r,
     elapsedSec,
-    progress: { stage: "done", progress: 1, message: r.ok ? useI18n.getState().t("compile.done") : useI18n.getState().t("compile.failed") },
+    progress: { stage: r.ok ? "done" : "error", progress: 1, message: r.ok ? useI18n.getState().t("compile.done") : useI18n.getState().t("compile.failed") },
     compileIssues: r.issues,
+    ...(r.ok && root ? { compileCount: recordCompile(root).compiles } : {}),
   });
   // refresh the PDF preview path
   if (r.pdf_path) {
     useProjectStore.setState({ pdfPath: r.pdf_path });
   }
+  // a failed build should never fail silently: surface the error list
+  if (!r.ok) useUiStore.getState().showProblems("compile");
   void useCompileStore.getState().refreshDiagnostics();
   // auto-run the rule check right after a compile (in addition to save-debounce)
   void useCompileStore.getState().runCheck();

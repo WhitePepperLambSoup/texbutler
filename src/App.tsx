@@ -1,712 +1,135 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { Bot } from "lucide-react";
-import ProjectTree from "./components/ProjectTree";
-import NewFileModal from "./components/NewFileModal";
-import OutlinePanel from "./components/OutlinePanel";
-import BibPanel from "./components/BibPanel";
-import TodoPanel from "./components/TodoPanel";
+import TopBar from "./components/TopBar";
+import StatusBar from "./components/StatusBar";
+import Sidebar from "./components/Sidebar";
 import EditorPane from "./components/Editor";
 import SplitPane from "./components/SplitPane";
 import PdfPreview from "./components/PdfPreview";
 import ProblemsPanel from "./components/ProblemsPanel";
 import AiPanel from "./components/AiPanel";
-import SettingsModal from "./components/SettingsModal";
 import WelcomePanel from "./components/WelcomePanel";
+import SettingsModal from "./components/SettingsModal";
 import NewProjectModal from "./components/NewProjectModal";
-import { api } from "./api";
+import NewFileModal from "./components/NewFileModal";
+import CommandPalette from "./components/CommandPalette";
+import { DialogHost, Toasts } from "./components/ui/Feedback";
 import { useProjectStore } from "./store/projectStore";
-import { keyCombo, loadKeymap } from "./store/keymap";
-import { usePanelSize, usePanelHeight } from "./hooks/usePanelSize";
-import { loadStats, recordCompile, recordWords } from "./store/stats";
-import { removeRecent } from "./store/recent";
-import { useCompileStore } from "./store/compileStore";
 import { useAiStore } from "./store/aiStore";
+import { useUiStore, type PanelId } from "./store/uiStore";
+import { usePanelHeight, usePanelSize } from "./hooks/usePanelSize";
+import { useLayoutFit } from "./hooks/useWorkbenchLayout";
+import { useAppLifecycle } from "./hooks/useAppLifecycle";
+import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
 import { useT } from "./i18n";
-import { loadFlow, saveFlow } from "./flow";
-import QuickOpenModal from "./components/QuickOpenModal";
 
-/** Collapsible right rail hosting the AI panel: a thin
- * vertical strip when collapsed (does not take space), a full panel when
- * open. The state persists across launches. */
-function AiRail({ aiWidth, open, onToggle }: { aiWidth: number; open: boolean; onToggle: () => void }) {
-  const t = useT();
-  return (
-    <aside className={`ai-rail ${open ? "open" : "collapsed"}`} style={open ? { width: aiWidth } : undefined}>
-      {open ? (
-        <AiPanel onCollapse={onToggle} />
-      ) : (
-        <button
-          className="ai-rail-toggle"
-          onClick={onToggle}
-          title={t("ai.expand")}
-          aria-label={t("ai.expand")}
-        >
-          <Bot size={16} aria-hidden="true" />
-          <span>AI</span>
-        </button>
-      )}
-    </aside>
-  );
-}
-
-export type ThemeId = "liquid" | "dark" | "light";
-
-function loadTheme(): ThemeId {
-  try {
-    const saved = window.localStorage.getItem("tb-theme");
-    if (saved === "liquid" || saved === "dark" || saved === "light") return saved;
-  } catch {
-    /* ignore */
-  }
-  return "liquid";
-}
+export type { ThemeId } from "./store/uiStore";
 
 export default function App() {
-  const { root, mainFile, activeTab, pdfPath, toast } = useProjectStore();
-  const { running, progress, compile, lastResult, elapsedSec, compileIssues, ruleIssues } =
-    useCompileStore();
-  const [compileCount, setCompileCount] = useState(() => {
-    const s = loadStats(useProjectStore.getState().root);
-    return s?.compiles ?? 0;
-  });
-  // dashboard: bump the per-project compile counter when a build finishes
-  useEffect(() => {
-    const unsub = useCompileStore.subscribe((s, prev) => {
-      if (!s.running && prev.running && s.lastResult?.ok && s.lastResult !== prev.lastResult) {
-        const root = useProjectStore.getState().root;
-        if (root) setCompileCount(recordCompile(root).compiles);
-      }
-    });
-    return () => unsub();
-  }, []);
-  // reload the counter when the project changes (open/switch)
-  useEffect(() => {
-    const unsub = useProjectStore.subscribe((s, prev) => {
-      if (s.root !== prev.root) {
-        const st = loadStats(s.root ?? "");
-        setCompileCount(st?.compiles ?? 0);
-      }
-    });
-    return () => unsub();
-  }, []);
-  const busy = useAiStore((s) => s.busy);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [newProjectOpen, setNewProjectOpen] = useState(false);
-  const [newFileOpen, setNewFileOpen] = useState(false);
-  const [welcomeRev, setWelcomeRev] = useState(0);
-  // Windows-style splitter sizes (draggable separator bars, persisted)
-  const tree = usePanelSize("tb-tree-w", 220, 160, 460, 1);
-  const pdf = usePanelSize(
-    "tb-pdf-w",
-    360,
-    240,
-    Math.round((window.innerWidth || 1400) * 0.7),
-    -1,
-  );
-  const ai = usePanelSize("tb-ai-w", 300, 240, 520, -1);
-  const bottom = usePanelHeight(
-    "tb-bottom-h",
-    220,
-    140,
-    Math.round((window.innerHeight || 900) * 0.55),
-    -1,
-  );
-  const [aiOpen, setAiOpen] = useState(() => {
-    // cold start: a narrow window must not restore an expanded AI rail
-    // (the "AI panel cut off" bug on first launch)
-    const saved = localStorage.getItem("tb-ai-rail") !== "0";
-    return saved && (window.innerWidth || 1400) >= 960;
-  });
-  const toggleAi = () => {
-    const next = !aiOpen;
-    setAiOpen(next);
-    localStorage.setItem("tb-ai-rail", next ? "1" : "0");
-  };
-  const treeDrag = tree.startDrag;
-  const pdfDrag = pdf.startDrag;
-  const aiDrag = ai.startDrag;
-  const bottomDrag = bottom.startDrag;
-  const [pdfRev, setPdfRev] = useState(0);
-  const [leftTab, setLeftTab] = useState<"tree" | "outline" | "bib" | "todo">("tree");
-  const [compileTarget, setCompileTarget] = useState<string>("main");
-  const [roots, setRoots] = useState<string[]>([]);
-  const [pdfPage, setPdfPage] = useState<number | null>(null);
-  const [quickOpen, setQuickOpen] = useState(false);
-  const [splitFile, setSplitFile] = useState<string | null>(null);
-  const [splitPick, setSplitPick] = useState(false);
-  // "split view" button in the editor toolbar opens QuickOpen in split mode
-  useEffect(() => {
-    const onSplit = () => {
-      setSplitPick(true);
-      setQuickOpen(true);
-    };
-    window.addEventListener("tb:split-open", onSplit);
-    return () => window.removeEventListener("tb:split-open", onSplit);
-  }, []);
-  const [themePickerOpen, setThemePickerOpen] = useState(false);
-  const [toolbarMoreOpen, setToolbarMoreOpen] = useState(false);
-  const themePickerRef = useRef<HTMLDivElement>(null);
-  const themeTriggerRef = useRef<HTMLButtonElement>(null);
-  const toolbarMoreRef = useRef<HTMLDivElement>(null);
-  const toolbarMoreTriggerRef = useRef<HTMLButtonElement>(null);
-  const [wordCount, setWordCount] = useState<{ chars: number; cjk: number; words: number } | null>(null);
   const t = useT();
+  useAppLifecycle();
+  useGlobalShortcuts();
 
-  // OTA: check GitHub for a newer release on startup (opt-out in Settings)
-  useEffect(() => {
-    const check = async () => {
-      try {
-        if (!(await api.getUpdateCheck())) return;
-        const info = await api.checkUpdates();
-        if (info) {
-          const go = window.confirm(
-            `${t("app.updateAvailable", { v: info.version })}\n\n${info.body.slice(0, 500)}\n\n${t("app.updateOpen")}`,
-          );
-          if (go) window.open(info.url, "_blank");
-        }
-      } catch {
-        /* offline / rate-limited: stay quiet */
-      }
-    };
-    const timer = window.setTimeout(() => void check(), 2500);
-    return () => window.clearTimeout(timer);
-  }, [t]);
+  // narrow selectors only: App must not re-render on every keystroke
+  const root = useProjectStore((s) => s.root);
+  const hasPdf = useProjectStore((s) => Boolean(s.pdfPath));
+  const aiBusy = useAiStore((s) => s.busy);
+  const theme = useUiStore((s) => s.theme);
+  const bottomOpen = useUiStore((s) => s.panels.bottom);
+  const splitFile = useUiStore((s) => s.splitFile);
+  const modal = useUiStore((s) => s.modal);
+  const palette = useUiStore((s) => s.palette);
+  const closeModal = useUiStore((s) => s.closeModal);
 
-  // multi-document roots: every compilable \documentclass file
-  useEffect(() => {
-    const load = async () => {
-      const st = useProjectStore.getState();
-      if (!st.root) return;
-      try {
-        setRoots(await api.listRoots());
-      } catch {
-        setRoots([]);
-      }
-    };
-    void load();
-    const unsub = useProjectStore.subscribe((s, prev) => {
-      if (s.root !== prev.root) void load();
-    });
-    // auto-save: persist the active dirty tab on a configurable interval
-    // (0 = off; the setting lives in localStorage, surfaced in Settings).
-    // A 1s tick accumulates elapsed time and only saves once the chosen
-    // interval has passed — the setting applies exactly.
-    let lastSave = Date.now();
-    const autoSaveIv = setInterval(() => {
-      const secs = Number(localStorage.getItem("tb-autosave-secs") ?? "30");
-      if (secs <= 0) return;
-      if (Date.now() - lastSave < secs * 1000) return;
-      lastSave = Date.now();
-      const st = useProjectStore.getState();
-      if (!st.root || !st.activeTab) return;
-      const tab = st.tabs.find((t) => t.path === st.activeTab);
-      if (tab?.dirty) void st.saveFile();
-    }, 1000);
-    // SyncTeX forward search: jump the PDF viewer to a page
-    const onSynctex = (e: Event) => {
-      const page = (e as CustomEvent<number>).detail;
-      setPdfPage(page);
-    };
-    window.addEventListener("tb:synctex-page", onSynctex);
-    return () => {
-      unsub();
-      clearInterval(autoSaveIv);
-      window.removeEventListener("tb:synctex-page", onSynctex);
-    };
-  }, []);
-  const refreshWordCount = useCallback(async () => {
-    const st = useProjectStore.getState();
-    if (!st.activeTab) {
-      setWordCount(null);
-      return;
-    }
-    try {
-      const w = await api.countWords(st.activeTab);
-      setWordCount({ chars: w.chars, cjk: w.cjk_chars, words: w.words });
-      // dashboard: append the word sample to the project's history
-      recordWords(st.root, w.chars, w.cjk_chars, w.words);
-    } catch {
-      setWordCount(null);
-    }
-  }, []);
-  useEffect(() => {
-    void refreshWordCount();
-    const unsub = useProjectStore.subscribe((s, prev) => {
-      if (s.activeTab !== prev.activeTab) void refreshWordCount();
-    });
-    window.addEventListener("tb:file-saved", refreshWordCount);
-    return () => {
-      unsub();
-      window.removeEventListener("tb:file-saved", refreshWordCount);
-    };
-  }, [refreshWordCount]);
-  const [theme, setTheme] = useState<ThemeId>(loadTheme());
+  // draggable, persisted pane sizes (Windows-style splitter bars)
+  const tree = usePanelSize("tb-tree-w", 240, 180, 460, 1);
+  const pdf = usePanelSize("tb-pdf-w", 420, 260, 1400, -1);
+  const ai = usePanelSize("tb-ai-w", 320, 260, 560, -1);
+  const bottom = usePanelHeight("tb-bottom-h", 220, 120, 640, -1);
 
-  // apply theme to <html data-theme>
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    try {
-      window.localStorage.setItem("tb-theme", theme);
-    } catch {
-      /* ignore */
-    }
-  }, [theme]);
+  // fit the preferred sizes into the window: the editor always keeps room
+  const fit = useLayoutFit({ tree: tree.size, pdf: pdf.size, ai: ai.size });
+  const visible = { sidebar: fit.showTree, pdf: fit.showPdf, ai: fit.showAi, bottom: bottomOpen };
 
-  // Keep the appearance menu anchored to its trigger and preserve the
-  // clicked control's focus when it is dismissed with a pointer.
-  useEffect(() => {
-    if (!themePickerOpen) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (!themePickerRef.current?.contains(event.target as Node)) {
-        setThemePickerOpen(false);
-      }
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setThemePickerOpen(false);
-      themeTriggerRef.current?.focus();
-    };
-    window.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [themePickerOpen]);
-
-  useEffect(() => {
-    if (!toolbarMoreOpen) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (!toolbarMoreRef.current?.contains(event.target as Node)) {
-        setToolbarMoreOpen(false);
-      }
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setToolbarMoreOpen(false);
-      toolbarMoreTriggerRef.current?.focus();
-    };
-    window.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [toolbarMoreOpen]);
-
-  // session restore + auto-compile + Ctrl+P quick open
-  useEffect(() => {
-    const flow = loadFlow();
-    if (flow.restoreSession && flow.lastProject) {
-      void useProjectStore
-        .getState()
-        .openProject(flow.lastProject)
-        .then(() => {
-          if (flow.lastFile) {
-            void useProjectStore.getState().openFile(flow.lastFile);
-          }
-        })
-        .catch(() => {
-          // project no longer exists — drop it from the recent list so the
-          // welcome screen stops offering it, and clear the session flow so
-          // we don't retry a dead project on every startup
-          removeRecent(flow.lastProject);
-          setWelcomeRev((r) => r + 1);
-          saveFlow({ lastProject: "", lastFile: "" });
-        });
-    }
-    let timer: number | undefined;
-    let ruleTimer: number | undefined;
-    const onSaved = () => {
-      const f = loadFlow();
-      // refresh the ref/cite index + run the rule check (debounced) so the
-      // dangling-ref rule and autocompletion stay current after a save
-      window.clearTimeout(ruleTimer);
-      ruleTimer = window.setTimeout(() => {
-        void useProjectStore.getState().loadRefIndex();
-        void useCompileStore.getState().runCheck();
-      }, 600);
-      if (!f.autoCompile) return;
-      window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        void useCompileStore.getState().compile("main");
-      }, 1200);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "p") {
-        e.preventDefault();
-        setQuickOpen(true);
-      }
-    };
-    window.addEventListener("tb:file-saved", onSaved);
-    window.addEventListener("keydown", onKey);
-    // Project/file-scoped AI conversations: root and tab must be observed
-    // together so an old tab is never rebound under a newly opened root.
-    const attachCurrentAiFile = () => {
-      const project = useProjectStore.getState();
-      useAiStore.getState().attachFile(project.root, project.activeTab);
-    };
-    attachCurrentAiFile();
-    const unsubTab = useProjectStore.subscribe((s, prev) => {
-      if (s.root !== prev.root || s.activeTab !== prev.activeTab) {
-        useAiStore.getState().attachFile(s.root, s.activeTab);
-      }
-    });
-    // narrow windows: auto-collapse the AI rail so fixed-width panels never
-    // overflow and hide the editor (the "AI panel cut off" bug)
-    const onResize = () => {
-      if (window.innerWidth < 960) {
-        setAiOpen(false);
-        localStorage.setItem("tb-ai-rail", "0");
-      }
-    };
-    window.addEventListener("resize", onResize);
-    return () => {
-      window.removeEventListener("tb:file-saved", onSaved);
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", onResize);
-      unsubTab();
-      window.clearTimeout(timer);
-      window.clearTimeout(ruleTimer);
-    };
-  }, []);
-
-  const importWord = async () => {
-    try {
-      const file = await open({
-        multiple: false,
-        filters: [{ name: "Word", extensions: ["docx"] }],
-      });
-      if (!file || Array.isArray(file)) return;
-      const r = await api.importDocx(file);
-      window.alert(`已导入为 ${r.file}（${r.chars} 字符）。可在项目树中打开。`);
-      await useProjectStore.getState().refresh();
-      await useProjectStore.getState().openFile(r.file);
-    } catch (e) {
-      window.alert(String(e));
-    }
+  const togglePanel = (panel: PanelId) => {
+    // a pane the layout auto-hid is brought back rather than "closed"
+    useUiStore.getState().setPanel(panel, !visible[panel]);
   };
-
-  const exportActive = async (format: "md" | "docx") => {
-    if (!activeTab) return;
-    try {
-      const out = await api.exportFile(activeTab, format);
-      window.alert(t("toolbar.exported", { file: out }));
-    } catch (e) {
-      window.alert(String(e));
-    }
-  };
-
-  const renderSecondaryActions = () => (
-    <>
-      <button className="btn toolbar-word-import" onClick={() => void importWord()} disabled={!root}>
-        {t("toolbar.importWord")}
-      </button>
-      {root && activeTab?.endsWith(".tex") && (
-        <>
-          <button
-            className="btn toolbar-export-md"
-            title={t("toolbar.exportMdTitle")}
-            onClick={() => void exportActive("md")}
-          >
-            {t("toolbar.exportMd")}
-          </button>
-          <button
-            className="btn toolbar-export-docx"
-            title={t("toolbar.exportDocxTitle")}
-            onClick={() => void exportActive("docx")}
-          >
-            {t("toolbar.exportDocx")}
-          </button>
-        </>
-      )}
-    </>
-  );
-
-  // Bump the PDF iframe key on every successful compile.
-  useEffect(() => {
-    const un = useCompileStore.subscribe((s, prev) => {
-      if (s.lastResult?.ok && s.lastResult !== prev.lastResult) {
-        setPdfRev((r) => r + 1);
-      }
-    });
-    return un;
-  }, []);
-
-  const handleCompile = async () => {
-    await compile(compileTarget);
-  };
-
-  // Global shortcuts: Ctrl+B compile (like VS Code), Ctrl+Shift+K compile current.
-  // (Ctrl+Shift+B is reserved for the editor's bold-wrap; registering both
-  // Compile shortcuts are configurable (Settings → 快捷键); the default
-  // compile-main binding is Ctrl+B.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (keyCombo(e) !== loadKeymap().compileMain) return;
-      e.preventDefault();
-      void useCompileStore.getState().compile("main");
-    };
-    const onKeyK = (e: KeyboardEvent) => {
-      if (keyCombo(e) !== loadKeymap().compileCurrent) return;
-      e.preventDefault();
-      void useCompileStore.getState().compile("current");
-    };
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("keydown", onKeyK);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("keydown", onKeyK);
-    };
-  }, []);
-
-  const totalIssues = compileIssues.length + ruleIssues.length;
 
   return (
     <div className="app">
       {theme === "liquid" && (
-        <div className={`glass-blobs ${pdfPath ? "has-pdf" : ""}`} aria-hidden="true">
+        <div className={`glass-blobs ${hasPdf && fit.showPdf ? "has-pdf" : ""}`} aria-hidden="true">
           <div className="blob blob-1" />
           <div className="blob blob-2" />
           <div className="blob blob-3" />
         </div>
       )}
-      <div className="toolbar">
-        <span className="brand">TeXButler</span>
-        {root && (
-          <span className="toolbar-root" title={root}>
-            {root.split(/[\\/]/).pop()}
-          </span>
-        )}
-        <div className="toolbar-spacer" />
-        <select
-          className="compile-target"
-          value={compileTarget}
-          onChange={(e) => setCompileTarget(e.target.value)}
-          disabled={running}
-        >
-          <option value="main">{t("toolbar.target.main", { file: mainFile || "main.tex" })}</option>
-          {roots
-            .filter((r) => r !== mainFile)
-            .map((r) => (
-              <option key={r} value={r}>
-                {t("toolbar.target.root", { file: r })}
-              </option>
-            ))}
-          <option value="current" disabled={!activeTab}>
-            {activeTab
-              ? t("toolbar.target.current", { file: activeTab.split("/").pop() ?? "" })
-              : t("toolbar.target.currentEmpty")}
-          </option>
-        </select>
-        <button className="btn toolbar-compile" onClick={handleCompile} disabled={running || !root}>
-          {running ? t("toolbar.compiling") : t("toolbar.compile")}
-        </button>
-        {running && (
-          <button className="btn" onClick={() => useCompileStore.getState().cancel()}>
-            {t("toolbar.cancel")}
-          </button>
-        )}
-        <button
-          className="btn toolbar-new-file"
-          title={t("tree.newFile")}
-          disabled={!root}
-          onClick={() => setNewFileOpen(true)}
-        >
-          {t("toolbar.newFile")}
-        </button>
-        <div className="toolbar-secondary">{renderSecondaryActions()}</div>
-        <div className="toolbar-more" ref={toolbarMoreRef}>
-          <button
-            ref={toolbarMoreTriggerRef}
-            className="btn toolbar-more-btn"
-            aria-expanded={toolbarMoreOpen}
-            onClick={() => setToolbarMoreOpen((value) => !value)}
-          >
-            {t("toolbar.more")}
-          </button>
-          {toolbarMoreOpen && (
-            <div className="toolbar-more-menu">{renderSecondaryActions()}</div>
+      <TopBar visible={visible} onTogglePanel={togglePanel} />
+
+      {!root ? (
+        <WelcomePanel />
+      ) : (
+        <div className="layout">
+          {fit.showTree && (
+            <>
+              <aside className="col-tree pane" style={{ width: fit.tree }}>
+                <Sidebar />
+              </aside>
+              <div className="splitter-v" onPointerDown={tree.startDrag} onDoubleClick={tree.reset} title={t("ui.resizeTree")} />
+            </>
           )}
-        </div>
-        <div className="theme-picker" ref={themePickerRef}>
-          <button
-            ref={themeTriggerRef}
-            className="btn theme-picker-btn"
-            title={t("theme.title")}
-            aria-expanded={themePickerOpen}
-            onClick={() => setThemePickerOpen((value) => !value)}
-          >
-            <span className={`theme-swatch swatch-${theme}`} />
-            {theme === "liquid" ? t("theme.liquid") : theme === "dark" ? t("theme.dark") : t("theme.light")}
-          </button>
-          {themePickerOpen && (
-            <div className="theme-picker-menu">
-              {(["liquid", "dark", "light"] as const).map((id) => (
-                <button
-                  key={id}
-                  className={`theme-option ${theme === id ? "active" : ""}`}
-                  onClick={() => {
-                    setTheme(id);
-                    setThemePickerOpen(false);
-                  }}
-                >
-                  {id === "liquid" ? t("theme.liquid") : id === "dark" ? t("theme.dark") : t("theme.light")}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        <button className="btn toolbar-settings" onClick={() => setSettingsOpen(true)}>
-          {t("toolbar.settings")}
-        </button>
-      </div>
-      {progress && (running || progress.stage === "error") && (
-        <div className={`compile-bar ${progress.stage === "error" ? "error" : ""}`}>
-          <div
-            className="compile-bar-fill"
-            style={{ width: `${Math.round(progress.progress * 100)}%` }}
-          />
-          <span className="compile-bar-text">{progress.message}</span>
-        </div>
-      )}
-      {!root && (
-        <WelcomePanel
-          rev={welcomeRev}
-          onOpen={(p) => {
-            void useProjectStore
-              .getState()
-              .openProject(p)
-              .catch((e) => {
-                // failed open (project deleted/moved): drop it from the
-                // recent list so the welcome screen stops offering it
-                removeRecent(p);
-                setWelcomeRev((r) => r + 1);
-                window.alert(String(e));
-              });
-          }}
-          onBrowse={() => {
-            void useProjectStore.getState().openProject().catch((e) => window.alert(String(e)));
-          }}
-          onNew={() => setNewProjectOpen(true)}
-        />
-      )}
-      {root && (
-      <div className="layout">
-        <aside className="col-tree" style={{ width: tree.size }}>
-          <div className="tree-tabs">
-            <button
-              className={`tree-tab ${leftTab === "tree" ? "active" : ""}`}
-              onClick={() => setLeftTab("tree")}
-            >
-              {t("tree.title")}
-            </button>
-            <button
-              className={`tree-tab ${leftTab === "outline" ? "active" : ""}`}
-              onClick={() => setLeftTab("outline")}
-            >
-              {t("outline.title")}
-            </button>
-            <button
-              className={`tree-tab ${leftTab === "bib" ? "active" : ""}`}
-              onClick={() => setLeftTab("bib")}
-            >
-              {t("bib.title")}
-            </button>
-            <button
-              className={`tree-tab ${leftTab === "todo" ? "active" : ""}`}
-              onClick={() => setLeftTab("todo")}
-              title={t("todo.title")}
-            >
-              TODO
-            </button>
+          <div className="col-center">
+            <main className={`col-editor pane ${splitFile ? "is-split" : ""}`}>
+              <EditorPane />
+              {splitFile && <SplitPane file={splitFile} />}
+            </main>
+            {bottomOpen && (
+              <div className="splitter-h" onPointerDown={bottom.startDrag} onDoubleClick={bottom.reset} title={t("ui.resizeBottom")} />
+            )}
+            <section className={`bottom pane ${bottomOpen ? "" : "collapsed"}`} style={{ height: bottomOpen ? bottom.size : undefined }}>
+              <ProblemsPanel />
+            </section>
           </div>
-          {leftTab === "tree" && <ProjectTree onNewFile={() => setNewFileOpen(true)} />}
-          {leftTab === "outline" && <OutlinePanel />}
-          {leftTab === "bib" && <BibPanel />}
-          {leftTab === "todo" && <TodoPanel />}
-        </aside>
-        <div className="splitter-v" onPointerDown={treeDrag} title={t("ui.resizeTree")} />
-        <main className={`col-editor ${splitFile ? "is-split" : ""}`}>
-          <EditorPane />
-          {splitFile && <SplitPane file={splitFile} onClose={() => setSplitFile(null)} />}
-        </main>
-        <div className="splitter-v" onPointerDown={pdfDrag} title={t("ui.resizePdf")} />
-        <aside className={`col-pdf ${pdfPath ? "has-pdf" : "no-pdf"}`} style={{ width: pdf.size }}>
-          <PdfPreview revision={pdfRev} page={pdfPage ?? undefined} />
-        </aside>
-        <div
-          className="splitter-v"
-          onPointerDown={aiDrag}
-          title={t("ui.resizeAi")}
-          style={{ visibility: aiOpen ? "visible" : "hidden" }}
-        />
-        <AiRail aiWidth={ai.size} open={aiOpen} onToggle={toggleAi} />
-      </div>
+          {fit.showPdf && (
+            <>
+              <div className="splitter-v" onPointerDown={pdf.startDrag} onDoubleClick={pdf.reset} title={t("ui.resizePdf")} />
+              <aside className={`col-pdf pane ${hasPdf ? "has-pdf" : "no-pdf"}`} style={{ width: fit.pdf }}>
+                <PdfPreview />
+              </aside>
+            </>
+          )}
+          {fit.showAi ? (
+            <>
+              <div className="splitter-v" onPointerDown={ai.startDrag} onDoubleClick={ai.reset} title={t("ui.resizeAi")} />
+              <aside className="ai-rail open pane" style={{ width: fit.ai }}>
+                <AiPanel onCollapse={() => useUiStore.getState().setPanel("ai", false)} />
+              </aside>
+            </>
+          ) : (
+            <aside className="ai-rail collapsed pane">
+              <button
+                className="ai-rail-toggle"
+                onClick={() => useUiStore.getState().setPanel("ai", true)}
+                title={t("ai.expand")}
+                aria-label={t("ai.expand")}
+              >
+                <Bot size={17} aria-hidden="true" />
+                <span>{t("ai.railLabel")}</span>
+                {aiBusy && <span className="ai-rail-dot" />}
+              </button>
+            </aside>
+          )}
+        </div>
       )}
-      <div className="splitter-h" onPointerDown={bottomDrag} title={t("ui.resizeBottom")} />
-      <div className="bottom" style={{ height: bottom.size }}>
-        <ProblemsPanel />
-      </div>
-      {toast && <div className="toast" key={toast.id}>{toast.text}</div>}
-      <div className="statusbar">
-        <span className="status-item" title={t("status.engine")}>
-          {t("status.engine", {
-            name: lastResult
-              ? lastResult.engine === "tectonic"
-                ? "Tectonic"
-                : "TeX Live / MiKTeX"
-              : "—",
-          })}
-          {lastResult?.fell_back ? t("status.engineFellBack") : ""}
-        </span>
-        {elapsedSec != null && (
-          <span className="status-item" title={t("status.duration")}>
-            {t("status.duration", { s: elapsedSec })}
-          </span>
-        )}
-        {lastResult && (
-          <span className="status-item" title={t("status.result")}>
-            {t("status.result", { ok: lastResult.ok ? t("status.ok") : t("status.fail") })}
-          </span>
-        )}
-        <span className="status-item">{t("status.issues", { n: totalIssues })}</span>
-        {compileCount > 0 && (
-          <span className="status-item" title={t("status.compilesTitle")}>
-            {t("status.compiles", { n: compileCount })}
-          </span>
-        )}
-        {wordCount && (
-          <span className="status-item" title={t("status.wordsTitle")}>
-            {t("status.words", { chars: wordCount.chars, cjk: wordCount.cjk, words: wordCount.words })}
-          </span>
-        )}
-        <span className="status-spacer" />
-        <span className="status-item status-root" title={root}>
-          {root || t("status.noProject")}
-        </span>
-      </div>
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      <NewProjectModal open={newProjectOpen} onClose={() => setNewProjectOpen(false)} />
-      <NewFileModal open={newFileOpen} onClose={() => setNewFileOpen(false)} />
-      {quickOpen && (
-        <QuickOpenModal
-          onClose={() => {
-            setQuickOpen(false);
-            setSplitPick(false);
-          }}
-          onPick={(p) => {
-            if (splitPick) {
-              setSplitFile(p);
-            } else {
-              void useProjectStore.getState().openFile(p);
-            }
-            setSplitPick(false);
-          }}
-        />
-      )}
-      {busy && <div className="busy-overlay">{t("ai.busyDiagnose")}</div>}
+
+      <StatusBar />
+
+      {modal?.kind === "settings" && <SettingsModal initialSection={modal.section} onClose={closeModal} />}
+      {modal?.kind === "newProject" && <NewProjectModal onClose={closeModal} />}
+      {modal?.kind === "newFile" && root && <NewFileModal onClose={closeModal} />}
+      {palette && <CommandPalette mode={palette} />}
+      <DialogHost />
+      <Toasts />
     </div>
   );
 }

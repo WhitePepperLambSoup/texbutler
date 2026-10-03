@@ -2,6 +2,30 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 语义化版本约定。
 
+## [Unreleased]
+
+### 界面重构 / UI Refresh
+
+- **统一设计系统**：三套主题（液态玻璃 / 经典深色 / 经典浅色）改为同一组设计变量驱动，按钮、菜单、对话框、输入框风格一致；液态玻璃的渐变背景、动态光斑与磨砂面板完整保留。/ **One design system** drives all three themes; liquid glass keeps its gradient canvas, animated blobs and frosted panes.
+- **顶栏重做**：项目切换菜单（打开 / 新建 / 最近项目 / 存为模板 / 关闭项目）、编译分体按钮（目标选择、细进度条、停止）、导入导出菜单、四个面板开关。/ **New top bar** with a project menu, compile split button with target picker, import/export menu and panel toggles.
+- **编辑器格式栏**：加粗、斜体、章节、公式、符号、插图、表格、列表、片段、翻译、润色、PDF 定位、分屏常驻可见；翻译可选目标语言，润色模式改为菜单选择。/ **Always-visible format bar**; translation targets and polish modes are explicit menu choices.
+- **标签页**：文件类型图标、未保存圆点、中键关闭、右键菜单（关闭其他 / 分屏打开 / 复制路径）；关闭当前标签后激活相邻标签。/ **Editor tabs** gain icons, middle-click close, a context menu and neighbour activation.
+- **问题面板**：默认收起为标题栏，编译失败自动展开；严重级别图标、悬停操作、跳转精确到行。/ **Problems panel** collapses to a header and opens itself on failed builds.
+- **命令面板**（Ctrl+Shift+P）与模糊匹配的快速打开（Ctrl+P），支持键盘上下选择。/ **Command palette** and fuzzy quick open with keyboard navigation.
+- **设置分区**：通用 / 编辑器与快捷键 / 编译 / AI 服务 / 规则检查；除 AI 配置外即时生效，AI 未保存时关闭会提示。/ **Sectioned settings**; everything but the AI form applies instantly.
+- **欢迎页、AI 面板、状态栏**重新设计：最近项目显示相对时间；AI 空状态提供快捷提问与"配置 AI"入口；状态栏显示光标位置、编译结果，点击可打开问题面板。/ **Redesigned welcome screen, AI panel and status bar.**
+- **新建项目可选模板**并记住上次的父目录；所有原生 alert / confirm / prompt 替换为应用内对话框与通知。/ **Template choice for new projects**; native browser dialogs replaced by in-app dialogs and toasts.
+
+### 操作逻辑 / Behaviour
+
+- **修复**：窗口较窄（约 1000px）时编辑器被挤出不可见；面板按优先级自动收缩/隐藏，最近打开的面板最后被隐藏。/ **Fixed** the editor disappearing in narrow windows.
+- **修复**：编辑器内按 Ctrl+Shift+K 被 Monaco 当作"删除行"而不编译当前文件。/ **Fixed** Ctrl+Shift+K deleting a line instead of compiling.
+- **修复**：编辑器"问 AI"按钮在 AI 面板收起时无反应；公式 / 插图 / 表格 / 快速打开对话框缺少样式；项目无 .bib 时无法使用 DOI/arXiv 抓取；关闭全部标签后再打开会重复注册补全项。/ **Fixed** Ask AI, unstyled dialogs, DOI fetch without a .bib and duplicated completions.
+- 快捷键、自动编译与编译按钮统一使用所选编译目标；新增 Ctrl+S / Ctrl+Shift+S / Ctrl+N / Ctrl+O / Ctrl+J / Ctrl+,。/ Shortcuts and auto-compile follow the selected target; new shortcuts added.
+- 切换或关闭项目前自动保存未保存的修改；插入图片不再触发隐式编译；插图与表格默认浮动位置改为 `htbp`（`H` 需要 float 宏包）。/ Unsaved edits are saved before switching projects; image insertion no longer compiles implicitly; floats default to `htbp`.
+- 跳转（问题、大纲、TODO、Ctrl+点击引用）改为等待目标文件真正加载后再定位，不再依赖延时。/ Jumps wait for the target file instead of fixed timeouts.
+- App 只订阅所需状态，输入时不再整页重渲染。/ Narrow store subscriptions: typing no longer re-renders the whole app.
+
 ## [0.7.0] - 2026-08-11
 
 ### 模板市场 / Template Marketplace

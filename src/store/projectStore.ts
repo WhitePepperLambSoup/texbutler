@@ -8,6 +8,7 @@ import { saveFlow } from "../flow";
 import { loadDraft, clearDraft } from "./drafts";
 import { recordRecent } from "./recent";
 import { normalizeProjectRoot } from "./aiSessionBindings";
+import { toast } from "./feedbackStore";
 
 /** Monotonic openFile request counter (race guard for async tab activation). */
 let openFileSeq = 0;
@@ -38,9 +39,8 @@ interface ProjectState {
   pdfPath: string | null;
   /** Project-wide \label + .bib index for ref/cite autocompletion. */
   refIndex: RefIndex;
-  /** Transient toast message (auto-dismissed). */
-  toast: { id: number; text: string } | null;
 
+  /** Short non-blocking message (routed to the toast stack). */
   notify: (text: string) => void;
 
   openProject: (path?: string) => Promise<void>;
@@ -48,37 +48,24 @@ interface ProjectState {
   refresh: () => Promise<void>;
   openFile: (rel: string) => Promise<void>;
   saveFile: (path?: string) => Promise<void>;
+  /** Save every dirty tab; resolves to the number of files written. */
+  saveAll: () => Promise<number>;
   reloadTab: (rel: string) => Promise<void>;
   /** Load a file into a tab WITHOUT switching the active tab (split view). */
   ensureTab: (rel: string) => Promise<void>;
   closeTab: (rel: string) => Promise<void>;
+  /** Close every tab except `keep` (dirty tabs are saved first). */
+  closeOtherTabs: (keep: string) => Promise<void>;
   setTabContent: (rel: string, content: string) => void;
-  closeProject: () => void;
+  /** Save dirty tabs and return to the welcome screen. */
+  closeProject: () => Promise<void>;
   /** Refresh the label/bib index from the backend. */
   loadRefIndex: () => Promise<void>;
 }
 
-export const useProjectStore = create<ProjectState>((set, get) => ({
-  root: "",
-  backendGeneration: null,
-  mainFile: "main.tex",
-  files: [],
-  tabs: [],
-  activeTab: null,
-  pdfPath: null,
-  refIndex: { labels: [], bib: [] },
-  toast: null,
-
-  notify(text) {
-    const id = Date.now();
-    set({ toast: { id, text } });
-    setTimeout(() => {
-      set((s) => (s.toast?.id === id ? { toast: null } : s));
-    }, 3500);
-  },
-
-  async openProject(path?) {
-    const info: ProjectInfo = await api.openProject(path);
+export const useProjectStore = create<ProjectState>((set, get) => {
+  /** Shared by open + create: switch the whole workbench to `info`. */
+  const adoptProject = async (info: ProjectInfo) => {
     // record only on success so failed opens (deleted projects) never
     // pollute the recent list; info.root is the canonical path even for
     // the file-dialog (no-arg) flow
@@ -92,26 +79,37 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       pdfPath: info.pdf_url ?? null,
       tabs: [],
       activeTab: null,
+      refIndex: { labels: [], bib: [] },
     });
-    saveFlow({ lastProject: info.root });
+    saveFlow({ lastProject: info.root, lastFile: info.main_file });
     await get().openFile(info.main_file);
     void get().loadRefIndex();
+  };
+
+  return {
+  root: "",
+  backendGeneration: null,
+  mainFile: "main.tex",
+  files: [],
+  tabs: [],
+  activeTab: null,
+  pdfPath: null,
+  refIndex: { labels: [], bib: [] },
+
+  notify(text) {
+    toast.info(text);
+  },
+
+  async openProject(path?) {
+    // leaving a project with unsaved edits: write them first so switching
+    // never strands work in a tab that is about to be discarded
+    if (get().root) await get().saveAll().catch(() => 0);
+    await adoptProject(await api.openProject(path));
   },
 
   async createProject(parent, name, template?: string) {
-    const info = await api.newProject(parent, name, template);
-    recordRecent(info.root); // new projects appear in the recent list too
-    projectGeneration += 1;
-    set({
-      root: info.root,
-      backendGeneration: info.generation,
-      mainFile: info.main_file,
-      files: info.files,
-      pdfPath: info.pdf_url ?? null,
-      tabs: [],
-      activeTab: null,
-    });
-    await get().openFile(info.main_file);
+    if (get().root) await get().saveAll().catch(() => 0);
+    await adoptProject(await api.newProject(parent, name, template));
   },
 
   async refresh() {
@@ -209,6 +207,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
   },
 
+  async saveAll() {
+    const dirty = get().tabs.filter((t) => t.dirty);
+    await Promise.all(dirty.map((t) => get().saveFile(t.path)));
+    return dirty.length;
+  },
+
   /** Reload a tab's content from disk (discards unsaved edits). Used after
    *  AI fixes / rollbacks so the editor reflects the file on disk. If the
    *  user started typing while the read was in flight (dirty), keep their
@@ -271,12 +275,23 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const stillThere = cur.tabs.some((t) => t.path === rel);
     if (!stillThere) return;
     clearDraft(get().root, rel);
+    const index = cur.tabs.findIndex((t) => t.path === rel);
     const next = cur.tabs.filter((t) => t.path !== rel);
+    // closing the active tab activates its right-hand neighbour (or the new
+    // last tab), like every tabbed editor — not the first tab in the strip
     const nextActive =
       rel === cur.activeTab
-        ? next[0]?.path ?? null
+        ? next[Math.min(index, next.length - 1)]?.path ?? null
         : cur.activeTab;
     set({ tabs: next, activeTab: nextActive });
+    if (nextActive && nextActive !== cur.activeTab) saveFlow({ lastFile: nextActive });
+  },
+
+  async closeOtherTabs(keep) {
+    for (const tab of get().tabs.filter((t) => t.path !== keep)) {
+      await get().closeTab(tab.path);
+    }
+    if (get().tabs.some((t) => t.path === keep)) set({ activeTab: keep });
   },
 
   setTabContent(rel, content) {
@@ -286,8 +301,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     });
   },
 
-  closeProject() {
+  async closeProject() {
+    await get().saveAll();
     projectGeneration += 1;
+    saveFlow({ lastProject: "", lastFile: "" });
     set({
       root: "",
       backendGeneration: null,
@@ -296,9 +313,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       tabs: [],
       activeTab: null,
       pdfPath: null,
+      refIndex: { labels: [], bib: [] },
     });
   },
-}));
+  };
+});
 
 /** Map an issue severity to a localized label (used by ProblemsPanel). */
 export function severityLabel(s: Issue["severity"]): string {

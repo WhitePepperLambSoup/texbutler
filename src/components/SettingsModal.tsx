@@ -1,14 +1,13 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
+import { Bot, CheckSquare, Cpu, Keyboard, SlidersHorizontal } from "lucide-react";
 import { api, type AiSettings, type ProviderKind, type RuleState } from "../api";
 import { useAiStore } from "../store/aiStore";
+import { useUiStore, type SettingsSection, type ThemeId } from "../store/uiStore";
+import { dialog, toast } from "../store/feedbackStore";
 import { loadFlow, saveFlow } from "../flow";
 import { keyCombo, loadKeymap, saveKeymap, comboLabel, type Keymap } from "../store/keymap";
 import { useI18n, useT } from "../i18n";
-
-interface Props {
-  open: boolean;
-  onClose: () => void;
-}
+import Modal from "./ui/Modal";
 
 /** Defensive: ensure provider objects always carry a string base_url
  * (a null/undefined base_url would break the controlled inputs). */
@@ -19,36 +18,88 @@ function sanitizeProvider(p: ProviderKind): ProviderKind {
   return { kind: "open_ai_compatible", base_url };
 }
 
-export default function SettingsModal({ open, onClose }: Props) {
-  const { settings, saveSettings, testConnection, loadSettings } = useAiStore();
+const PRESETS: { label: string; p: ProviderKind; m: string }[] = [
+  { label: "OpenAI", p: { kind: "open_ai_compatible", base_url: "https://api.openai.com/v1" }, m: "gpt-5.6-luna" },
+  { label: "OpenAI Terra", p: { kind: "open_ai_compatible", base_url: "https://api.openai.com/v1" }, m: "gpt-5.6-terra" },
+  { label: "DeepSeek", p: { kind: "open_ai_compatible", base_url: "https://api.deepseek.com/v1" }, m: "deepseek-v4-flash" },
+  { label: "DeepSeek Pro", p: { kind: "open_ai_compatible", base_url: "https://api.deepseek.com/v1" }, m: "deepseek-v4-pro" },
+  { label: "Qwen", p: { kind: "open_ai_compatible", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1" }, m: "qwen3.7-plus" },
+  { label: "Anthropic", p: { kind: "anthropic" }, m: "claude-sonnet-5" },
+  { label: "Anthropic Haiku", p: { kind: "anthropic" }, m: "claude-haiku-4-5" },
+  { label: "Ollama", p: { kind: "ollama", base_url: "http://localhost:11434/v1" }, m: "qwen3.5:9b" },
+];
+
+const SECTIONS: { id: SettingsSection; icon: typeof Bot; label: string }[] = [
+  { id: "general", icon: SlidersHorizontal, label: "settings.secGeneral" },
+  { id: "editor", icon: Keyboard, label: "settings.secEditor" },
+  { id: "compile", icon: Cpu, label: "settings.secCompile" },
+  { id: "ai", icon: Bot, label: "settings.secAi" },
+  { id: "rules", icon: CheckSquare, label: "settings.secRules" },
+];
+
+function ShortcutField({ label, value, onChange }: { label: string; value: string; onChange: (combo: string) => void }) {
+  const t = useT();
+  const [listening, setListening] = useState(false);
+  return (
+    <div className="field">
+      <span className="field-label">{label}</span>
+      <input
+        className="input shortcut-input"
+        value={listening ? t("settings.shortcutListening") : comboLabel(value)}
+        readOnly
+        onFocus={() => setListening(true)}
+        onBlur={() => setListening(false)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape" || e.key === "Tab") return;
+          e.preventDefault();
+          e.stopPropagation();
+          const combo = keyCombo(e.nativeEvent);
+          // require at least one modifier — a bare letter would swallow
+          // typing in the editor
+          if (combo && combo.includes("+")) {
+            onChange(combo);
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
+      />
+    </div>
+  );
+}
+
+export default function SettingsModal({ initialSection, onClose }: { initialSection?: SettingsSection; onClose: () => void }) {
+  const { saveSettings, testConnection, loadSettings } = useAiStore();
   const t = useT();
   const lang = useI18n((s) => s.lang);
   const setLang = useI18n((s) => s.setLang);
-  const [provider, setProvider] = useState<ProviderKind>({
-    kind: "open_ai_compatible",
-    base_url: "https://api.openai.com/v1",
-  });
-  const [model, setModel] = useState("gpt-4o-mini");
+  const theme = useUiStore((s) => s.theme);
+  const setTheme = useUiStore((s) => s.setTheme);
+  const [section, setSection] = useState<SettingsSection>(initialSection ?? "general");
+
+  // AI form (explicit save)
+  const [provider, setProvider] = useState<ProviderKind>({ kind: "open_ai_compatible", base_url: "https://api.openai.com/v1" });
+  const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [disableThinking, setDisableThinking] = useState(false);
+  const [aiDirty, setAiDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  // instant-apply settings
   const [engine, setEngine] = useState("auto");
-  const [autosaveSecs, setAutosaveSecs] = useState<number>(() =>
-    Number(localStorage.getItem("tb-autosave-secs") ?? "30"),
-  );
+  const [passes, setPasses] = useState(2);
+  const [autosaveSecs, setAutosaveSecs] = useState<number>(() => Number(localStorage.getItem("tb-autosave-secs") ?? "30"));
   const [keymap, setKeymap] = useState<Keymap>(() => loadKeymap());
   const [updateCheck, setUpdateCheck] = useState(true);
-  const [updateInfo, setUpdateInfo] = useState<{ version: string; name: string; body: string; url: string } | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; name: string; body: string; url: string } | null | undefined>(undefined);
   const [updateChecking, setUpdateChecking] = useState(false);
-  const [passes, setPasses] = useState(2);
-  const [testResult, setTestResult] = useState<string | null>(null);
-  const [testing, setTesting] = useState(false);
-  const [bundleStatus, setBundleStatus] = useState<string>("");
+  const [bundle, setBundle] = useState<{ present: boolean; mb: string; system: boolean } | null>(null);
+  const [bundleBusy, setBundleBusy] = useState(false);
   const [ruleStates, setRuleStates] = useState<RuleState[]>([]);
   const [flow, setFlow] = useState(loadFlow());
   const [fonts, setFonts] = useState<{ name: string; available: boolean }[]>([]);
 
   useEffect(() => {
-    if (!open) return;
     void loadSettings()
       .then(() => {
         const s = useAiStore.getState().settings;
@@ -61,365 +112,468 @@ export default function SettingsModal({ open, onClose }: Props) {
       })
       .catch((e) => console.error("load settings failed", e));
     void api.getEngine().then(setEngine).catch(() => setEngine("auto"));
-  void api.getUpdateCheck().then(setUpdateCheck).catch(() => setUpdateCheck(true));
+    void api.getUpdateCheck().then(setUpdateCheck).catch(() => setUpdateCheck(true));
     void api.getTexlivePasses().then(setPasses).catch(() => setPasses(2));
     void api.ruleStates().then(setRuleStates).catch(() => setRuleStates([]));
     void api.cjkFonts().then(setFonts).catch(() => setFonts([]));
     void api
       .bundleStatus()
-      .then((b) => {
-        const mb = (b.bundle_bytes / 1024 / 1024).toFixed(1);
-        setBundleStatus(
-          `Tectonic bundle: ${b.bundle_present ? `已就绪 (${mb} MB)` : "未就绪（编译时按需下载）"}；系统 TeX: ${b.system_texlive ? "可用" : "不可用"}`
-        );
-      })
-      .catch(() => setBundleStatus("bundle 状态查询失败"));
-  }, [open, loadSettings]);
+      .then((b) => setBundle({ present: b.bundle_present, mb: (b.bundle_bytes / 1024 / 1024).toFixed(1), system: b.system_texlive }))
+      .catch(() => setBundle(null));
+  }, [loadSettings]);
 
-  if (!open) return null;
-
-  const presets: { label: string; p: ProviderKind; m: string }[] = [
-    // 2026-08 最新模型（来源：各 provider 官方文档）
-    { label: "OpenAI", p: { kind: "open_ai_compatible", base_url: "https://api.openai.com/v1" }, m: "gpt-5.6-luna" },
-    { label: "OpenAI Terra", p: { kind: "open_ai_compatible", base_url: "https://api.openai.com/v1" }, m: "gpt-5.6-terra" },
-    { label: "DeepSeek", p: { kind: "open_ai_compatible", base_url: "https://api.deepseek.com/v1" }, m: "deepseek-v4-flash" },
-    { label: "DeepSeek Pro", p: { kind: "open_ai_compatible", base_url: "https://api.deepseek.com/v1" }, m: "deepseek-v4-pro" },
-    { label: "通义千问", p: { kind: "open_ai_compatible", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1" }, m: "qwen3.7-plus" },
-    { label: "Anthropic", p: { kind: "anthropic" }, m: "claude-sonnet-5" },
-    { label: "Anthropic 快", p: { kind: "anthropic" }, m: "claude-haiku-4-5" },
-    { label: "Ollama (本地)", p: { kind: "ollama", base_url: "http://localhost:11434/v1" }, m: "qwen3.5:9b" },
-  ];
-
-  const applyPreset = (label: string) => {
-    const found = presets.find((x) => x.label === label);
-    if (found) {
-      setProvider(found.p);
-      setModel(found.m);
-    }
+  const editAi = <T,>(setter: (v: T) => void) => (v: T) => {
+    setter(v);
+    setAiDirty(true);
+    setTestResult(null);
   };
 
-  const save = async () => {
+  const saveAi = async () => {
+    setSaving(true);
     try {
+      const current = useAiStore.getState().settings;
       const s: AiSettings = {
         provider: sanitizeProvider(provider),
-        model,
-        api_key: apiKey,
-        temperature: settings?.temperature ?? 0.2,
-        max_tokens: settings?.max_tokens ?? 1024,
-        timeout_secs: settings?.timeout_secs ?? 60,
+        model: model.trim(),
+        api_key: apiKey.trim(),
+        temperature: current?.temperature ?? 0.2,
+        max_tokens: current?.max_tokens ?? 1024,
+        timeout_secs: current?.timeout_secs ?? 60,
         disable_thinking: disableThinking,
       };
       await saveSettings(s);
-      await api.setEngine(engine);
-      await api.setTexlivePasses(passes);
-      saveKeymap(keymap);
-      window.alert(t("settings.saved"));
+      setAiDirty(false);
+      toast.success(t("settings.saved"));
+      return true;
     } catch (e) {
-      console.error("save settings failed", e);
-      window.alert(t("settings.saveFailed", { e: String(e) }));
+      toast.error(t("settings.saveFailed", { e: String(e) }));
+      return false;
+    } finally {
+      setSaving(false);
     }
   };
 
   const test = async () => {
+    // test what the form shows, not the previously stored config
+    if (aiDirty && !(await saveAi())) return;
     setTesting(true);
     setTestResult(null);
     try {
-      const r = await testConnection();
-      setTestResult(r);
+      setTestResult({ ok: true, text: await testConnection() });
     } catch (e) {
-      console.error("test connection failed", e);
-      setTestResult(t("settings.connFailed", { e: String(e) }));
+      setTestResult({ ok: false, text: t("settings.connFailed", { e: String(e) }) });
     }
     setTesting(false);
   };
 
+  const applyKeymap = (next: Keymap) => {
+    setKeymap(next);
+    saveKeymap(next);
+  };
+
+  const presetActive = (p: (typeof PRESETS)[number]) =>
+    p.p.kind === provider.kind && p.m === model && ((p.p as { base_url?: string }).base_url ?? "") === ((provider as { base_url?: string }).base_url ?? "");
+
+  const close = async () => {
+    if (aiDirty) {
+      // never drop unsaved AI provider changes silently
+      const discard = await dialog.confirm({
+        title: t("settings.unsavedAiTitle"),
+        message: t("settings.unsavedAi"),
+        confirmLabel: t("settings.discard"),
+        danger: true,
+      });
+      if (!discard) {
+        setSection("ai");
+        return;
+      }
+    }
+    onClose();
+  };
+
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <span>{t("settings.title")}</span>
-          <span className="panel-actions">
-            <select
-              className="snippet-select"
-              value={lang}
-              onChange={(e) => setLang(e.target.value as "zh" | "en")}
-              title={t("settings.language")}
-            >
-              <option value="zh">{t("settings.languageZh")}</option>
-              <option value="en">{t("settings.languageEn")}</option>
-            </select>
-            <button className="btn-mini" onClick={onClose}>
-              ×
+    <Modal
+      title={t("settings.title")}
+      onClose={close}
+      className="settings-modal"
+      onSubmit={aiDirty ? () => void saveAi() : undefined}
+      footer={
+        <>
+          <span className="footer-note">{aiDirty ? t("settings.unsavedAiNote") : t("settings.instantNote")}</span>
+          {aiDirty && (
+            <button className="btn btn-primary" onClick={() => void saveAi()} disabled={saving}>
+              {t("settings.saveAi")}
             </button>
-          </span>
-        </div>
-        <div className="modal-body">
-          <h4>{t("settings.aiProvider")}</h4>
-          <div className="preset-row">
-            {presets.map((p) => (
-              <button key={p.label} className="btn-mini" onClick={() => applyPreset(p.label)}>
-                {p.label}
-              </button>
-            ))}
-          </div>
-          <label>
-            {t("settings.providerType")}
-            <select
-              value={provider.kind}
-              onChange={(e) => {
-                const k = e.target.value as ProviderKind["kind"];
-                if (k === "anthropic") setProvider({ kind: "anthropic" });
-                else if (k === "ollama")
-                  setProvider({ kind: "ollama", base_url: "http://localhost:11434/v1" });
-                else setProvider({ kind: "open_ai_compatible", base_url: "https://api.openai.com/v1" });
-              }}
-            >
-              <option value="open_ai_compatible">OpenAI 兼容（OpenAI/DeepSeek/Qwen）</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="ollama">Ollama（本地，OpenAI 兼容端点）</option>
-            </select>
-          </label>
-          {provider.kind !== "anthropic" && (
-            <label>
-              {t("settings.baseUrl")}
-              <input
-                value={(provider as { base_url?: string | null }).base_url ?? ""}
-                onChange={(e) =>
-                  setProvider({ ...provider, base_url: e.target.value } as ProviderKind)
-                }
-              />
-            </label>
           )}
-          <label>
-            {t("settings.model")}
-            <input value={model} onChange={(e) => setModel(e.target.value)} />
-          </label>
-          <label>
-            {t("settings.apiKey")}{provider.kind === "ollama" && <small>{t("settings.apiKeyHint")}</small>}
-            <input
-              type="password"
-              value={apiKey}
-              placeholder="sk-..."
-              onChange={(e) => setApiKey(e.target.value)}
-            />
-            <small>{t("settings.apiKeyNote")}</small>
-          </label>
-          {provider.kind === "open_ai_compatible" && (
-            <label className="rule-toggle">
-              <input
-                type="checkbox"
-                checked={disableThinking}
-                onChange={(e) => setDisableThinking(e.target.checked)}
-              />
-              <span>{t("settings.thinking")}</span>
-            </label>
-          )}
-          <div className="modal-actions">
-            <button className="btn-mini" onClick={test} disabled={testing}>
-              {testing ? t("settings.testing") : t("settings.test")}
-            </button>
-            {testResult && <span className="test-result">{testResult}</span>}
-          </div>
+          <button className="btn" onClick={close}>
+            {t("common.done")}
+          </button>
+        </>
+      }
+    >
+      <nav className="settings-nav" aria-label={t("settings.title")}>
+        {SECTIONS.map(({ id, icon: Icon, label }) => (
+          <button key={id} className={`settings-nav-item ${section === id ? "active" : ""}`} onClick={() => setSection(id)}>
+            <Icon size={15} /> {t(label)}
+            {id === "ai" && aiDirty && <span className="count-badge warn">•</span>}
+          </button>
+        ))}
+      </nav>
 
-          <h4>{t("settings.flow")}</h4>
-          <div className="rule-toggles">
-            <label className="rule-toggle">
-              <input
-                type="checkbox"
-                checked={flow.autoCompile}
-                onChange={(e) => {
-                  saveFlow({ autoCompile: e.target.checked });
-                  setFlow({ ...flow, autoCompile: e.target.checked });
-                }}
-              />
-              <span>{t("settings.autoCompile")}</span>
-            </label>
-            <label className="rule-toggle">
-              <input
-                type="checkbox"
-                checked={flow.restoreSession}
-                onChange={(e) => {
-                  saveFlow({ restoreSession: e.target.checked });
-                  setFlow({ ...flow, restoreSession: e.target.checked });
-                }}
-              />
-              <span>{t("settings.restoreSession")}</span>
-            </label>
-          </div>
-
-          <h4>{t("settings.rulesTitle")}</h4>
-          <div className="rule-toggles">
-            {ruleStates.map((r) => (
-              <label key={r.id} className="rule-toggle">
+      <div className="settings-content">
+        {section === "general" && (
+          <>
+            <h3 className="settings-section-title">{t("settings.secGeneral")}</h3>
+            <div className="settings-card">
+              <h4>{t("theme.title")}</h4>
+              <div className="theme-cards">
+                {(["liquid", "dark", "light"] as ThemeId[]).map((id) => (
+                  <button key={id} className={`theme-card ${theme === id ? "active" : ""}`} onClick={() => setTheme(id)}>
+                    <span className={`theme-card-preview swatch-${id}`} />
+                    {t(`theme.${id}`)}
+                  </button>
+                ))}
+              </div>
+              <label className="field">
+                <span className="field-label">{t("settings.language")}</span>
+                <select className="input" value={lang} onChange={(e) => setLang(e.target.value as "zh" | "en")}>
+                  <option value="zh">{t("settings.languageZh")}</option>
+                  <option value="en">{t("settings.languageEn")}</option>
+                </select>
+              </label>
+            </div>
+            <div className="settings-card">
+              <h4>{t("settings.flow")}</h4>
+              <label className="check-row">
                 <input
                   type="checkbox"
-                  checked={r.enabled}
-                  onChange={async (e) => {
-                    const next = e.target.checked;
-                    setRuleStates((prev) =>
-                      prev.map((x) => (x.id === r.id ? { ...x, enabled: next } : x))
-                    );
-                    await api.setRuleEnabled(r.id, next).catch(() => undefined);
+                  checked={flow.restoreSession}
+                  onChange={(e) => {
+                    saveFlow({ restoreSession: e.target.checked });
+                    setFlow({ ...flow, restoreSession: e.target.checked });
                   }}
                 />
-                <span>{r.name}</span>
+                {t("settings.restoreSession")}
               </label>
-            ))}
-          </div>
+              <label className="field">
+                <span className="field-label">{t("settings.autosaveInterval")}</span>
+                <select
+                  className="input"
+                  value={String(autosaveSecs)}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    setAutosaveSecs(v);
+                    localStorage.setItem("tb-autosave-secs", String(v));
+                  }}
+                >
+                  <option value="0">{t("settings.autosaveOff")}</option>
+                  <option value="10">10 s</option>
+                  <option value="30">30 s</option>
+                  <option value="60">60 s</option>
+                  <option value="120">120 s</option>
+                </select>
+              </label>
+            </div>
+            <div className="settings-card">
+              <h4>{t("settings.updates")}</h4>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={updateCheck}
+                  onChange={(e) => {
+                    const v = e.target.checked;
+                    setUpdateCheck(v);
+                    void api.setUpdateCheck(v).catch(() => undefined);
+                  }}
+                />
+                {t("settings.updatesCheck")}
+              </label>
+              <div className="modal-actions">
+                <button
+                  className="btn btn-sm"
+                  disabled={updateChecking}
+                  onClick={async () => {
+                    setUpdateChecking(true);
+                    try {
+                      setUpdateInfo(await api.checkUpdates());
+                    } catch (e) {
+                      setUpdateInfo(undefined);
+                      toast.error(e);
+                    }
+                    setUpdateChecking(false);
+                  }}
+                >
+                  {updateChecking ? t("settings.updatesChecking") : t("settings.updatesNow")}
+                </button>
+                {updateInfo && (
+                  <a className="btn btn-sm btn-primary" href={updateInfo.url} target="_blank" rel="noreferrer">
+                    {t("settings.updatesGo", { v: updateInfo.version })}
+                  </a>
+                )}
+                {updateInfo === null && <span className="settings-hint">{t("settings.updatesNone")}</span>}
+              </div>
+              {updateInfo && (
+                <p className="bundle-status">
+                  <strong>{updateInfo.name}</strong>
+                  <br />
+                  {updateInfo.body.slice(0, 600)}
+                </p>
+              )}
+            </div>
+          </>
+        )}
 
-          <h4>{t("settings.engine")}</h4>
-          <label>
-            {t("settings.engineChoice")}
-            <select
-              value={engine}
-              onChange={(e) => setEngine(e.target.value)}
-            >
-              <option value="auto">{t("settings.engineAuto")}</option>
-              <option value="tectonic">{t("settings.engineTectonic")}</option>
-              <option value="system_texlive">{t("settings.engineSystem")}</option>            </select>
-          </label>
+        {section === "editor" && (
+          <>
+            <h3 className="settings-section-title">{t("settings.secEditor")}</h3>
+            <div className="settings-card">
+              <h4>{t("settings.shortcuts")}</h4>
+              <div className="field-grid">
+                <ShortcutField
+                  label={t("settings.shortcutCompile")}
+                  value={keymap.compileMain}
+                  onChange={(combo) => applyKeymap({ ...keymap, compileMain: combo })}
+                />
+                <ShortcutField
+                  label={t("settings.shortcutCompileCurrent")}
+                  value={keymap.compileCurrent}
+                  onChange={(combo) => applyKeymap({ ...keymap, compileCurrent: combo })}
+                />
+              </div>
+              <p className="settings-hint">{t("settings.shortcutHint")}</p>
+            </div>
+            <div className="settings-card">
+              <h4>{t("settings.builtinShortcuts")}</h4>
+              <div className="shortcut-list" style={{ justifyContent: "start" }}>
+                {[
+                  ["Ctrl+S", "cmd.save"],
+                  ["Ctrl+Shift+S", "cmd.saveAll"],
+                  ["Ctrl+P", "cmd.quickOpen"],
+                  ["Ctrl+Shift+P", "cmd.palette"],
+                  ["Ctrl+N", "cmd.newFile"],
+                  ["Ctrl+O", "cmd.openProject"],
+                  ["Ctrl+J", "cmd.toggleProblems"],
+                  ["Ctrl+Shift+B", "fmt.bold"],
+                  ["Ctrl+,", "cmd.settings"],
+                ].map(([k, label]) => (
+                  <Fragment key={k}>
+                    <span>{t(label)}</span>
+                    <span>
+                      <kbd>{k}</kbd>
+                    </span>
+                  </Fragment>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
 
-          <h4>{t("settings.autosave")}</h4>
-          <label>
-            {t("settings.autosaveInterval")}
-            <select
-              value={String(autosaveSecs)}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                setAutosaveSecs(v);
-                localStorage.setItem("tb-autosave-secs", String(v));
-              }}
-            >
-              <option value="0">{t("settings.autosaveOff")}</option>
-              <option value="30">30s</option>
-              <option value="60">60s</option>
-              <option value="120">120s</option>
-            </select>
-          </label>
+        {section === "compile" && (
+          <>
+            <h3 className="settings-section-title">{t("settings.secCompile")}</h3>
+            <div className="settings-card">
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={flow.autoCompile}
+                  onChange={(e) => {
+                    saveFlow({ autoCompile: e.target.checked });
+                    setFlow({ ...flow, autoCompile: e.target.checked });
+                  }}
+                />
+                {t("settings.autoCompile")}
+              </label>
+              <div className="field-grid">
+                <label className="field">
+                  <span className="field-label">{t("settings.engineChoice")}</span>
+                  <select
+                    className="input"
+                    value={engine}
+                    onChange={(e) => {
+                      setEngine(e.target.value);
+                      void api.setEngine(e.target.value).catch(toast.error);
+                    }}
+                  >
+                    <option value="auto">{t("settings.engineAuto")}</option>
+                    <option value="tectonic">{t("settings.engineTectonic")}</option>
+                    <option value="system_texlive">{t("settings.engineSystem")}</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span className="field-label">{t("settings.passes")}</span>
+                  <select
+                    className="input"
+                    value={passes}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setPasses(v);
+                      void api.setTexlivePasses(v).catch(toast.error);
+                    }}
+                  >
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <option key={n} value={n}>
+                        {t(`settings.passes${n}`)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div className="settings-card">
+              <h4>{t("settings.bundleTitle")}</h4>
+              <p className="bundle-status">
+                {bundle
+                  ? t("settings.bundleStatus", {
+                      bundle: bundle.present ? t("settings.bundleReady", { mb: bundle.mb }) : t("settings.bundleMissing"),
+                      system: bundle.system ? t("settings.available") : t("settings.unavailable"),
+                    })
+                  : t("settings.bundleUnknown")}
+              </p>
+              <div className="modal-actions">
+                <button
+                  className="btn btn-sm"
+                  disabled={bundleBusy}
+                  onClick={async () => {
+                    setBundleBusy(true);
+                    try {
+                      const r = await api.downloadBundle();
+                      toast.success(r || t("settings.bundleDone"));
+                      const b = await api.bundleStatus();
+                      setBundle({ present: b.bundle_present, mb: (b.bundle_bytes / 1024 / 1024).toFixed(1), system: b.system_texlive });
+                    } catch (e) {
+                      toast.error(t("settings.bundleFailed", { e: String(e) }));
+                    }
+                    setBundleBusy(false);
+                  }}
+                >
+                  {bundleBusy ? t("settings.bundleDownloading") : t("settings.bundle")}
+                </button>
+              </div>
+            </div>
+            <div className="settings-card">
+              <h4>{t("settings.fonts")}</h4>
+              <div className="font-grid">
+                {fonts.map((f) => (
+                  <span key={f.name} className={`font-item ${f.available ? "font-ok" : "font-missing"}`}>
+                    {f.available ? "●" : "○"} {f.name}
+                  </span>
+                ))}
+              </div>
+              <p className="settings-hint">{t("settings.fontsNote")}</p>
+            </div>
+          </>
+        )}
 
-          <h4>{t("settings.shortcuts")}</h4>
-          <label>
-            {t("settings.shortcutCompile")}
-            <input
-              className="shortcut-input"
-              value={comboLabel(keymap.compileMain)}
-              readOnly
-              onKeyDown={(e) => {
-                e.preventDefault();
-                const combo = keyCombo(e.nativeEvent);
-                // require at least one modifier — a bare letter would
-                // swallow typing in the editor
-                if (combo && combo.includes("+")) setKeymap((k) => ({ ...k, compileMain: combo }));
-              }}
-            />
-          </label>
-          <label>
-            {t("settings.shortcutCompileCurrent")}
-            <input
-              className="shortcut-input"
-              value={comboLabel(keymap.compileCurrent)}
-              readOnly
-              onKeyDown={(e) => {
-                e.preventDefault();
-                const combo = keyCombo(e.nativeEvent);
-                if (combo && combo.includes("+")) setKeymap((k) => ({ ...k, compileCurrent: combo }));
-              }}
-            />
-          </label>
-          <p className="settings-hint">{t("settings.shortcutHint")}</p>
-          <label>
-            {t("settings.passes")}
-            <select
-              value={passes}
-              onChange={(e) => setPasses(Number(e.target.value))}
-            >
-              <option value={1}>{t("settings.passes1")}</option>
-              <option value={2}>{t("settings.passes2")}</option>
-              <option value={3}>{t("settings.passes3")}</option>
-              <option value={4}>{t("settings.passes4")}</option>
-              <option value={5}>{t("settings.passes5")}</option>
-            </select>
-          </label>
-          <p className="bundle-status">{bundleStatus}</p>
+        {section === "ai" && (
+          <>
+            <h3 className="settings-section-title">{t("settings.secAi")}</h3>
+            <div className="settings-card">
+              <h4>{t("settings.presets")}</h4>
+              <div className="preset-row">
+                {PRESETS.map((p) => (
+                  <button
+                    key={p.label}
+                    className={`btn-mini ${presetActive(p) ? "active" : ""}`}
+                    onClick={() => {
+                      editAi(setProvider)(p.p);
+                      setModel(p.m);
+                    }}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="settings-card">
+              <div className="field-grid">
+                <label className="field">
+                  <span className="field-label">{t("settings.providerType")}</span>
+                  <select
+                    className="input"
+                    value={provider.kind}
+                    onChange={(e) => {
+                      const k = e.target.value as ProviderKind["kind"];
+                      if (k === "anthropic") editAi(setProvider)({ kind: "anthropic" });
+                      else if (k === "ollama") editAi(setProvider)({ kind: "ollama", base_url: "http://localhost:11434/v1" });
+                      else editAi(setProvider)({ kind: "open_ai_compatible", base_url: "https://api.openai.com/v1" });
+                    }}
+                  >
+                    <option value="open_ai_compatible">{t("settings.providerOpenAi")}</option>
+                    <option value="anthropic">Anthropic</option>
+                    <option value="ollama">{t("settings.providerOllama")}</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span className="field-label">{t("settings.model")}</span>
+                  <input className="input" value={model} onChange={(e) => editAi(setModel)(e.target.value)} />
+                </label>
+              </div>
+              {provider.kind !== "anthropic" && (
+                <label className="field">
+                  <span className="field-label">{t("settings.baseUrl")}</span>
+                  <input
+                    className="input"
+                    value={(provider as { base_url?: string | null }).base_url ?? ""}
+                    onChange={(e) => editAi(setProvider)({ ...provider, base_url: e.target.value } as ProviderKind)}
+                  />
+                </label>
+              )}
+              <label className="field">
+                <span className="field-label">
+                  {t("settings.apiKey")}
+                  {provider.kind === "ollama" && <small> {t("settings.apiKeyHint")}</small>}
+                </span>
+                <input
+                  className="input"
+                  type="password"
+                  value={apiKey}
+                  placeholder="sk-..."
+                  autoComplete="off"
+                  onChange={(e) => editAi(setApiKey)(e.target.value)}
+                />
+                <span className="field-hint">{t("settings.apiKeyNote")}</span>
+              </label>
+              {provider.kind === "open_ai_compatible" && (
+                <label className="check-row">
+                  <input type="checkbox" checked={disableThinking} onChange={(e) => editAi(setDisableThinking)(e.target.checked)} />
+                  {t("settings.thinking")}
+                </label>
+              )}
+              <div className="modal-actions">
+                <button className="btn btn-sm" onClick={() => void test()} disabled={testing}>
+                  {testing ? t("settings.testing") : aiDirty ? t("settings.saveAndTest") : t("settings.test")}
+                </button>
+                {testResult && <span className={`test-result ${testResult.ok ? "ok" : "fail"}`}>{testResult.text}</span>}
+              </div>
+            </div>
+          </>
+        )}
 
-          <h4>{t("settings.updates")}</h4>
-          <label className="row">
-            <input
-              type="checkbox"
-              checked={updateCheck}
-              onChange={async (e) => {
-                const v = e.target.checked;
-                setUpdateCheck(v);
-                await api.setUpdateCheck(v).catch(() => undefined);
-              }}
-            />
-            {t("settings.updatesCheck")}
-          </label>
-          <div className="path-row">
-            <button
-              className="btn-mini"
-              disabled={updateChecking}
-              onClick={async () => {
-                setUpdateChecking(true);
-                try {
-                  const info = await api.checkUpdates();
-                  setUpdateInfo(info);
-                } catch {
-                  setUpdateInfo(null);
-                }
-                setUpdateChecking(false);
-              }}
-            >
-              {updateChecking ? t("settings.updatesChecking") : t("settings.updatesNow")}
-            </button>
-            {updateInfo && (
-              <a className="btn-mini btn-primary" href={updateInfo.url} target="_blank" rel="noreferrer">
-                {t("settings.updatesGo", { v: updateInfo.version })}
-              </a>
-            )}
-          </div>
-          {updateInfo && (
-            <p className="bundle-status">
-              <strong>{updateInfo.name}</strong>
-              <br />
-              {updateInfo.body.slice(0, 600)}
-            </p>
-          )}
-          {updateInfo === null && !updateChecking && (
-            <p className="bundle-status">{t("settings.updatesNone")}</p>
-          )}
-
-          <div className="modal-actions">
-            <button
-              className="btn-mini"
-              onClick={async () => {
-                const r = await api.downloadBundle().catch((e) => `下载失败: ${String(e)}`);
-                window.alert(typeof r === "string" ? r : "完成");
-              }}
-            >
-              {t("settings.bundle")}
-            </button>
-          </div>
-
-          <h4>{t("settings.fonts")}</h4>
-          <div className="font-grid">
-            {fonts.map((f) => (
-              <span key={f.name} className={`font-item ${f.available ? "font-ok" : "font-missing"}`}>
-                {f.available ? "●" : "○"} {f.name}
-              </span>
-            ))}
-          </div>
-          <small>{t("settings.fontsNote")}</small>
-        </div>
-        <div className="modal-footer">
-          <button className="btn-mini" onClick={onClose}>
-            {t("settings.cancel")}
-          </button>
-          <button className="btn-mini btn-primary" onClick={() => void save()}>
-            {t("settings.save")}
-          </button>
-        </div>
+        {section === "rules" && (
+          <>
+            <h3 className="settings-section-title">{t("settings.secRules")}</h3>
+            <div className="settings-card">
+              <p className="settings-hint">{t("settings.rulesTitle")}</p>
+              <div className="rule-toggles">
+                {ruleStates.map((r) => (
+                  <label key={r.id} className="rule-toggle">
+                    <input
+                      type="checkbox"
+                      checked={r.enabled}
+                      onChange={(e) => {
+                        const next = e.target.checked;
+                        setRuleStates((prev) => prev.map((x) => (x.id === r.id ? { ...x, enabled: next } : x)));
+                        void api.setRuleEnabled(r.id, next).catch(toast.error);
+                      }}
+                    />
+                    <span>{r.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 }

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
+import { X } from "lucide-react";
 import { api, type MarketTemplate } from "../api";
 import { useProjectStore } from "../store/projectStore";
+import { dialog } from "../store/feedbackStore";
 import { useT } from "../i18n";
 import { currentDirectory, joinProjectRelative, validateFileName } from "../fileDestination";
+import Modal from "./ui/Modal";
 
 interface Props {
-  open: boolean;
   onClose: () => void;
 }
 
@@ -15,7 +17,7 @@ type UserTemplate = { id: string; name: string; source: string };
 
 type NewFileModalComponent = (props: Props) => React.ReactElement | null;
 
-const ALL_CATEGORY = "全部";
+const ALL_CATEGORY = "__all__";
 
 const basicTemplates = [
   ["article", "tree.tplArticle"],
@@ -26,7 +28,7 @@ const basicTemplates = [
   ["", "tree.tplEmpty"],
 ] as const;
 
-const NewFileModal: NewFileModalComponent = ({ open, onClose }) => {
+const NewFileModal: NewFileModalComponent = ({ onClose }) => {
   const t = useT();
   const activeTab = useProjectStore((state) => state.activeTab);
   const [tab, setTab] = useState<NewFileTab>("basic");
@@ -52,8 +54,8 @@ const NewFileModal: NewFileModalComponent = ({ open, onClose }) => {
   };
 
   useEffect(() => {
-    if (open) void loadTemplates();
-  }, [open]);
+    void loadTemplates();
+  }, []);
 
   const categories = useMemo(
     () => [ALL_CATEGORY, ...new Set(marketTemplates.map((template) => template.category))],
@@ -105,8 +107,15 @@ const NewFileModal: NewFileModalComponent = ({ open, onClose }) => {
     }
   };
 
-  const deleteUserTemplate = async (id: string) => {
+  const deleteUserTemplate = async (id: string, name: string) => {
     setError(null);
+    const ok = await dialog.confirm({
+      title: t("newFile.deleteTemplate"),
+      message: t("newFile.deleteTemplateConfirm", { name }),
+      confirmLabel: t("common.delete"),
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.deleteTemplate(id);
       if (selectedTemplate === id) setSelectedTemplate(null);
@@ -123,6 +132,8 @@ const NewFileModal: NewFileModalComponent = ({ open, onClose }) => {
     try {
       await api.downloadTemplate(id);
       await loadTemplates();
+      // downloaded = chosen: no second click needed to select it
+      setSelectedTemplate(id);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -130,18 +141,23 @@ const NewFileModal: NewFileModalComponent = ({ open, onClose }) => {
     }
   };
 
-  if (!open) return null;
-
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal new-file-modal" onClick={(event) => event.stopPropagation()}>
-        <div className="modal-header">
-          <span>{t("toolbar.newFile")}</span>
-          <button className="btn-mini" onClick={onClose} aria-label={t("settings.cancel")}>
-            ×
+    <Modal
+      title={t("toolbar.newFile")}
+      onClose={onClose}
+      onSubmit={() => void doCreate()}
+      className="new-file-modal"
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>
+            {t("common.cancel")}
           </button>
-        </div>
-        <div className="modal-body">
+          <button className="btn btn-primary" onClick={() => void doCreate()} disabled={busy}>
+            {busy ? t("newFile.importing") : tab === "basic" ? t("tree.newFileCreate") : t("newFile.import")}
+          </button>
+        </>
+      }
+    >
           <div className="new-file-tabs" role="tablist">
             {(["basic", "user", "market"] as const).map((value) => (
               <button
@@ -167,13 +183,21 @@ const NewFileModal: NewFileModalComponent = ({ open, onClose }) => {
             </div>
             {tab === "basic" && (
               <>
-                <label className="new-file-name-row">
-                  {t("tree.newFileName")}
+                <label className="field new-file-name-row">
+                  <span className="field-label">{t("tree.newFileName")}</span>
                   <input
-                    className="new-file-name-input"
+                    className="input new-file-name-input"
                     value={fileName}
+                    spellCheck={false}
+                    onFocus={(event) => {
+                      // select the base name so typing replaces "new-file"
+                      const dot = event.target.value.lastIndexOf(".");
+                      event.target.setSelectionRange(0, dot > 0 ? dot : event.target.value.length);
+                    }}
                     onChange={(event) => setFileName(event.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && void doCreate()}
                   />
+                  {!fileName.toLowerCase().endsWith(".tex") && <span className="field-hint">{t("newFile.nonTexHint")}</span>}
                 </label>
                 <label className="new-file-template-select">
                   {t("tree.newFileTemplate")}
@@ -185,17 +209,22 @@ const NewFileModal: NewFileModalComponent = ({ open, onClose }) => {
                     ))}
                   </select>
                 </label>
-                <div className="template-grid">
-                  {basicTemplates.map(([id, label]) => (
-                    <button
-                      key={id || "empty"}
-                      type="button"
-                      className={`template-card ${fileTemplate === id ? "template-active" : ""}`}
-                      onClick={() => setFileTemplate(id)}
-                    >
-                      {t(label)}
-                    </button>
-                  ))}
+                <div className="field">
+                  <span className="field-label">{t("tree.newFileTemplate")}</span>
+                  <div className="template-grid">
+                    {basicTemplates.map(([id, label]) => (
+                      <button
+                        key={id || "empty"}
+                        type="button"
+                        data-template-id={id || "empty"}
+                        disabled={!fileName.toLowerCase().endsWith(".tex")}
+                        className={`template-card ${fileTemplate === id ? "template-active" : ""}`}
+                        onClick={() => setFileTemplate(id)}
+                      >
+                        {t(label)}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </>
             )}
@@ -207,6 +236,7 @@ const NewFileModal: NewFileModalComponent = ({ open, onClose }) => {
                     <span key={template.id} className="template-wrap">
                       <button
                         type="button"
+                        data-template-id={template.id}
                         className={`template-card ${selectedTemplate === template.id ? "template-active" : ""}`}
                         onClick={() => setSelectedTemplate(template.id)}
                       >
@@ -214,11 +244,12 @@ const NewFileModal: NewFileModalComponent = ({ open, onClose }) => {
                       </button>
                       <button
                         type="button"
-                        className="btn-mini template-del"
+                        className="icon-btn icon-btn-sm template-del"
                         title={t("newFile.deleteTemplate")}
-                        onClick={() => void deleteUserTemplate(template.id)}
+                        aria-label={t("newFile.deleteTemplate")}
+                        onClick={() => void deleteUserTemplate(template.id, template.name)}
                       >
-                        ×
+                        <X size={13} />
                       </button>
                     </span>
                   ))}
@@ -232,15 +263,15 @@ const NewFileModal: NewFileModalComponent = ({ open, onClose }) => {
                 <div className="market-panel">
                   <div className="market-toolbar">
                     <input
-                      className="market-search"
+                      className="input market-search"
                       placeholder={t("newProject.marketSearch")}
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
                     />
-                    <select className="market-cat" value={category} onChange={(event) => setCategory(event.target.value)}>
+                    <select className="input market-cat" value={category} onChange={(event) => setCategory(event.target.value)}>
                       {categories.map((value) => (
                         <option key={value} value={value}>
-                          {value}
+                          {value === ALL_CATEGORY ? t("newFile.allCategories") : value}
                         </option>
                       ))}
                     </select>
@@ -250,6 +281,7 @@ const NewFileModal: NewFileModalComponent = ({ open, onClose }) => {
                       <button
                         key={template.id}
                         type="button"
+                        data-template-id={template.id}
                         className={`market-card ${selectedTemplate === template.id ? "template-active" : ""}`}
                         onClick={() => {
                           if (template.ready) setSelectedTemplate(template.id);
@@ -283,17 +315,7 @@ const NewFileModal: NewFileModalComponent = ({ open, onClose }) => {
             )}
           </div>
           {error && <div className="modal-error">{error}</div>}
-        </div>
-        <div className="modal-footer">
-          <button className="btn-mini" onClick={onClose}>
-            {t("settings.cancel")}
-          </button>
-          <button className="btn-mini btn-primary" onClick={() => void doCreate()} disabled={busy}>
-            {busy ? t("newFile.importing") : tab === "basic" ? t("tree.newFileCreate") : t("newFile.import")}
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 };
 

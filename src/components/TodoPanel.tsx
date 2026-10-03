@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
+import { ListTodo } from "lucide-react";
 import { api, type TodoHit } from "../api";
 import { useProjectStore } from "../store/projectStore";
+import { revealLocation } from "../editorBridge";
+import { toast } from "../store/feedbackStore";
 import { useT } from "../i18n";
 
 /** TODO/FIXME scanner panel: every marker inside LaTeX comments across the
@@ -22,36 +25,41 @@ export default function TodoPanel() {
       }
     };
     void load();
-    const onSaved = () => void load();
-    window.addEventListener("tb:file-saved", onSaved);
+    window.addEventListener("tb:file-saved", load);
     return () => {
       alive = false;
-      window.removeEventListener("tb:file-saved", onSaved);
+      window.removeEventListener("tb:file-saved", load);
     };
   }, [root]);
 
-  const jump = async (hit: TodoHit) => {
-    const st = useProjectStore.getState();
-    await st.openFile(hit.file);
-    await new Promise((r) => setTimeout(r, 60));
-    window.dispatchEvent(
-      new CustomEvent("tb:reveal", { detail: { file: hit.file, line: hit.line } }),
+  if (hits.length === 0) {
+    return (
+      <div className="panel-empty">
+        <ListTodo size={28} />
+        {t("todo.empty")}
+      </div>
     );
-  };
+  }
 
   return (
-    <div className="tree-scroll">
-      {hits.length === 0 ? (
-        <div className="panel-empty">{t("todo.empty")}</div>
-      ) : (
-        hits.map((h, i) => (
-          <button key={`${h.file}-${h.line}-${i}`} className="todo-row" onClick={() => void jump(h)}>
-            <span className="todo-file">{h.file}</span>
-            <span className="todo-line">{h.line}</span>
-            <span className="todo-text">{h.text}</span>
+    <div className="bib-list">
+      {hits.map((h, i) => {
+        const tag = /FIXME/i.test(h.text) ? "FIXME" : /XXX/.test(h.text) ? "XXX" : "TODO";
+        const text = h.text.replace(/^\s*%*\s*(TODO|FIXME|XXX)\s*:?\s*/i, "") || h.text;
+        return (
+          <button
+            key={`${h.file}-${h.line}-${i}`}
+            className="todo-row"
+            onClick={() => void revealLocation(h.file, h.line).catch(toast.error)}
+          >
+            <span className={`todo-tag ${tag.toLowerCase()}`}>{tag}</span>
+            <span className="todo-text">{text}</span>
+            <span className="todo-file">
+              {h.file}:{h.line}
+            </span>
           </button>
-        ))
-      )}
+        );
+      })}
     </div>
   );
 }
