@@ -112,6 +112,13 @@ await r.test("English UI has no leftover Chinese strings", async () => {
     return hits.map((h) => `${label}: ${h}`);
   };
   let all = await scan("main");
+  // compile-time texts (progress) only exist while a build runs
+  await js("T.compile.getState().compile('main'); return true");
+  await waitFor("return T.compile.getState().running");
+  await sleep(300);
+  const busy = await js("return $('.statusbar').textContent");
+  if (/[一-龥]/.test(busy)) all.push(`compiling: ${busy.slice(0, 80)}`);
+  await waitFor("return !T.compile.getState().running", { timeout: 180000 });
   for (const tab of ["outline", "bib", "todo"]) {
     await js(`T.ui.getState().setSidebarTab('${tab}'); return true`);
     await sleep(300);

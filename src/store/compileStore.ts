@@ -184,7 +184,10 @@ useProjectStore.subscribe((project) => {
 
 onEvent<CompileProgressEvent>(events.compileProgress, (p) => {
   if (!compileEventOwned(p)) return;
-  useCompileStore.setState({ progress: p });
+  // the backend message is Chinese-only: show the UI-language text per stage
+  const t = useI18n.getState().t;
+  const key = p.stage === "run" ? "toolbar.compiling" : p.stage === "done" ? "compile.done" : p.stage === "error" ? "compile.failed" : "compile.prepare";
+  useCompileStore.setState({ progress: { ...p, message: t(key) } });
 });
 onEvent<CompileDoneEvent>(events.compileDone, (payload) => {
   if (!compileEventOwned(payload)) return;

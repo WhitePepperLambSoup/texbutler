@@ -103,7 +103,7 @@ export default function StatusBar() {
       )}
       {compileCount > 0 && (
         <span className="status-item" title={t("status.compilesTitle")}>
-          {t("status.compiles", { n: compileCount })}
+          {t(compileCount === 1 ? "status.compile1" : "status.compiles", { n: compileCount })}
         </span>
       )}
       {git?.is_repo && (
