@@ -4,6 +4,36 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-04
+
+### 新功能 / New
+
+- **文件管理**：项目树右键菜单新建文件 / 文件夹、重命名、移动、拖放移动、删除（进入回收站，可"撤销"恢复）、在资源管理器中显示；打开的标签、主文件与分屏随重命名 / 移动同步。 **File management** in the project tree: new file/folder, rename, move, drag & drop, delete with undo, reveal in Explorer.
+- **全项目搜索与替换**（Ctrl+Shift+F，以选中文字为初值）：大小写 / 全词 / 正则开关、结果按文件分组、单文件替换与全部替换；替换前自动记录历史版本。 **Project-wide search & replace** with case, whole-word and regex options.
+- **内置 PDF 阅读器（pdf.js）**：重新编译后保持阅读位置；缩放、Ctrl+滚轮、适应宽度、页码跳转、反色；可选中文字；编辑器 → PDF 正向定位会高亮对应行，**双击 PDF 反向跳回源码**；PDF 另存为、打开输出文件夹。 **Built-in PDF viewer** that keeps your place across recompiles, with forward highlight and double-click reverse SyncTeX.
+- **本地文件历史**：保存、全局替换、恢复前自动留存版本（每文件最多 50 个），可查看与当前内容的差异并一键恢复（恢复本身也可撤销）。 **Local file history** with diffs and undoable restore.
+- **Git 状态**：项目树显示修改 / 新增 / 未跟踪标记，状态栏显示分支与改动数；`.texbutler/` 自动排除。 **Git status** badges in the tree and the branch in the status bar.
+- **引用与文献检查**：大纲新增"全文档"（跟随 `\input`/`\include`）和"标签"视图——未定义引用、重复标签、未被引用的标签、引用次数；文献面板显示每条文献的引用次数、缺失的 `\cite` 键、只看未引用条目。 **Reference report**: undefined refs, duplicate and unused labels, citation counts and missing citations.
+- **英文拼写检查**（Hunspell 词典，离线）：只检查正文，跳过命令、数学、注释与键名；快速修复给出建议并可"添加到词典"。 **Offline English spell check** for prose with quick fixes.
+- **编辑器偏好**：字体、字号（Ctrl+= / Ctrl+- / Ctrl+0）、自动换行、行号、小地图、缩进、拼写检查。 **Editor preferences**, including font size shortcuts.
+- **编译引擎引导**：没有可用引擎时给出说明，一键下载安装 Tectonic（校验 SHA-256），或前往 MiKTeX / TeX Live。 **Engine setup**: one-click verified Tectonic install.
+- **应用内更新**：发现新版本时显示更新说明，下载官方安装包（仅限本项目 GitHub Releases、校验大小）后一键安装。 **In-app updater** that downloads and runs the official installer.
+- **AI 一键修复全部编译错误**、**图片转公式**（截图 → LaTeX，模型不支持图片时给出明确提示）。 **AI fix-all** for compile errors and **image → formula**.
+
+### 视觉 / Design
+
+- 参照 Apple 人机界面指南重做视觉：系统字体与配色、macOS 风格按钮 / 菜单 / 分段控件 / 开关 / 表单、"系统设置"式设置页、Spotlight 式命令面板、通知中心式提示。 **Apple HIG-inspired redesign** across all controls, settings and dialogs.
+- **液态玻璃升级为 Apple Liquid Glass 风格**：更通透的面板（编辑器也透出背景）、镜面高光描边、胶囊形玻璃控件、更鲜明的流动背景。 **Liquid glass reworked** into Apple's Liquid Glass look.
+
+### 修复 / Fixed
+
+- **Tectonic 从未真正运行**：编译时没有使用已找到的 Tectonic 路径而去 PATH 查找，总是静默回退到系统 TeX；现已修复，并改为绝对路径。 **Tectonic never actually ran** and silently fell back to system TeX.
+- Tectonic 编译错误定位到字体文件（如 `ts1cmr.fd`）而非源文件；两种引擎都失败时同一错误显示两遍。 **Tectonic error locations** now come from its exact stderr; no duplicate errors on fallback.
+- 在资源管理器 / 其它程序中新建、删除、重命名的文件不会出现在项目树中，直到重新打开项目。 **Files created outside the app** now appear in the tree.
+- "移动到…"无法移动到项目根目录；首次编译前"打开输出文件夹"报错。 **Move to root** and **open output folder before the first compile** work.
+- `.texbutler/` 内的编译产物与备份被 Git 视为改动；拼写检查误报 `[htbp]` 等浮动体参数与 `\hypersetup` 等设置项。 **`.texbutler/` hidden from Git**; spell check no longer flags float options and setup keys.
+- 编辑器获得焦点时出现蓝色描边。 **No more blue outline** around the focused editor.
+
 ### 界面重构 / UI Refresh
 
 - **统一设计系统**：三套主题（液态玻璃 / 经典深色 / 经典浅色）改为同一组设计变量驱动，按钮、菜单、对话框、输入框风格一致；液态玻璃的渐变背景、动态光斑与磨砂面板完整保留。/ **One design system** drives all three themes; liquid glass keeps its gradient canvas, animated blobs and frosted panes.
