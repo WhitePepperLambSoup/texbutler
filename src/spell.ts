@@ -27,8 +27,10 @@ export async function loadChecker(): Promise<NSpell> {
     loading = (async () => {
       const [{ default: nspell }, aff, dic] = await Promise.all([
         import("nspell"),
-        import("dictionary-en-files/index.aff?raw"),
-        import("dictionary-en-files/index.dic?raw"),
+        // dictionary-en's `exports` only exposes its Node loader: import the
+        // raw Hunspell files by path (works in dev, the dep scanner and build)
+        import("../node_modules/dictionary-en/index.aff?raw"),
+        import("../node_modules/dictionary-en/index.dic?raw"),
       ]);
       const sp = nspell(aff.default, dic.default);
       // LaTeX vocabulary that is not in a general English dictionary

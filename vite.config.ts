@@ -45,11 +45,6 @@ function pdfjsAssets(): Plugin {
 export default defineConfig({
   plugins: [react(), pdfjsAssets()],
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
-  resolve: {
-    // dictionary-en's `exports` only exposes index.js (Node fs loader); the
-    // spell checker imports the raw .aff/.dic files through this alias
-    alias: { "dictionary-en-files": path.join(here, "node_modules", "dictionary-en") },
-  },
 
   // Tauri expects a fixed port; fail if that port is not available.
   clearScreen: false,
