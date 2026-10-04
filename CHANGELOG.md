@@ -32,7 +32,7 @@
 - 在资源管理器 / 其它程序中新建、删除、重命名的文件不会出现在项目树中，直到重新打开项目。 **Files created outside the app** now appear in the tree.
 - "移动到…"无法移动到项目根目录；首次编译前"打开输出文件夹"报错。 **Move to root** and **open output folder before the first compile** work.
 - `.texbutler/` 内的编译产物与备份被 Git 视为改动；拼写检查误报 `[htbp]` 等浮动体参数与 `\hypersetup` 等设置项。 **`.texbutler/` hidden from Git**; spell check no longer flags float options and setup keys.
-- 编辑器获得焦点时出现蓝色描边。 **No more blue outline** around the focused editor.
+- 编辑器获得焦点时出现蓝色描边；英文界面编译时状态栏显示中文进度。 **No more blue outline** around the focused editor; compile progress follows the UI language.
 
 ### 界面重构 / UI Refresh
 
