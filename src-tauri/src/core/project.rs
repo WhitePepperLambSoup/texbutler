@@ -469,6 +469,8 @@ impl Project {
                         }
                         let event = match ev.kind {
                             notify::EventKind::Create(_) => WatchEvent::Created(rel_str),
+                            // renames change the tree like a create/remove pair
+                            notify::EventKind::Modify(notify::event::ModifyKind::Name(_)) => WatchEvent::Created(rel_str),
                             notify::EventKind::Modify(_) => WatchEvent::Modified(rel_str),
                             notify::EventKind::Remove(_) => WatchEvent::Removed(rel_str),
                             _ => continue,
@@ -777,7 +779,7 @@ fn scan_dir(root: &Path, dir: &Path, depth: usize) -> Result<Vec<FileNode>, Stri
 /// images and data files LaTeX commonly references.
 fn is_tex_related(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
-    ["tex", "bib", "sty", "cls", "png", "jpg", "jpeg", "pdf", "eps", "svg", "csv", "dat", "txt", "cff"]
+    ["tex", "bib", "sty", "cls", "png", "jpg", "jpeg", "pdf", "eps", "svg", "csv", "dat", "txt", "cff", "md"]
         .iter()
         .any(|ext| lower.ends_with(&format!(".{ext}")))
 }

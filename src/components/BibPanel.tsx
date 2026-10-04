@@ -1,10 +1,10 @@
 // Bibliography panel: parsed .bib entries (click to insert \cite) plus a
 // DOI / arXiv → BibTeX fetcher.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BookMarked, Copy, Download, Search } from "lucide-react";
-import { api, type BibEntry } from "../api";
+import { AlertTriangle, BookMarked, Copy, Download, Search } from "lucide-react";
+import { api, type BibEntry, type ReferenceReport } from "../api";
 import { useProjectStore } from "../store/projectStore";
-import { insertText } from "../editorBridge";
+import { insertText, revealLocation } from "../editorBridge";
 import { toast } from "../store/feedbackStore";
 import { useT } from "../i18n";
 
@@ -15,6 +15,8 @@ export default function BibPanel() {
   const [entries, setEntries] = useState<BibEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState("");
+  const [report, setReport] = useState<ReferenceReport | null>(null);
+  const [unusedOnly, setUnusedOnly] = useState(false);
   const seqRef = useRef(0);
 
   // reload when the project or its file list changes (a .bib was saved)
@@ -29,9 +31,16 @@ export default function BibPanel() {
       .finally(() => seqRef.current === seq && setLoading(false));
   }, [root, files]);
 
+  // citation check: cite counts + \cite keys without an entry
+  useEffect(() => {
+    if (!root) return;
+    void api.referenceReport().then(setReport).catch(() => setReport(null));
+  }, [root, files]);
+
   useEffect(() => {
     const onSaved = () => {
       void api.listBibEntries().then(setEntries).catch(() => undefined);
+      void api.referenceReport().then(setReport).catch(() => undefined);
     };
     window.addEventListener("tb:file-saved", onSaved);
     return () => window.removeEventListener("tb:file-saved", onSaved);
@@ -39,11 +48,19 @@ export default function BibPanel() {
 
   const visible = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    if (!q) return entries;
-    return entries.filter((e) =>
-      [e.key, e.title, e.author, e.year].some((v) => v?.toLowerCase().includes(q)),
+    return entries.filter(
+      (e) =>
+        (!q || [e.key, e.title, e.author, e.year].some((v) => v?.toLowerCase().includes(q))) &&
+        (!unusedOnly || citeCount(e.key) === 0),
     );
-  }, [entries, filter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries, filter, unusedOnly, report]);
+
+  function citeCount(key: string): number {
+    if (report?.nocite_all) return 1;
+    return report?.bib.find((b) => b.key === key)?.cites ?? 0;
+  }
+  const unusedCount = report && !report.nocite_all ? report.bib.filter((b) => b.cites === 0).length : 0;
 
   const insert = (text: string) => {
     if (!insertText(text, "cite")) toast.info(t("bib.openFileFirst"));
@@ -116,6 +133,27 @@ export default function BibPanel() {
           />
         </div>
       )}
+      {report && report.missing_cites.length > 0 && (
+        <section className="report-section warn">
+          <h5>
+            <AlertTriangle size={13} /> {t("bib.missing")} <span className="count-badge warn">{report.missing_cites.length}</span>
+          </h5>
+          {report.missing_cites.map((m, i) => (
+            <button key={i} className="report-row" onClick={() => void revealLocation(m.file, m.line).catch(toast.error)}>
+              <code>{m.key}</code>
+              <span className="report-loc">
+                {m.file}:{m.line}
+              </span>
+            </button>
+          ))}
+        </section>
+      )}
+      {unusedCount > 0 && (
+        <label className="check-row bib-unused-toggle">
+          <input type="checkbox" checked={unusedOnly} onChange={(e) => setUnusedOnly(e.target.checked)} />
+          {t("bib.unusedOnly", { n: unusedCount })}
+        </label>
+      )}
       {loading && entries.length === 0 ? (
         <div className="panel-empty">{t("common.loading")}</div>
       ) : entries.length === 0 ? (
@@ -131,6 +169,7 @@ export default function BibPanel() {
               <span className="bib-meta">
                 <span className="bib-key">{e.key}</span> · {[e.author, e.year].filter(Boolean).join(", ")}
               </span>
+              {report && (citeCount(e.key) === 0 ? <span className="pill warn">{t("bib.uncited")}</span> : <span className="pill">{t("bib.citedN", { n: citeCount(e.key) })}</span>)}
             </button>
           ))}
         </div>

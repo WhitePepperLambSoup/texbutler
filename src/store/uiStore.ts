@@ -3,10 +3,11 @@
 // CustomEvents and the local state that used to live in App.tsx.
 
 import { create } from "zustand";
+import type { UpdateInfo } from "../api";
 
 export type ThemeId = "liquid" | "dark" | "light";
 export type PanelId = "sidebar" | "pdf" | "ai" | "bottom";
-export type SidebarTab = "files" | "outline" | "bib" | "todo";
+export type SidebarTab = "files" | "search" | "outline" | "bib" | "todo";
 export type BottomTab = "compile" | "rules";
 export type SettingsSection = "general" | "editor" | "compile" | "ai" | "rules";
 export type PaletteMode = "files" | "commands" | "split";
@@ -14,7 +15,41 @@ export type PaletteMode = "files" | "commands" | "split";
 export type ModalState =
   | { kind: "settings"; section?: SettingsSection }
   | { kind: "newProject" }
-  | { kind: "newFile" };
+  /** `dir`: create inside this folder instead of the active file's folder */
+  | { kind: "newFile"; dir?: string }
+  | { kind: "history"; file: string }
+  | { kind: "engine" }
+  | { kind: "update"; info: UpdateInfo };
+
+export interface EditorPrefs {
+  fontSize: number;
+  fontFamily: string;
+  wordWrap: boolean;
+  lineNumbers: boolean;
+  minimap: boolean;
+  tabSize: number;
+  spellcheck: boolean;
+}
+
+export const DEFAULT_EDITOR_PREFS: EditorPrefs = {
+  fontSize: 14,
+  fontFamily: "'Cascadia Code', 'Cascadia Mono', Consolas, 'Microsoft YaHei UI', monospace",
+  wordWrap: true,
+  lineNumbers: true,
+  minimap: false,
+  tabSize: 2,
+  spellcheck: true,
+};
+
+function loadEditorPrefs(): EditorPrefs {
+  try {
+    const raw = localStorage.getItem("tb-editor-prefs");
+    if (raw) return { ...DEFAULT_EDITOR_PREFS, ...(JSON.parse(raw) as Partial<EditorPrefs>) };
+  } catch {
+    /* corrupted: defaults */
+  }
+  return { ...DEFAULT_EDITOR_PREFS };
+}
 
 const PANEL_KEYS: Record<PanelId, string> = {
   sidebar: "tb-ui-sidebar",
@@ -73,11 +108,17 @@ interface UiState {
   palette: PaletteMode | null;
   /** File pinned in the side-by-side split editor. */
   splitFile: string | null;
-  /** SyncTeX forward-search target; `nonce` re-triggers the same page. */
-  pdfTarget: { page: number; nonce: number } | null;
+  /** SyncTeX forward-search target (`y` in PDF points from the top, when
+   *  known); `nonce` re-triggers the same page. */
+  pdfTarget: { page: number; y?: number; h?: number; nonce: number } | null;
   /** Bumped to ask the AI panel to focus its input. */
   aiFocusNonce: number;
+  editorPrefs: EditorPrefs;
+  /** Prefill for the search panel (e.g. "find in project" on a selection). */
+  searchSeed: { query: string; nonce: number } | null;
 
+  setEditorPrefs: (patch: Partial<EditorPrefs>) => void;
+  searchInProject: (query: string) => void;
   setTheme: (theme: ThemeId) => void;
   setPanel: (panel: PanelId, open: boolean) => void;
   togglePanel: (panel: PanelId) => void;
@@ -91,7 +132,7 @@ interface UiState {
   openPalette: (mode: PaletteMode) => void;
   closePalette: () => void;
   setSplitFile: (file: string | null) => void;
-  showPdfPage: (page: number) => void;
+  showPdfPage: (page: number, y?: number, h?: number) => void;
   focusAi: () => void;
 }
 
@@ -112,6 +153,25 @@ export const useUiStore = create<UiState>((set, get) => ({
   splitFile: null,
   pdfTarget: null,
   aiFocusNonce: 0,
+  editorPrefs: loadEditorPrefs(),
+  searchSeed: null,
+
+  setEditorPrefs(patch) {
+    const next = { ...get().editorPrefs, ...patch };
+    next.fontSize = Math.min(32, Math.max(9, Math.round(next.fontSize)));
+    next.tabSize = Math.min(8, Math.max(1, Math.round(next.tabSize)));
+    try {
+      localStorage.setItem("tb-editor-prefs", JSON.stringify(next));
+    } catch {
+      /* best-effort */
+    }
+    set({ editorPrefs: next });
+  },
+
+  searchInProject(query) {
+    set((s) => ({ searchSeed: { query, nonce: (s.searchSeed?.nonce ?? 0) + 1 } }));
+    get().setSidebarTab("search");
+  },
 
   setTheme(theme) {
     try {
@@ -177,8 +237,8 @@ export const useUiStore = create<UiState>((set, get) => ({
     set({ splitFile: file });
   },
 
-  showPdfPage(page) {
-    set((s) => ({ pdfTarget: { page, nonce: (s.pdfTarget?.nonce ?? 0) + 1 } }));
+  showPdfPage(page, y, h) {
+    set((s) => ({ pdfTarget: { page, y, h, nonce: (s.pdfTarget?.nonce ?? 0) + 1 } }));
     get().setPanel("pdf", true);
   },
 

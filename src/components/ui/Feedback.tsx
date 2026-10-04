@@ -55,7 +55,7 @@ function DialogView({ request, done }: { request: DialogRequest; done: () => voi
   const accept = () => {
     if (request.kind === "confirm") request.resolve(true);
     else if (request.kind === "prompt") {
-      if (!value.trim()) return;
+      if (!value.trim() && !request.allowEmpty) return;
       request.resolve(value);
     } else request.resolve();
     done();
@@ -80,7 +80,7 @@ function DialogView({ request, done }: { request: DialogRequest; done: () => voi
           <button
             className={`btn ${request.kind === "confirm" && request.danger ? "btn-danger" : "btn-primary"}`}
             onClick={accept}
-            disabled={request.kind === "prompt" && !value.trim()}
+            disabled={request.kind === "prompt" && !value.trim() && !request.allowEmpty}
             data-autofocus={request.kind !== "prompt" ? true : undefined}
           >
             {confirmLabel}

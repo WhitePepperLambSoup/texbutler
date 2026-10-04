@@ -188,6 +188,7 @@ function CompileControl() {
 function ImportExportMenu() {
   const t = useT();
   const activeTab = useProjectStore((s) => s.activeTab);
+  const hasPdf = useProjectStore((s) => Boolean(s.pdfPath));
   const pop = usePopover();
   const isTex = Boolean(activeTab?.endsWith(".tex"));
   const pick = (fn: () => void) => () => {
@@ -229,6 +230,13 @@ function ImportExportMenu() {
             onClick={pick(() => void actions.exportActive("docx"))}
           >
             <FileType2 size={15} /> {t("toolbar.exportDocx")}
+          </button>
+          <div className="menu-separator" />
+          <button className="menu-item toolbar-save-pdf" disabled={!hasPdf} onClick={pick(() => void actions.savePdfAs())}>
+            <FileDown size={15} /> {t("pdf.saveAs")}
+          </button>
+          <button className="menu-item toolbar-output-folder" onClick={pick(() => void actions.openOutputFolder())}>
+            <FolderOpen size={15} /> {t("pdf.outputFolder")}
           </button>
         </div>
       )}

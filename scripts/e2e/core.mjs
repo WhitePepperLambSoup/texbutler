@@ -240,8 +240,8 @@ await r.test("compile main → success, PDF path, status bar, compile count", as
   await js("$('.toolbar-compile').click(); return true");
   await waitFor("return T.compile.getState().running");
   await waitFor("return !T.compile.getState().running", { timeout: 120000 });
-  const st = await js("return { ok: T.compile.getState().lastResult?.ok, pdf: T.project.getState().pdfPath, count: T.compile.getState().compileCount, status: $('.statusbar').textContent, iframe: Boolean($('iframe.pdf-frame')), issues: T.compile.getState().compileIssues.filter(i => i.severity === 'error').map(i => [i.file, i.line, i.message.slice(0, 80), (i.raw || '').slice(0, 160)]) }");
-  assert(st.ok && st.pdf && st.iframe, JSON.stringify(st));
+  const st = await js("return { ok: T.compile.getState().lastResult?.ok, pdf: T.project.getState().pdfPath, count: T.compile.getState().compileCount, status: $('.statusbar').textContent, viewer: Boolean($('.pdf-viewer')), issues: T.compile.getState().compileIssues.filter(i => i.severity === 'error').map(i => [i.file, i.line, i.message.slice(0, 80), (i.raw || '').slice(0, 160)]) }");
+  assert(st.ok && st.pdf && st.viewer, JSON.stringify(st));
   return st.status;
 });
 

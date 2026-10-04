@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Cpu, Loader2, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Cpu, GitBranch, Loader2, XCircle } from "lucide-react";
+import { useWorkspaceStore } from "../store/workspaceStore";
 import { api } from "../api";
 import { useProjectStore } from "../store/projectStore";
 import { useCompileStore } from "../store/compileStore";
@@ -54,6 +55,7 @@ export default function StatusBar() {
   const cursor = useUiStore((s) => s.cursor);
   const hasEditor = useProjectStore((s) => Boolean(s.activeTab));
   const words = useWordCount();
+  const git = useWorkspaceStore((s) => s.git);
 
   if (!root) {
     return (
@@ -103,6 +105,22 @@ export default function StatusBar() {
         <span className="status-item" title={t("status.compilesTitle")}>
           {t("status.compiles", { n: compileCount })}
         </span>
+      )}
+      {git?.is_repo && (
+        <button
+          className="status-item status-git"
+          title={t("git.statusTitle", { n: git.files.length })}
+          onClick={() => {
+            useUiStore.getState().setSidebarTab("files");
+            void useWorkspaceStore.getState().refreshGit();
+          }}
+        >
+          <GitBranch size={13} aria-hidden="true" />
+          {git.branch ?? "HEAD"}
+          {git.ahead > 0 && ` ↑${git.ahead}`}
+          {git.behind > 0 && ` ↓${git.behind}`}
+          {git.files.length > 0 && <span className="status-git-count">{git.files.length}</span>}
+        </button>
       )}
       <span className="status-spacer" />
       {hasEditor && cursor && (

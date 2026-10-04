@@ -5,6 +5,7 @@ import { useI18n } from "../i18n";
 import { normalizeProjectRoot } from "./aiSessionBindings";
 import { loadStats, recordCompile } from "./stats";
 import { useUiStore } from "./uiStore";
+import { useWorkspaceStore } from "./workspaceStore";
 
 interface CompileState {
   running: boolean;
@@ -204,7 +205,18 @@ onEvent<CompileDoneEvent>(events.compileDone, (payload) => {
     useProjectStore.setState({ pdfPath: r.pdf_path });
   }
   // a failed build should never fail silently: surface the error list
-  if (!r.ok) useUiStore.getState().showProblems("compile");
+  if (!r.ok) {
+    useUiStore.getState().showProblems("compile");
+    // no TeX engine at all → open the setup dialog instead of a cryptic error
+    if (r.issues.some((i) => /没有可用的编译内核|找不到 tectonic|未在 PATH 中找到/.test(i.message))) {
+      void useWorkspaceStore
+        .getState()
+        .refreshEngine()
+        .then((e) => {
+          if (e && !e.can_compile) useUiStore.getState().openModal({ kind: "engine" });
+        });
+    }
+  }
   void useCompileStore.getState().refreshDiagnostics();
   // auto-run the rule check right after a compile (in addition to save-debounce)
   void useCompileStore.getState().runCheck();

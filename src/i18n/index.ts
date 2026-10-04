@@ -2,6 +2,7 @@
 // Persisted in localStorage; the Settings panel switches the language.
 
 import { create } from "zustand";
+import { en080, zh080 } from "./v080";
 
 export type Lang = "zh" | "en";
 
@@ -986,7 +987,8 @@ const en: Dict = {
   "editor.externalReloaded": "{file} changed on disk; the editor was updated",
 };
 
-const dicts: Record<Lang, Dict> = { zh, en };
+const zhAll: Dict = { ...zh, ...zh080 };
+const dicts: Record<Lang, Dict> = { zh: zhAll, en: { ...en, ...en080 } };
 
 interface I18nState {
   lang: Lang;
@@ -1016,7 +1018,7 @@ export const useI18n = create<I18nState>((set, get) => ({
   },
   t: (key, vars) => {
     const dict = dicts[get().lang] ?? zh;
-    let s = dict[key] ?? zh[key] ?? key;
+    let s = dict[key] ?? zhAll[key] ?? key;
     if (vars) {
       for (const [k, v] of Object.entries(vars)) {
         s = s.replaceAll(`{${k}}`, String(v));

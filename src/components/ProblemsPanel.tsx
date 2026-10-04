@@ -97,6 +97,19 @@ export default function ProblemsPanel() {
           )}
         </button>
         <span className="toolbar-spacer" />
+        {tab === "compile" && compileErrors > 0 && (
+          <button
+            className="btn btn-sm btn-primary problems-fix-all"
+            disabled={aiBusy}
+            title={t("problems.fixAllTitle")}
+            onClick={() => {
+              useUiStore.getState().setPanel("ai", true);
+              void useAiStore.getState().fixAllIssues();
+            }}
+          >
+            <Wrench size={13} /> {t("problems.fixAll")}
+          </button>
+        )}
         {tab === "rules" && (
           <button
             className="icon-btn icon-btn-sm"

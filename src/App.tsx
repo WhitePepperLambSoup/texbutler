@@ -12,6 +12,9 @@ import SettingsModal from "./components/SettingsModal";
 import NewProjectModal from "./components/NewProjectModal";
 import NewFileModal from "./components/NewFileModal";
 import CommandPalette from "./components/CommandPalette";
+import HistoryModal from "./components/HistoryModal";
+import EngineSetupModal from "./components/EngineSetupModal";
+import UpdateModal from "./components/UpdateModal";
 import { DialogHost, Toasts } from "./components/ui/Feedback";
 import { useProjectStore } from "./store/projectStore";
 import { useAiStore } from "./store/aiStore";
@@ -128,7 +131,10 @@ export default function App() {
         <SettingsModal key={modal.section ?? "general"} initialSection={modal.section} onClose={closeModal} />
       )}
       {modal?.kind === "newProject" && <NewProjectModal onClose={closeModal} />}
-      {modal?.kind === "newFile" && root && <NewFileModal onClose={closeModal} />}
+      {modal?.kind === "newFile" && root && <NewFileModal dir={modal.dir} onClose={closeModal} />}
+      {modal?.kind === "history" && root && <HistoryModal file={modal.file} onClose={closeModal} />}
+      {modal?.kind === "engine" && <EngineSetupModal onClose={closeModal} />}
+      {modal?.kind === "update" && <UpdateModal info={modal.info} onClose={closeModal} />}
       {palette && <CommandPalette mode={palette} />}
       <DialogHost />
       <Toasts />

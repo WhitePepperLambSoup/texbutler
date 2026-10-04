@@ -5,7 +5,7 @@ import { create } from "zustand";
 import { api, type Issue, type ProjectFileNode, type ProjectInfo, type RefIndex } from "../api";
 import { useI18n } from "../i18n";
 import { saveFlow } from "../flow";
-import { loadDraft, clearDraft } from "./drafts";
+import { loadDraft, clearDraft, saveDraft } from "./drafts";
 import { recordRecent } from "./recent";
 import { normalizeProjectRoot } from "./aiSessionBindings";
 import { toast } from "./feedbackStore";
@@ -64,6 +64,10 @@ interface ProjectState {
   setTabContent: (rel: string, content: string) => void;
   /** Save dirty tabs and return to the welcome screen. */
   closeProject: () => Promise<void>;
+  /** Re-point open tabs after `from` (file or folder) moved to `to`. */
+  movePaths: (from: string, to: string, mainFile?: string) => void;
+  /** Drop open tabs at or below `path` (it was deleted). */
+  dropPaths: (path: string) => void;
   /** Refresh the label/bib index from the backend. */
   loadRefIndex: () => Promise<void>;
 }
@@ -336,6 +340,37 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     const { tabs } = get();
     set({
       tabs: tabs.map((t) => (t.path === rel ? { ...t, content, dirty: true } : t)),
+    });
+  },
+
+  movePaths(from, to, mainFile) {
+    const remap = (p: string | null) =>
+      p === null ? p : p === from ? to : p.startsWith(`${from}/`) ? `${to}${p.slice(from.length)}` : p;
+    const root = get().root;
+    for (const tab of get().tabs) {
+      const next = remap(tab.path);
+      if (next !== tab.path) {
+        clearDraft(root, tab.path);
+        if (tab.dirty && next) saveDraft(root, next, tab.content, 0);
+      }
+    }
+    set((s) => ({
+      tabs: s.tabs.map((t) => ({ ...t, path: remap(t.path)! })),
+      activeTab: remap(s.activeTab),
+      ...(mainFile ? { mainFile } : {}),
+    }));
+    const active = get().activeTab;
+    if (active) saveFlow({ lastFile: active });
+  },
+
+  dropPaths(path) {
+    const gone = (p: string) => p === path || p.startsWith(`${path}/`);
+    const root = get().root;
+    for (const tab of get().tabs) if (gone(tab.path)) clearDraft(root, tab.path);
+    set((s) => {
+      const tabs = s.tabs.filter((t) => !gone(t.path));
+      const activeGone = s.activeTab !== null && gone(s.activeTab);
+      return { tabs, activeTab: activeGone ? tabs[0]?.path ?? null : s.activeTab };
     });
   },
 

@@ -6,6 +6,7 @@ import { useProjectStore } from "./store/projectStore";
 import { useCompileStore } from "./store/compileStore";
 import { useUiStore, type ThemeId } from "./store/uiStore";
 import { useI18n } from "./i18n";
+import { useAiStore } from "./store/aiStore";
 import { comboLabel, loadKeymap } from "./store/keymap";
 import * as actions from "./actions";
 
@@ -61,6 +62,27 @@ export function buildCommands(): Command[] {
     hasFile && { id: "export-md", title: t("toolbar.exportMd"), run: () => void actions.exportActive("md") },
     hasFile && { id: "export-docx", title: t("toolbar.exportDocx"), run: () => void actions.exportActive("docx") },
     hasProject && { id: "save-template", title: t("tree.saveTemplate"), run: () => void actions.saveAsTemplate() },
+    hasProject && { id: "find-in-project", title: t("cmd.findInProject"), shortcut: "Ctrl+Shift+F", run: () => ui.searchInProject("") },
+    hasProject && { id: "new-folder", title: t("files.newFolder"), run: () => void actions.newFolder("") },
+    hasFile && { id: "history", title: t("history.title"), run: () => actions.showHistory() },
+    hasProject && { id: "output-folder", title: t("pdf.outputFolder"), run: () => void actions.openOutputFolder() },
+    hasProject && Boolean(project.pdfPath) && { id: "save-pdf", title: t("pdf.saveAs"), run: () => void actions.savePdfAs() },
+    hasProject && { id: "reveal-project", title: t("files.revealProject"), run: () => void actions.revealInExplorer(null) },
+    { id: "engine", title: t("engine.title"), run: () => ui.openModal({ kind: "engine" }) },
+    { id: "updates", title: t("settings.updatesNow"), run: () => void actions.checkForUpdates(true) },
+    {
+      id: "spellcheck",
+      title: ui.editorPrefs.spellcheck ? t("cmd.spellOff") : t("cmd.spellOn"),
+      run: () => ui.setEditorPrefs({ spellcheck: !ui.editorPrefs.spellcheck }),
+    },
+    hasProject && compile.compileIssues.some((i) => i.severity === "error") && {
+      id: "fix-all",
+      title: t("problems.fixAll"),
+      run: () => {
+        ui.setPanel("ai", true);
+        void useAiStore.getState().fixAllIssues();
+      },
+    },
     ...(["liquid", "dark", "light"] as ThemeId[]).map((id) => ({
       id: `theme-${id}`,
       title: `${t("cmd.theme")}: ${t(`theme.${id}`)}`,

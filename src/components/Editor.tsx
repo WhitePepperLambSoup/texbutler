@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import Editor, { loader, type OnMount, type BeforeMount } from "@monaco-editor/react";
-import { useRef, useEffect, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useRef, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import katex from "katex";
@@ -11,6 +11,8 @@ import {
   Copy,
   Crosshair,
   FilePlus2,
+  FolderSearch,
+  History,
   Heading,
   ImagePlus,
   Italic,
@@ -21,6 +23,7 @@ import {
   MessageSquareText,
   Omega,
   Save,
+  ScanText,
   Sigma,
   Table,
   WandSparkles,
@@ -29,11 +32,12 @@ import {
 } from "lucide-react";
 import { api } from "../api";
 import { useProjectStore } from "../store/projectStore";
-import { useUiStore } from "../store/uiStore";
+import { useUiStore, type EditorPrefs } from "../store/uiStore";
 import { useAiStore } from "../store/aiStore";
 import { dialog, toast } from "../store/feedbackStore";
 import { saveDraft } from "../store/drafts";
 import { registerEditor, revealLocation } from "../editorBridge";
+import { attachSpellcheck, registerSpellActions } from "../spell";
 import { useT } from "../i18n";
 import * as actions from "../actions";
 import ImageInsertModal from "./ImageInsertModal";
@@ -292,6 +296,7 @@ function defineThemes(monaco: Parameters<BeforeMount>[0]) {
       { token: "delimiter", foreground: "57606A" },
     ],
     colors: {
+      focusBorder: "#00000000",
       "editor.background": "#FFFFFF",
       "editor.lineHighlightBackground": "#2F6FEB0D",
       "editorLineNumber.foreground": "#A0A7B1",
@@ -309,6 +314,7 @@ function defineThemes(monaco: Parameters<BeforeMount>[0]) {
       { token: "delimiter", foreground: "A0A5AE" },
     ],
     colors: {
+      focusBorder: "#00000000",
       "editor.background": "#1E2025",
       "editor.lineHighlightBackground": "#FFFFFF0A",
       "editorLineNumber.foreground": "#575C66",
@@ -316,9 +322,8 @@ function defineThemes(monaco: Parameters<BeforeMount>[0]) {
       "editorWidget.background": "#282B31",
     },
   });
-  // Liquid-glass variant: Monaco does NOT support transparent editor
-  // backgrounds (the editor can fail to initialize / render blank), so an
-  // opaque deep blue matching the tinted pane is used.
+  // Liquid-glass variant: the editor is see-through so the glass pane (and
+  // the canvas behind it) shows; widgets stay opaque enough to read.
   monaco.editor.defineTheme("texbutler-liquid", {
     base: "vs-dark",
     inherit: true,
@@ -330,8 +335,14 @@ function defineThemes(monaco: Parameters<BeforeMount>[0]) {
       { token: "delimiter", foreground: "E9EDF6" },
     ],
     colors: {
-      "editor.background": "#0d1122",
-      "editor.lineHighlightBackground": "#6EA8FE14",
+      focusBorder: "#00000000",
+      "editor.background": "#00000000",
+      "editorGutter.background": "#00000000",
+      "minimap.background": "#0d1122",
+      "editor.lineHighlightBackground": "#FFFFFF0D",
+      "editor.lineHighlightBorder": "#00000000",
+      "editorOverviewRuler.border": "#00000000",
+      "scrollbar.shadow": "#00000000",
       "editorLineNumber.foreground": "#5A6480",
       "editorLineNumber.activeForeground": "#A7B1C6",
       "editorCursor.foreground": "#6EA8FE",
@@ -369,6 +380,26 @@ export const EDITOR_OPTIONS = {
   unicodeHighlight: { ambiguousCharacters: false, invisibleCharacters: false },
 };
 
+/** Re-run spell checking in every mounted editor (toggle, dictionary add). */
+const spellRefreshers = new Set<() => void>();
+useUiStore.subscribe((s, prev) => {
+  if (s.editorPrefs.spellcheck !== prev.editorPrefs.spellcheck) spellRefreshers.forEach((f) => f());
+});
+
+/** Editor options from the user's preferences (Settings → 编辑器). */
+export function editorOptions(p: EditorPrefs) {
+  return {
+    ...EDITOR_OPTIONS,
+    fontSize: p.fontSize,
+    fontFamily: p.fontFamily || EDITOR_FONT,
+    lineHeight: Math.round(p.fontSize * 1.6),
+    wordWrap: (p.wordWrap ? "on" : "off") as "on" | "off",
+    lineNumbers: (p.lineNumbers ? "on" : "off") as "on" | "off",
+    minimap: { enabled: p.minimap },
+    tabSize: p.tabSize,
+  };
+}
+
 /** Common LaTeX snippets for the insert menu. */
 const SNIPPETS: { label: string; insert: string }[] = [
   { label: "figure", insert: "\\begin{figure}[htbp]\n\\centering\n\\includegraphics[width=0.8\\linewidth]{}\n\\caption{}\n\\label{fig:}\n\\end{figure}\n" },
@@ -402,10 +433,13 @@ export default function EditorPane() {
   const activeTab = useProjectStore((s) => s.activeTab);
   const active = tabs.find((tab) => tab.path === activeTab) ?? null;
   const theme = useUiStore((s) => s.theme);
+  const prefs = useUiStore((s) => s.editorPrefs);
+  const options = useMemo(() => editorOptions(prefs), [prefs]);
   const editorRef = useRef<CodeEditor | null>(null);
   const t = useT();
   const [imgModal, setImgModal] = useState<{ fileName: string; root: string } | null>(null);
   const [formulaMode, setFormulaMode] = useState<"inline" | "display" | null>(null);
+  const [formulaInitial, setFormulaInitial] = useState<string | null>(null);
   const [tableOpen, setTableOpen] = useState(false);
   const [aiBusy, setAiBusy] = useState<string | null>(null);
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; path: string } | null>(null);
@@ -426,6 +460,12 @@ export default function EditorPane() {
     };
     const cursorSub = editor.onDidChangeCursorSelection(reportCursor);
     reportCursor();
+
+    // English spell checking (Settings → 编辑器 → 拼写检查)
+    const spell = attachSpellcheck(monaco, editor, () => useUiStore.getState().editorPrefs.spellcheck);
+    spellRefreshers.add(spell.refresh);
+    registerSpellActions(monaco, () => spellRefreshers.forEach((f) => f()));
+    if (import.meta.env.DEV) (window as unknown as { __tbMonaco: unknown }).__tbMonaco = monaco;
 
     // an EMPTY file gives Monaco nothing to detect the line ending from, so
     // it would use the Windows default (CRLF); keep new files LF like the
@@ -546,6 +586,8 @@ export default function EditorPane() {
       envAutoClose.dispose();
       cursorSub.dispose();
       modelSub.dispose();
+      spell.dispose();
+      spellRefreshers.delete(spell.refresh);
       boldAction.dispose();
       askAction.dispose();
       unregister();
@@ -744,6 +786,21 @@ export default function EditorPane() {
     });
   };
 
+  /** Formula OCR: image → LaTeX via a vision model, reviewed in the formula editor. */
+  const imageToFormula = async () => {
+    try {
+      const file = await open({ multiple: false, filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] }] });
+      if (!file || Array.isArray(file)) return;
+      await runAiTool(t("editor.ocrRunning"), async () => {
+        const latex = await api.aiImageToLatex(file);
+        setFormulaInitial(latex);
+        setFormulaMode("display");
+      });
+    } catch (e) {
+      toast.error(e);
+    }
+  };
+
   const askAboutSelection = () => {
     const s = selection();
     useAiStore.getState().setSelection(s?.text.trim() ? s.text : null);
@@ -848,6 +905,15 @@ export default function EditorPane() {
           <span className="divider-v" />
           <button className="icon-btn" title={t("formula.inline")} aria-label={t("formula.inline")} onClick={() => setFormulaMode("inline")}>
             <Sigma size={15} />
+          </button>
+          <button
+            className="icon-btn fmt-optional fmt-ocr"
+            title={t("editor.ocrTitle")}
+            aria-label={t("editor.ocr")}
+            disabled={Boolean(aiBusy)}
+            onClick={() => void imageToFormula()}
+          >
+            <ScanText size={15} />
           </button>
           <DropMenu label={<Omega size={15} />} title={t("fmt.symbols")} menuClass="symbol-menu" triggerClass="icon-btn fmt-optional">
             {(close) => (
@@ -977,7 +1043,7 @@ export default function EditorPane() {
             // crash recovery: debounced draft for unsaved edits
             saveDraft(useProjectStore.getState().root, path, v);
           }}
-          options={EDITOR_OPTIONS}
+          options={options}
         />
       ) : (
         <div className="editor-empty">
@@ -1015,6 +1081,12 @@ export default function EditorPane() {
           <button className="ctx-item" onClick={() => { setTabMenu(null); void actions.copyText(tabMenu.path); }}>
             <Copy size={15} /> {t("tree.copyPath")}
           </button>
+          <button className="ctx-item" onClick={() => { setTabMenu(null); actions.showHistory(tabMenu.path); }}>
+            <History size={15} /> {t("history.title")}
+          </button>
+          <button className="ctx-item" onClick={() => { setTabMenu(null); void actions.revealInExplorer(tabMenu.path); }}>
+            <FolderSearch size={15} /> {t("files.reveal")}
+          </button>
         </div>
       )}
 
@@ -1032,11 +1104,15 @@ export default function EditorPane() {
       {formulaMode && (
         <FormulaModal
           mode={formulaMode}
-          initial={selection()?.text}
-          onCancel={() => setFormulaMode(null)}
+          initial={formulaInitial ?? selection()?.text}
+          onCancel={() => {
+            setFormulaMode(null);
+            setFormulaInitial(null);
+          }}
           onConfirm={(code) => {
             insertSnippet(code);
             setFormulaMode(null);
+            setFormulaInitial(null);
           }}
         />
       )}

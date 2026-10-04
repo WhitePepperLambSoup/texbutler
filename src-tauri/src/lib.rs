@@ -121,6 +121,8 @@ fn serve_project_file(
         // cross-origin; without CORP the PDF viewer is blocked and the
         // preview stays blank. nosniff keeps the served bytes honest.
         .header("cross-origin-resource-policy", "cross-origin")
+        // the pdf.js viewer fetches the PDF from the app origin
+        .header("access-control-allow-origin", "*")
         .header("x-content-type-options", "nosniff")
         .body(bytes)
         .unwrap_or_else(|_| bad(StatusCode::INTERNAL_SERVER_ERROR))
@@ -208,6 +210,29 @@ pub fn run() {
             commands::check::tb_set_texlive_passes,
             commands::check::tb_get_texlive_passes,
             commands::check::tb_get_cjk_fonts,
+            commands::ai::tb_ai_image_to_latex,
+            // files
+            commands::files::tb_create_dir,
+            commands::files::tb_rename_path,
+            commands::files::tb_delete_path,
+            commands::files::tb_restore_deleted,
+            commands::files::tb_reveal_path,
+            commands::files::tb_save_pdf_as,
+            // workspace tools
+            commands::workspace::tb_search_project,
+            commands::workspace::tb_replace_in_project,
+            commands::workspace::tb_history_list,
+            commands::workspace::tb_history_read,
+            commands::workspace::tb_history_snapshot,
+            commands::workspace::tb_git_status,
+            commands::workspace::tb_reference_report,
+            commands::workspace::tb_synctex_forward_pos,
+            commands::workspace::tb_synctex_reverse,
+            // engines + updater
+            commands::engine::tb_engine_status,
+            commands::engine::tb_install_tectonic,
+            commands::engine::tb_download_update,
+            commands::engine::tb_install_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

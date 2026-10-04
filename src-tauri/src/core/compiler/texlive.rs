@@ -182,7 +182,8 @@ impl SystemTexliveCompiler {
         self
     }
 
-    fn detect() -> Option<(PathBuf, &'static str)> {
+    /// Detect a system TeX engine (xelatex preferred, then lualatex).
+    pub fn detect() -> Option<(PathBuf, &'static str)> {
         for (name, label) in [("xelatex", "xelatex"), ("lualatex", "lualatex")] {
             let mut cmd = Command::new(name);
             crate::core::compiler::hide_console(&mut cmd);

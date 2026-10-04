@@ -109,7 +109,7 @@ export function useAppLifecycle() {
         const t = useI18n.getState().t;
         toast.info(t("app.updateAvailableShort", { v: info.version }), {
           label: t("app.updateView"),
-          run: () => window.open(info.url, "_blank"),
+          run: () => useUiStore.getState().openModal({ kind: "update", info }),
         });
       } catch {
         /* offline / rate-limited: stay quiet */

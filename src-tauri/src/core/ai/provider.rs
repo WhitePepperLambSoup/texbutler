@@ -312,6 +312,98 @@ async fn chat_anthropic(
     Ok(content)
 }
 
+/// One-shot request with an image attachment (formula OCR). OpenAI-
+/// compatible endpoints get an `image_url` data URL content block,
+/// Anthropic a base64 `image` block. Models without vision support answer
+/// with an API error, which the caller turns into a readable message.
+pub async fn chat_with_image(
+    s: &AiSettings,
+    system: &str,
+    prompt: &str,
+    mime: &str,
+    base64_data: &str,
+) -> Result<String, AiError> {
+    match &s.provider {
+        ProviderKind::OpenAiCompatible { base_url } | ProviderKind::Ollama { base_url } => {
+            let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+            let mut body = serde_json::json!({
+                "model": s.model,
+                "messages": [
+                    { "role": "system", "content": system },
+                    { "role": "user", "content": [
+                        { "type": "text", "text": prompt },
+                        { "type": "image_url", "image_url": { "url": format!("data:{mime};base64,{base64_data}") } }
+                    ]}
+                ],
+                "temperature": 0.0,
+                "max_tokens": s.max_tokens.max(1024),
+            });
+            if s.disable_thinking && matches!(s.provider, ProviderKind::OpenAiCompatible { .. }) {
+                body["thinking"] = serde_json::json!({ "type": "disabled" });
+            }
+            let mut req = reqwest::Client::new()
+                .post(&url)
+                .timeout(Duration::from_secs(s.timeout_secs.max(60)))
+                .json(&body);
+            if let Some(key) = &s.api_key {
+                req = req.header("Authorization", format!("Bearer {key}"));
+            }
+            let resp = req.send().await.map_err(|e| AiError::Transport(e.to_string()))?;
+            let status = resp.status();
+            let text = resp.text().await.map_err(|e| AiError::Transport(e.to_string()))?;
+            if !status.is_success() {
+                return Err(AiError::Api { status: status.as_u16(), body: truncate(&text, 500) });
+            }
+            let parsed: OpenAiResponse = serde_json::from_str(&text)
+                .map_err(|e| AiError::Parse(format!("{e}: {}", truncate(&text, 300))))?;
+            record_usage_openai(&text, &s.provider.label());
+            parsed
+                .choices
+                .into_iter()
+                .next()
+                .and_then(|c| c.message.content)
+                .filter(|c| !c.trim().is_empty())
+                .ok_or_else(|| AiError::Parse("模型返回了空内容".into()))
+        }
+        ProviderKind::Anthropic { base_url } => {
+            let url = format!("{}/v1/messages", base_url.as_deref().unwrap_or("https://api.anthropic.com").trim_end_matches('/'));
+            let key = s.api_key.clone().ok_or_else(|| AiError::NotConfigured("Anthropic 需要 api_key".into()))?;
+            let body = serde_json::json!({
+                "model": s.model,
+                "system": system,
+                "max_tokens": s.max_tokens.max(1024),
+                "temperature": 0.0,
+                "messages": [{ "role": "user", "content": [
+                    { "type": "image", "source": { "type": "base64", "media_type": mime, "data": base64_data } },
+                    { "type": "text", "text": prompt }
+                ]}],
+            });
+            let resp = reqwest::Client::new()
+                .post(&url)
+                .timeout(Duration::from_secs(s.timeout_secs.max(60)))
+                .header("x-api-key", &key)
+                .header("anthropic-version", "2023-06-01")
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| AiError::Transport(e.to_string()))?;
+            let status = resp.status();
+            let text = resp.text().await.map_err(|e| AiError::Transport(e.to_string()))?;
+            if !status.is_success() {
+                return Err(AiError::Api { status: status.as_u16(), body: truncate(&text, 500) });
+            }
+            let parsed: AnthropicResponse = serde_json::from_str(&text).map_err(|e| AiError::Parse(e.to_string()))?;
+            record_usage_anthropic(&text, &s.provider.label());
+            parsed
+                .content
+                .into_iter()
+                .find(|b| b.type_ == "text")
+                .map(|b| b.text)
+                .ok_or_else(|| AiError::Parse("响应中没有 text 块".into()))
+        }
+    }
+}
+
 fn truncate(s: &str, max: usize) -> String {
     // truncate at a char boundary (byte slicing into a multi-byte UTF-8
     // sequence would panic; API response bodies are untrusted input)

@@ -100,6 +100,8 @@ interface AiState {
   loadSettings: () => Promise<void>;
   diagnoseIssue: (issue: Issue, index: number) => Promise<void>;
   fixIssue: (issue: Issue, index: number) => Promise<void>;
+  /** Fix every compile error in turn (each compile-verified). */
+  fixAllIssues: () => Promise<void>;
   acceptDiff: () => Promise<void>;
   rejectDiff: () => void;
   applyHunk: (file: string, patch: string) => Promise<void>;
@@ -747,6 +749,60 @@ export const useAiStore = create<AiState>((set, get) => ({
     }
   },
 
+  async fixAllIssues() {
+    if (get().busy) return;
+    const t = useI18n.getState().t;
+    const { useCompileStore } = await import("./compileStore");
+    set({ busy: true, busyKind: "fix" });
+    let fixed = 0;
+    let stopped: string | null = null;
+    try {
+      await saveBeforeAi();
+      const first = useCompileStore.getState().compileIssues.find((i) => i.severity === "error");
+      if (first) await get().focusIssueFile(first.file ?? null);
+      const context = captureRequestContext();
+      appendMessageToRequest(context, { role: "user", kind: "plain", text: t("ai.fixAllRequest") });
+      for (let round = 0; round < 6; round++) {
+        const cs = useCompileStore.getState();
+        const idx = cs.compileIssues.findIndex((i) => i.severity === "error");
+        if (idx < 0) break;
+        const issue = cs.compileIssues[idx];
+        const report: FixReport = await api.aiFix(idx, 3, true);
+        // the backend's per-fix "done" status clears `busy`; the batch is still running
+        set({ busy: true, busyKind: "fix" });
+        if (!report.ok) {
+          stopped = report.summary;
+          appendMessageToRequest(context, { role: "assistant", kind: "error", text: report.summary, report });
+          break;
+        }
+        fixed++;
+        appendMessageToRequest(context, {
+          role: "assistant",
+          kind: "fix",
+          text: t("ai.fixAllStep", { n: fixed, msg: issue.message, loc: `${issue.file ?? "?"}:${issue.line ?? "?"}` }),
+          diff: report.diff ?? null,
+          report,
+        });
+        const file = report.hunks?.[0]?.file ?? issue.file;
+        if (file) await useProjectStore.getState().reloadTab(file);
+        await compileAndWait(cs.lastTarget);
+      }
+      const remaining = useCompileStore.getState().compileIssues.filter((i) => i.severity === "error").length;
+      appendMessageToRequest(context, {
+        role: "assistant",
+        kind: remaining === 0 ? "plain" : "error",
+        text:
+          remaining === 0
+            ? t("ai.fixAllDone", { n: fixed })
+            : t("ai.fixAllPartial", { n: fixed, left: remaining, why: stopped ?? t("ai.fixAllLimit") }),
+      });
+    } catch (e) {
+      appendMessageToRequest(captureRequestContext(), { role: "assistant", kind: "error", text: t("ai.fixFailedMsg", { e: String(e) }) });
+    } finally {
+      set({ busy: false, busyKind: null });
+    }
+  },
+
   async acceptDiff() {
     const { diffPending } = get();
     if (!diffPending) return;
@@ -836,6 +892,34 @@ export const useAiStore = create<AiState>((set, get) => ({
     persistSessions(next);
   },
 }));
+
+/** Compile `target` and resolve once that build has finished. */
+async function compileAndWait(target: string) {
+  const { useCompileStore } = await import("./compileStore");
+  const cs = useCompileStore.getState();
+  const before = cs.lastResult;
+  await new Promise<void>((resolve) => {
+    const unsub = useCompileStore.subscribe((s) => {
+      if (!s.running && s.lastResult !== before) {
+        unsub();
+        resolve();
+      }
+    });
+    void cs.compile(target).then(() => {
+      // compile() can bail out early (no project): never hang
+      const s = useCompileStore.getState();
+      if (!s.running && s.lastResult === before) {
+        window.setTimeout(() => {
+          const now = useCompileStore.getState();
+          if (!now.running && now.lastResult === before) {
+            unsub();
+            resolve();
+          }
+        }, 1500);
+      }
+    });
+  });
+}
 
 async function saveBeforeAi() {
   try {

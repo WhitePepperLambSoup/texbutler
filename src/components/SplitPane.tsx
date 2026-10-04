@@ -1,20 +1,22 @@
 // Side-by-side split editor: a second Monaco pane pinned to a specific
 // file, independent from the active tab (parallel editing/comparison).
 import Editor, { type OnMount } from "@monaco-editor/react";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Save, X } from "lucide-react";
 import { useProjectStore } from "../store/projectStore";
 import { useUiStore } from "../store/uiStore";
 import { saveDraft } from "../store/drafts";
 import { toast } from "../store/feedbackStore";
 import { useT } from "../i18n";
-import { EDITOR_OPTIONS, beforeMount, monacoThemeFor } from "./Editor";
+import { beforeMount, editorOptions, monacoThemeFor } from "./Editor";
 import { FileIcon } from "./ProjectTree";
 
 export default function SplitPane({ file }: { file: string }) {
   const t = useT();
   const tab = useProjectStore((s) => s.tabs.find((x) => x.path === file));
   const theme = useUiStore((s) => s.theme);
+  const prefs = useUiStore((s) => s.editorPrefs);
+  const splitOptions = useMemo(() => ({ ...editorOptions(prefs), fontSize: Math.max(9, prefs.fontSize - 1) }), [prefs]);
   const close = () => useUiStore.getState().setSplitFile(null);
 
   useEffect(() => {
@@ -97,7 +99,7 @@ export default function SplitPane({ file }: { file: string }) {
           useProjectStore.getState().setTabContent(file, v);
           saveDraft(useProjectStore.getState().root, file, v);
         }}
-        options={{ ...EDITOR_OPTIONS, fontSize: 13 }}
+        options={splitOptions}
       />
       ) : (
         <div className="editor-empty">{t("common.loading")}</div>

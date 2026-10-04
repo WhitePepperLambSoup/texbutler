@@ -8,6 +8,8 @@ import { currentDirectory, joinProjectRelative, validateFileName } from "../file
 import Modal from "./ui/Modal";
 
 interface Props {
+  /** Create inside this folder (tree "新建文件…" on a folder). */
+  dir?: string;
   onClose: () => void;
 }
 
@@ -28,7 +30,7 @@ const basicTemplates = [
   ["", "tree.tplEmpty"],
 ] as const;
 
-const NewFileModal: NewFileModalComponent = ({ onClose }) => {
+const NewFileModal: NewFileModalComponent = ({ dir, onClose }) => {
   const t = useT();
   const activeTab = useProjectStore((state) => state.activeTab);
   const [tab, setTab] = useState<NewFileTab>("basic");
@@ -42,7 +44,7 @@ const NewFileModal: NewFileModalComponent = ({ onClose }) => {
   const [downloading, setDownloading] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const currentDir = currentDirectory(activeTab);
+  const currentDir = dir ?? currentDirectory(activeTab);
   // template imports go into a NEW sub-folder by default: importing a whole
   // template into the project root collides with the project's own main.tex
   const [importDir, setImportDir] = useState("");

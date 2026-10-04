@@ -135,18 +135,26 @@ impl CompilerScheduler {
             match self.tectonic.compile(project, main, stop) {
                 Ok(res) if res.ok => return res,
                 Ok(res) => {
-                    // tectonic ran but failed — fall back if system texlive
-                    // exists; merge issues so the user sees everything.
-                    if self.texlive.available() {
+                    // tectonic ran but failed — retry with system texlive
+                    // when present (its packages may cover what the bundle
+                    // lacks). If that fails too, the document itself is
+                    // broken: report the system engine's errors only, so the
+                    // same error is not listed twice.
+                    if self.texlive.available() && !stop() {
                         let mut fb = self
                             .texlive
                             .compile(project, main, stop)
                             .unwrap_or_else(|e| CompileResult::failed(project.log_path(), EngineUsed::SystemTexlive, &e.to_string()));
-                        // keep tectonic issues too (they may be more precise)
-                        let mut all = res.issues;
-                        all.extend(fb.issues);
-                        fb.issues = all;
                         fb.fell_back = true;
+                        if fb.ok {
+                            fb.issues.push(Issue::new(
+                                crate::core::Severity::Info,
+                                crate::core::IssueKind::CompileError,
+                                "Tectonic 编译失败，已改用系统 TeX Live / MiKTeX 编译成功。",
+                            ));
+                        } else if fb.issues.is_empty() {
+                            fb.issues = res.issues;
+                        }
                         return fb;
                     }
                     let mut res = res;

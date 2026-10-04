@@ -6,7 +6,7 @@ use image::GenericImageView;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -249,17 +249,7 @@ pub async fn tb_open_project(
     // set up watcher
     let (tx, rx) = std::sync::mpsc::channel();
     let handle = proj.watch(tx)?;
-    let app2 = app.clone();
-    std::thread::spawn(move || {
-        while let Ok(ev) = rx.recv() {
-            let kind = match ev {
-                crate::core::project::WatchEvent::Created(_) => "created",
-                crate::core::project::WatchEvent::Modified(_) => "modified",
-                crate::core::project::WatchEvent::Removed(_) => "removed",
-            };
-            let _ = app2.emit("tb://file-changed", serde_json::json!({ "kind": kind }));
-        }
-    });
+    relay_watch_events(app.clone(), rx, proj.root.clone());
 
     {
         let mut proj_guard = state.project.write().map_err(|e| e.to_string())?;
@@ -270,6 +260,36 @@ pub async fn tb_open_project(
     *state.watcher.write().map_err(|e| e.to_string())? = Some(handle);
 
     Ok(project_info(&state)?)
+}
+
+/// Forward watcher events to the UI. Files created, removed or renamed by
+/// other programs (Explorer, git, sync tools) change the tree: rescan the
+/// project first so `tb_project_info` — which serves the cached tree — sees
+/// them. Bursts are coalesced: one rescan per drained batch.
+fn relay_watch_events(app: AppHandle, rx: std::sync::mpsc::Receiver<crate::core::project::WatchEvent>, root: std::path::PathBuf) {
+    use crate::core::project::WatchEvent;
+    std::thread::spawn(move || {
+        while let Ok(first) = rx.recv() {
+            let mut batch = vec![first];
+            // let a burst (git checkout, unzip) settle into one rescan
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            batch.extend(rx.try_iter());
+            let structural = batch.iter().any(|e| matches!(e, WatchEvent::Created(_) | WatchEvent::Removed(_)));
+            if structural {
+                let state = app.state::<AppState>();
+                let rescan = |state: &AppState| {
+                    if let Ok(mut guard) = state.project.write() {
+                        if let Some(p) = guard.as_mut().filter(|p| p.root == root) {
+                            let _ = p.scan();
+                        }
+                    }
+                };
+                rescan(&state);
+            }
+            let kind = if structural { "created" } else { "modified" };
+            let _ = app.emit("tb://file-changed", serde_json::json!({ "kind": kind }));
+        }
+    });
 }
 
 /// Create a new project under `parent` with `name`, then open it.
@@ -301,17 +321,7 @@ pub async fn tb_new_project(
     };
     let (tx, rx) = std::sync::mpsc::channel();
     let handle = proj.watch(tx)?;
-    let app2 = app.clone();
-    std::thread::spawn(move || {
-        while let Ok(ev) = rx.recv() {
-            let kind = match ev {
-                crate::core::project::WatchEvent::Created(_) => "created",
-                crate::core::project::WatchEvent::Modified(_) => "modified",
-                crate::core::project::WatchEvent::Removed(_) => "removed",
-            };
-            let _ = app2.emit("tb://file-changed", serde_json::json!({ "kind": kind }));
-        }
-    });
+    relay_watch_events(app.clone(), rx, proj.root.clone());
     {
         let mut proj_guard = state.project.write().map_err(|e| e.to_string())?;
         *proj_guard = Some(proj);
@@ -712,6 +722,9 @@ pub fn tb_write_file(
 ) -> Result<(), String> {
     let guard = state.project.read().map_err(|e| e.to_string())?;
     let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
+    // local history: keep what is on disk before it is overwritten
+    // (throttled; see core::history)
+    crate::core::history::record_before_write(proj, &path, &content);
     proj.write_file(&path, &content)?;
     emit_project_changed(&app);
     Ok(())

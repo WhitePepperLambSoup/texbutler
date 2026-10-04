@@ -182,6 +182,90 @@ export interface ImportedTemplate {
   main_file: string;
 }
 
+export interface SearchOptions {
+  query: string;
+  regex: boolean;
+  caseSensitive: boolean;
+  wholeWord: boolean;
+}
+
+export interface SearchHit {
+  file: string;
+  line: number;
+  col: number;
+  len: number;
+  text: string;
+}
+
+export interface HistoryEntry {
+  id: string;
+  ts: number;
+  size: number;
+}
+
+export interface GitFile {
+  path: string;
+  status: "modified" | "added" | "deleted" | "renamed" | "untracked" | "conflict";
+  staged: boolean;
+}
+
+export interface GitStatus {
+  available: boolean;
+  is_repo: boolean;
+  branch: string | null;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  files: GitFile[];
+}
+
+export interface KeyUse {
+  key: string;
+  file: string;
+  line: number;
+}
+
+export interface ReferenceReport {
+  labels: (KeyUse & { refs: number })[];
+  undefined_refs: KeyUse[];
+  duplicate_labels: KeyUse[];
+  bib: { key: string; file: string | null; line: number | null; title: string; cites: number }[];
+  missing_cites: KeyUse[];
+  nocite_all: boolean;
+}
+
+export interface PdfPos {
+  page: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface EngineStatus {
+  tectonic: string | null;
+  tectonic_user_path: string | null;
+  system_engine: string | null;
+  system_path: string | null;
+  can_compile: boolean;
+}
+
+export interface UpdateInfo {
+  version: string;
+  name: string;
+  body: string;
+  url: string;
+  asset_url?: string | null;
+  asset_name?: string | null;
+  asset_size?: number | null;
+}
+
+export interface DownloadProgress {
+  stage: "download" | "extract" | "done";
+  downloaded: number;
+  total: number;
+}
+
 export const api = {
   // project
   openProject: (path?: string) => invoke<ProjectInfo>("tb_open_project", { path: path ?? null }),
@@ -241,7 +325,41 @@ export const api = {
   tokenUsage: () => invoke<{ prompt_tokens: number; completion_tokens: number; requests: number; cost_usd: number; provider: string }>("tb_token_usage"),
   tokenUsageReset: () => invoke<void>("tb_token_usage_reset"),
   aiCreateGuide: (requirements: string) => invoke<string>("tb_ai_create_guide", { requirements }),
-  checkUpdates: () => invoke<{ version: string; name: string; body: string; url: string } | null>("tb_check_updates"),
+  checkUpdates: (pretendCurrent?: string) =>
+    invoke<UpdateInfo | null>("tb_check_updates", { pretendCurrent: pretendCurrent ?? null }),
+  downloadUpdate: (url: string, size?: number | null) => invoke<string>("tb_download_update", { url, size: size ?? null }),
+  installUpdate: (path: string) => invoke<void>("tb_install_update", { path }),
+  engineStatus: () => invoke<EngineStatus>("tb_engine_status"),
+  installTectonic: () => invoke<string>("tb_install_tectonic"),
+
+  // files
+  createDir: (path: string) => invoke<string>("tb_create_dir", { path }),
+  renamePath: (from: string, to: string) =>
+    invoke<{ from: string; to: string; main_file: string }>("tb_rename_path", { from, to }),
+  deletePath: (path: string) => invoke<{ path: string; trash_id: string }>("tb_delete_path", { path }),
+  restoreDeleted: (path: string, trashId: string) => invoke<string>("tb_restore_deleted", { path, trashId }),
+  revealPath: (path?: string | null, output?: boolean, dryRun?: boolean) =>
+    invoke<string>("tb_reveal_path", { path: path ?? null, output: output ?? null, dryRun: dryRun ?? null }),
+  savePdfAs: (dest: string) => invoke<string>("tb_save_pdf_as", { dest }),
+
+  // workspace tools
+  searchProject: (options: SearchOptions) =>
+    invoke<{ hits: SearchHit[]; files_searched: number; truncated: boolean }>("tb_search_project", { options }),
+  replaceInProject: (options: SearchOptions, replacement: string, files?: string[] | null) =>
+    invoke<{ files_changed: string[]; replacements: number }>("tb_replace_in_project", {
+      options,
+      replacement,
+      files: files ?? null,
+    }),
+  historyList: (file: string) => invoke<HistoryEntry[]>("tb_history_list", { file }),
+  historyRead: (file: string, id: string) => invoke<string>("tb_history_read", { file, id }),
+  historySnapshot: (file: string) => invoke<string | null>("tb_history_snapshot", { file }),
+  gitStatus: () => invoke<GitStatus>("tb_git_status"),
+  referenceReport: () => invoke<ReferenceReport>("tb_reference_report"),
+  synctexForwardPos: (file: string, line: number) => invoke<PdfPos | null>("tb_synctex_forward_pos", { file, line }),
+  synctexReverse: (page: number, x: number, y: number) =>
+    invoke<{ file: string; line: number } | null>("tb_synctex_reverse", { page, x, y }),
+  aiImageToLatex: (path: string) => invoke<string>("tb_ai_image_to_latex", { path }),
   getUpdateCheck: () => invoke<boolean>("tb_get_update_check"),
   setUpdateCheck: (enabled: boolean) => invoke<void>("tb_set_update_check", { enabled }),
   importDocx: (sourcePath: string) =>
@@ -308,4 +426,6 @@ export const events = {
   checkDone: "tb://check-done",
   aiStatus: "tb://ai-status",
   bundleProgress: "tb://bundle-progress",
+  installProgress: "tb://install-progress",
+  updateProgress: "tb://update-progress",
 } as const;

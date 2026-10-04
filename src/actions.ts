@@ -114,8 +114,8 @@ export async function locateInPdf(): Promise<void> {
   const file = useProjectStore.getState().activeTab;
   if (!file) return;
   try {
-    const page = await api.synctexForward(file, cursorLine());
-    if (page != null) useUiStore.getState().showPdfPage(page);
+    const pos = await api.synctexForwardPos(file, cursorLine());
+    if (pos) useUiStore.getState().showPdfPage(pos.page, pos.y || undefined, pos.h || undefined);
     else toast.info(t("editor.locatePdfNoSync"));
   } catch {
     toast.info(t("editor.locatePdfNoSync"));
@@ -129,6 +129,167 @@ export async function setMainFile(path: string): Promise<void> {
     toast.success(t("tree.mainSet", { file: info.main_file }));
   } catch (e) {
     toast.error(e);
+  }
+}
+
+// ------------------------------------------------------------ files
+
+const dirOf = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
+const baseOf = (path: string) => path.split("/").pop() ?? path;
+const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
+
+export async function newFolder(parentDir = ""): Promise<void> {
+  const name = await dialog.prompt({
+    title: t("files.newFolder"),
+    message: parentDir ? t("files.inFolder", { dir: parentDir }) : t("files.inRoot"),
+    initial: "figures",
+    confirmLabel: t("common.create"),
+  });
+  if (!name?.trim()) return;
+  try {
+    const rel = await api.createDir(join(parentDir, name.trim()));
+    await useProjectStore.getState().refresh();
+    toast.success(t("files.folderCreated", { path: rel }));
+  } catch (e) {
+    toast.error(e);
+  }
+}
+
+async function moveTo(from: string, to: string): Promise<boolean> {
+  try {
+    // write unsaved edits first so the moved file carries them
+    await useProjectStore.getState().saveAll();
+    const r = await api.renamePath(from, to);
+    useProjectStore.getState().movePaths(r.from, r.to, r.main_file);
+    const ui = useUiStore.getState();
+    if (ui.splitFile && (ui.splitFile === r.from || ui.splitFile.startsWith(`${r.from}/`))) {
+      ui.setSplitFile(`${r.to}${ui.splitFile.slice(r.from.length)}`);
+    }
+    await useProjectStore.getState().refresh();
+    return true;
+  } catch (e) {
+    toast.error(e);
+    return false;
+  }
+}
+
+export async function renamePath(path: string): Promise<void> {
+  const name = await dialog.prompt({
+    title: t("files.rename"),
+    message: path,
+    initial: baseOf(path),
+    confirmLabel: t("files.renameGo"),
+  });
+  if (!name?.trim() || name.trim() === baseOf(path)) return;
+  if (/[\\/]/.test(name)) return void toast.error(t("files.nameOnly"));
+  if (await moveTo(path, join(dirOf(path), name.trim()))) toast.success(t("files.renamed", { name: name.trim() }));
+}
+
+export async function movePath(path: string): Promise<void> {
+  const dir = await dialog.prompt({
+    title: t("files.move"),
+    message: t("files.moveMsg", { path }),
+    initial: dirOf(path),
+    placeholder: t("files.movePlaceholder"),
+    confirmLabel: t("files.moveGo"),
+    allowEmpty: true,
+  });
+  if (dir === null) return;
+  const target = join(dir.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, ""), baseOf(path));
+  if (target === path) return;
+  if (await moveTo(path, target)) toast.success(t("files.moved", { path: target }));
+}
+
+/** Drag & drop in the tree: move `path` into folder `dir` ("" = root). */
+export async function movePathInto(path: string, dir: string): Promise<void> {
+  const target = join(dir, baseOf(path));
+  if (target === path || dir === path || dir.startsWith(`${path}/`)) return;
+  if (await moveTo(path, target)) toast.success(t("files.moved", { path: target }));
+}
+
+export async function deletePath(path: string, isDir: boolean): Promise<void> {
+  const ok = await dialog.confirm({
+    title: isDir ? t("files.deleteFolder") : t("files.deleteFile"),
+    message: t("files.deleteMsg", { path }),
+    confirmLabel: t("common.delete"),
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    // keep the latest edits in the trashed copy
+    const st = useProjectStore.getState();
+    for (const tab of st.tabs) {
+      if (tab.dirty && (tab.path === path || tab.path.startsWith(`${path}/`))) await st.saveFile(tab.path);
+    }
+    const r = await api.deletePath(path);
+    useProjectStore.getState().dropPaths(r.path);
+    const ui = useUiStore.getState();
+    if (ui.splitFile && (ui.splitFile === r.path || ui.splitFile.startsWith(`${r.path}/`))) ui.setSplitFile(null);
+    const info = await api.projectInfo();
+    useProjectStore.setState({ mainFile: info.main_file });
+    await useProjectStore.getState().refresh();
+    toast.info(t("files.deleted", { path: r.path }), {
+      label: t("files.undo"),
+      run: () => {
+        void api
+          .restoreDeleted(r.path, r.trash_id)
+          .then(async () => {
+            await useProjectStore.getState().refresh();
+            toast.success(t("files.restored", { path: r.path }));
+          })
+          .catch(toast.error);
+      },
+    });
+  } catch (e) {
+    toast.error(e);
+  }
+}
+
+export async function revealInExplorer(path?: string | null): Promise<void> {
+  try {
+    await api.revealPath(path ?? null, false);
+  } catch (e) {
+    toast.error(e);
+  }
+}
+
+export async function openOutputFolder(): Promise<void> {
+  try {
+    await api.revealPath(null, true);
+  } catch (e) {
+    toast.error(e);
+  }
+}
+
+export async function savePdfAs(): Promise<void> {
+  const pdf = useProjectStore.getState().pdfPath;
+  if (!pdf) return void toast.info(t("pdf.empty"));
+  try {
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    const dest = await save({ defaultPath: baseOf(pdf.replace(/\\/g, "/")), filters: [{ name: "PDF", extensions: ["pdf"] }] });
+    if (!dest) return;
+    const out = await api.savePdfAs(dest);
+    toast.success(t("pdf.savedAs", { path: out }), { label: t("files.reveal"), run: () => void openOutputFolder() });
+  } catch (e) {
+    toast.error(e);
+  }
+}
+
+export function showHistory(file?: string | null) {
+  const target = file ?? useProjectStore.getState().activeTab;
+  if (target) useUiStore.getState().openModal({ kind: "history", file: target });
+}
+
+// ---------------------------------------------------------- updater
+
+/** Check for an update; `interactive` reports "up to date" as well. */
+export async function checkForUpdates(interactive: boolean): Promise<void> {
+  try {
+    const info = await api.checkUpdates();
+    if (info) useUiStore.getState().openModal({ kind: "update", info });
+    else if (interactive) toast.success(t("settings.updatesNone"));
+  } catch (e) {
+    if (interactive) toast.error(e);
   }
 }
 

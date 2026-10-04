@@ -1,13 +1,17 @@
-import { Fragment, useEffect, useState } from "react";
-import { Bot, CheckSquare, Cpu, Keyboard, SlidersHorizontal } from "lucide-react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { Bot, CheckSquare, Cpu, Download, Keyboard, SlidersHorizontal, Wrench } from "lucide-react";
 import { api, type AiSettings, type ProviderKind, type RuleState } from "../api";
 import { useAiStore } from "../store/aiStore";
-import { useUiStore, type SettingsSection, type ThemeId } from "../store/uiStore";
+import { DEFAULT_EDITOR_PREFS, useUiStore, type SettingsSection, type ThemeId } from "../store/uiStore";
+import { useWorkspaceStore } from "../store/workspaceStore";
 import { dialog, toast } from "../store/feedbackStore";
 import { loadFlow, saveFlow } from "../flow";
 import { keyCombo, loadKeymap, saveKeymap, comboLabel, type Keymap } from "../store/keymap";
+import { customWords } from "../spell";
 import { useI18n, useT } from "../i18n";
+import * as actions from "../actions";
 import Modal from "./ui/Modal";
+import Switch from "./ui/Switch";
 
 /** Defensive: ensure provider objects always carry a string base_url
  * (a null/undefined base_url would break the controlled inputs). */
@@ -29,40 +33,67 @@ const PRESETS: { label: string; p: ProviderKind; m: string }[] = [
   { label: "Ollama", p: { kind: "ollama", base_url: "http://localhost:11434/v1" }, m: "qwen3.5:9b" },
 ];
 
-const SECTIONS: { id: SettingsSection; icon: typeof Bot; label: string }[] = [
-  { id: "general", icon: SlidersHorizontal, label: "settings.secGeneral" },
-  { id: "editor", icon: Keyboard, label: "settings.secEditor" },
-  { id: "compile", icon: Cpu, label: "settings.secCompile" },
-  { id: "ai", icon: Bot, label: "settings.secAi" },
-  { id: "rules", icon: CheckSquare, label: "settings.secRules" },
+const SECTIONS: { id: SettingsSection; icon: typeof Bot; label: string; tint: string }[] = [
+  { id: "general", icon: SlidersHorizontal, label: "settings.secGeneral", tint: "tint-gray" },
+  { id: "editor", icon: Keyboard, label: "settings.secEditor", tint: "tint-blue" },
+  { id: "compile", icon: Cpu, label: "settings.secCompile", tint: "tint-orange" },
+  { id: "ai", icon: Bot, label: "settings.secAi", tint: "tint-purple" },
+  { id: "rules", icon: CheckSquare, label: "settings.secRules", tint: "tint-green" },
 ];
 
-function ShortcutField({ label, value, onChange }: { label: string; value: string; onChange: (combo: string) => void }) {
+const FONT_CHOICES = [
+  { label: "Cascadia Code", value: DEFAULT_EDITOR_PREFS.fontFamily },
+  { label: "Consolas", value: "Consolas, 'Microsoft YaHei UI', monospace" },
+  { label: "JetBrains Mono", value: "'JetBrains Mono', Consolas, 'Microsoft YaHei UI', monospace" },
+  { label: "SF Mono", value: "'SF Mono', Menlo, Consolas, 'PingFang SC', monospace" },
+  { label: "Sarasa Mono SC", value: "'Sarasa Mono SC', 'Sarasa Term SC', Consolas, monospace" },
+];
+
+/** One grouped-inset row: label (+ secondary line) on the left, control right. */
+function Row({ label, sub, children, className }: { label: ReactNode; sub?: ReactNode; children?: ReactNode; className?: string }) {
+  return (
+    <div className={`settings-row ${className ?? ""}`}>
+      <span className="settings-row-label">
+        {label}
+        {sub && <span className="settings-row-sub">{sub}</span>}
+      </span>
+      {children !== undefined && <span className="settings-row-control">{children}</span>}
+    </div>
+  );
+}
+
+function Group({ title, footer, children }: { title?: ReactNode; footer?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="settings-block">
+      {title && <div className="settings-group-title">{title}</div>}
+      <div className="settings-group">{children}</div>
+      {footer && <div className="settings-group-footer">{footer}</div>}
+    </div>
+  );
+}
+
+function ShortcutField({ value, onChange }: { value: string; onChange: (combo: string) => void }) {
   const t = useT();
   const [listening, setListening] = useState(false);
   return (
-    <div className="field">
-      <span className="field-label">{label}</span>
-      <input
-        className="input shortcut-input"
-        value={listening ? t("settings.shortcutListening") : comboLabel(value)}
-        readOnly
-        onFocus={() => setListening(true)}
-        onBlur={() => setListening(false)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape" || e.key === "Tab") return;
-          e.preventDefault();
-          e.stopPropagation();
-          const combo = keyCombo(e.nativeEvent);
-          // require at least one modifier — a bare letter would swallow
-          // typing in the editor
-          if (combo && combo.includes("+")) {
-            onChange(combo);
-            (e.target as HTMLInputElement).blur();
-          }
-        }}
-      />
-    </div>
+    <input
+      className="input shortcut-input"
+      value={listening ? t("settings.shortcutListening") : comboLabel(value)}
+      readOnly
+      onFocus={() => setListening(true)}
+      onBlur={() => setListening(false)}
+      onKeyDown={(e) => {
+        if (e.key === "Escape" || e.key === "Tab") return;
+        e.preventDefault();
+        e.stopPropagation();
+        const combo = keyCombo(e.nativeEvent);
+        // require at least one modifier — a bare letter would swallow typing
+        if (combo && combo.includes("+")) {
+          onChange(combo);
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+    />
   );
 }
 
@@ -73,6 +104,9 @@ export default function SettingsModal({ initialSection, onClose }: { initialSect
   const setLang = useI18n((s) => s.setLang);
   const theme = useUiStore((s) => s.theme);
   const setTheme = useUiStore((s) => s.setTheme);
+  const prefs = useUiStore((s) => s.editorPrefs);
+  const setPrefs = useUiStore((s) => s.setEditorPrefs);
+  const engine = useWorkspaceStore((s) => s.engine);
   const [section, setSection] = useState<SettingsSection>(initialSection ?? "general");
 
   // AI form (explicit save)
@@ -86,12 +120,11 @@ export default function SettingsModal({ initialSection, onClose }: { initialSect
   const [testing, setTesting] = useState(false);
 
   // instant-apply settings
-  const [engine, setEngine] = useState("auto");
+  const [engineChoice, setEngineChoice] = useState("auto");
   const [passes, setPasses] = useState(2);
   const [autosaveSecs, setAutosaveSecs] = useState<number>(() => Number(localStorage.getItem("tb-autosave-secs") ?? "30"));
   const [keymap, setKeymap] = useState<Keymap>(() => loadKeymap());
   const [updateCheck, setUpdateCheck] = useState(true);
-  const [updateInfo, setUpdateInfo] = useState<{ version: string; name: string; body: string; url: string } | null | undefined>(undefined);
   const [updateChecking, setUpdateChecking] = useState(false);
   const [bundle, setBundle] = useState<{ present: boolean; mb: string; system: boolean } | null>(null);
   const [bundleBusy, setBundleBusy] = useState(false);
@@ -111,11 +144,12 @@ export default function SettingsModal({ initialSection, onClose }: { initialSect
         }
       })
       .catch((e) => console.error("load settings failed", e));
-    void api.getEngine().then(setEngine).catch(() => setEngine("auto"));
+    void api.getEngine().then(setEngineChoice).catch(() => setEngineChoice("auto"));
     void api.getUpdateCheck().then(setUpdateCheck).catch(() => setUpdateCheck(true));
     void api.getTexlivePasses().then(setPasses).catch(() => setPasses(2));
     void api.ruleStates().then(setRuleStates).catch(() => setRuleStates([]));
     void api.cjkFonts().then(setFonts).catch(() => setFonts([]));
+    void useWorkspaceStore.getState().refreshEngine();
     void api
       .bundleStatus()
       .then((b) => setBundle({ present: b.bundle_present, mb: (b.bundle_bytes / 1024 / 1024).toFixed(1), system: b.system_texlive }))
@@ -154,7 +188,6 @@ export default function SettingsModal({ initialSection, onClose }: { initialSect
   };
 
   const test = async () => {
-    // test what the form shows, not the previously stored config
     if (aiDirty && !(await saveAi())) return;
     setTesting(true);
     setTestResult(null);
@@ -176,7 +209,6 @@ export default function SettingsModal({ initialSection, onClose }: { initialSect
 
   const close = async () => {
     if (aiDirty) {
-      // never drop unsaved AI provider changes silently
       const discard = await dialog.confirm({
         title: t("settings.unsavedAiTitle"),
         message: t("settings.unsavedAi"),
@@ -190,6 +222,8 @@ export default function SettingsModal({ initialSection, onClose }: { initialSect
     }
     onClose();
   };
+
+  const current = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0];
 
   return (
     <Modal
@@ -212,53 +246,54 @@ export default function SettingsModal({ initialSection, onClose }: { initialSect
       }
     >
       <nav className="settings-nav" aria-label={t("settings.title")}>
-        {SECTIONS.map(({ id, icon: Icon, label }) => (
-          <button key={id} className={`settings-nav-item ${section === id ? "active" : ""}`} onClick={() => setSection(id)}>
-            <Icon size={15} /> {t(label)}
-            {id === "ai" && aiDirty && <span className="count-badge warn">•</span>}
+        {SECTIONS.map(({ id, icon: Icon, label, tint }) => (
+          <button key={id} className={`settings-nav-item ${section === id ? "active" : ""}`} data-section={id} onClick={() => setSection(id)}>
+            <span className={`nav-icon ${tint}`}>
+              <Icon size={14} />
+            </span>
+            {t(label)}
+            {id === "ai" && aiDirty && <span className="nav-dot" />}
           </button>
         ))}
       </nav>
 
       <div className="settings-content">
+        <h3 className="settings-section-title">{t(current.label)}</h3>
+
         {section === "general" && (
           <>
-            <h3 className="settings-section-title">{t("settings.secGeneral")}</h3>
-            <div className="settings-card">
-              <h4>{t("theme.title")}</h4>
-              <div className="theme-cards">
-                {(["liquid", "dark", "light"] as ThemeId[]).map((id) => (
-                  <button key={id} className={`theme-card ${theme === id ? "active" : ""}`} onClick={() => setTheme(id)}>
-                    <span className={`theme-card-preview swatch-${id}`} />
-                    {t(`theme.${id}`)}
-                  </button>
-                ))}
+            <Group title={t("theme.title")}>
+              <div className="settings-row theme-row">
+                <div className="theme-cards">
+                  {(["liquid", "dark", "light"] as ThemeId[]).map((id) => (
+                    <button key={id} className={`theme-card ${theme === id ? "active" : ""}`} onClick={() => setTheme(id)}>
+                      <span className={`theme-card-preview swatch-${id}`} />
+                      {t(`theme.${id}`)}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <label className="field">
-                <span className="field-label">{t("settings.language")}</span>
-                <select className="input" value={lang} onChange={(e) => setLang(e.target.value as "zh" | "en")}>
+            </Group>
+            <Group>
+              <Row label={t("settings.language")}>
+                <select className="input compact" value={lang} onChange={(e) => setLang(e.target.value as "zh" | "en")}>
                   <option value="zh">{t("settings.languageZh")}</option>
                   <option value="en">{t("settings.languageEn")}</option>
                 </select>
-              </label>
-            </div>
-            <div className="settings-card">
-              <h4>{t("settings.flow")}</h4>
-              <label className="check-row">
-                <input
-                  type="checkbox"
+              </Row>
+              <Row label={t("settings.restoreSession")}>
+                <Switch
+                  label={t("settings.restoreSession")}
                   checked={flow.restoreSession}
-                  onChange={(e) => {
-                    saveFlow({ restoreSession: e.target.checked });
-                    setFlow({ ...flow, restoreSession: e.target.checked });
+                  onChange={(v) => {
+                    saveFlow({ restoreSession: v });
+                    setFlow({ ...flow, restoreSession: v });
                   }}
                 />
-                {t("settings.restoreSession")}
-              </label>
-              <label className="field">
-                <span className="field-label">{t("settings.autosaveInterval")}</span>
+              </Row>
+              <Row label={t("settings.autosaveInterval")}>
                 <select
-                  className="input"
+                  className="input compact"
                   value={String(autosaveSecs)}
                   onChange={(e) => {
                     const v = Number(e.target.value);
@@ -272,164 +307,201 @@ export default function SettingsModal({ initialSection, onClose }: { initialSect
                   <option value="60">60 s</option>
                   <option value="120">120 s</option>
                 </select>
-              </label>
-            </div>
-            <div className="settings-card">
-              <h4>{t("settings.updates")}</h4>
-              <label className="check-row">
-                <input
-                  type="checkbox"
+              </Row>
+            </Group>
+            <Group title={t("settings.updates")}>
+              <Row label={t("settings.updatesCheck")}>
+                <Switch
+                  label={t("settings.updatesCheck")}
                   checked={updateCheck}
-                  onChange={(e) => {
-                    const v = e.target.checked;
+                  onChange={(v) => {
                     setUpdateCheck(v);
                     void api.setUpdateCheck(v).catch(() => undefined);
                   }}
                 />
-                {t("settings.updatesCheck")}
-              </label>
-              <div className="modal-actions">
+              </Row>
+              <Row label={t("settings.version")} sub={`TeXButler ${__APP_VERSION__}`}>
                 <button
-                  className="btn btn-sm"
+                  className="btn btn-sm settings-check-updates"
                   disabled={updateChecking}
                   onClick={async () => {
                     setUpdateChecking(true);
-                    try {
-                      setUpdateInfo(await api.checkUpdates());
-                    } catch (e) {
-                      setUpdateInfo(undefined);
-                      toast.error(e);
-                    }
+                    await actions.checkForUpdates(true);
                     setUpdateChecking(false);
                   }}
                 >
-                  {updateChecking ? t("settings.updatesChecking") : t("settings.updatesNow")}
+                  <Download size={13} /> {updateChecking ? t("settings.updatesChecking") : t("settings.updatesNow")}
                 </button>
-                {updateInfo && (
-                  <a className="btn btn-sm btn-primary" href={updateInfo.url} target="_blank" rel="noreferrer">
-                    {t("settings.updatesGo", { v: updateInfo.version })}
-                  </a>
-                )}
-                {updateInfo === null && <span className="settings-hint">{t("settings.updatesNone")}</span>}
-              </div>
-              {updateInfo && (
-                <p className="bundle-status">
-                  <strong>{updateInfo.name}</strong>
-                  <br />
-                  {updateInfo.body.slice(0, 600)}
-                </p>
-              )}
-            </div>
+              </Row>
+            </Group>
           </>
         )}
 
         {section === "editor" && (
           <>
-            <h3 className="settings-section-title">{t("settings.secEditor")}</h3>
-            <div className="settings-card">
-              <h4>{t("settings.shortcuts")}</h4>
-              <div className="field-grid">
-                <ShortcutField
-                  label={t("settings.shortcutCompile")}
-                  value={keymap.compileMain}
-                  onChange={(combo) => applyKeymap({ ...keymap, compileMain: combo })}
+            <Group title={t("settings.editorText")}>
+              <Row label={t("settings.fontSize")}>
+                <span className="stepper">
+                  <button className="btn btn-sm" onClick={() => setPrefs({ fontSize: prefs.fontSize - 1 })} aria-label="-">
+                    −
+                  </button>
+                  <span className="stepper-value">{prefs.fontSize}</span>
+                  <button className="btn btn-sm" onClick={() => setPrefs({ fontSize: prefs.fontSize + 1 })} aria-label="+">
+                    +
+                  </button>
+                </span>
+              </Row>
+              <Row label={t("settings.fontFamily")}>
+                <select
+                  className="input compact settings-font"
+                  value={FONT_CHOICES.some((f) => f.value === prefs.fontFamily) ? prefs.fontFamily : FONT_CHOICES[0].value}
+                  onChange={(e) => setPrefs({ fontFamily: e.target.value })}
+                >
+                  {FONT_CHOICES.map((f) => (
+                    <option key={f.label} value={f.value}>
+                      {f.label}
+                    </option>
+                  ))}
+                </select>
+              </Row>
+              <Row label={t("settings.tabSize")}>
+                <select className="input compact" value={prefs.tabSize} onChange={(e) => setPrefs({ tabSize: Number(e.target.value) })}>
+                  {[2, 4, 8].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </Row>
+              <Row label={t("settings.wordWrap")}>
+                <Switch label={t("settings.wordWrap")} checked={prefs.wordWrap} onChange={(v) => setPrefs({ wordWrap: v })} />
+              </Row>
+              <Row label={t("settings.lineNumbers")}>
+                <Switch label={t("settings.lineNumbers")} checked={prefs.lineNumbers} onChange={(v) => setPrefs({ lineNumbers: v })} />
+              </Row>
+              <Row label={t("settings.minimap")}>
+                <Switch label={t("settings.minimap")} checked={prefs.minimap} onChange={(v) => setPrefs({ minimap: v })} />
+              </Row>
+            </Group>
+            <Group footer={t("settings.spellcheckNote", { n: customWords().length })}>
+              <Row label={t("settings.spellcheck")} sub={t("settings.spellcheckSub")}>
+                <Switch
+                  className="settings-spell"
+                  label={t("settings.spellcheck")}
+                  checked={prefs.spellcheck}
+                  onChange={(v) => setPrefs({ spellcheck: v })}
                 />
-                <ShortcutField
-                  label={t("settings.shortcutCompileCurrent")}
-                  value={keymap.compileCurrent}
-                  onChange={(combo) => applyKeymap({ ...keymap, compileCurrent: combo })}
-                />
+              </Row>
+            </Group>
+            <Group title={t("settings.shortcuts")} footer={t("settings.shortcutHint")}>
+              <Row label={t("settings.shortcutCompile")}>
+                <ShortcutField value={keymap.compileMain} onChange={(combo) => applyKeymap({ ...keymap, compileMain: combo })} />
+              </Row>
+              <Row label={t("settings.shortcutCompileCurrent")}>
+                <ShortcutField value={keymap.compileCurrent} onChange={(combo) => applyKeymap({ ...keymap, compileCurrent: combo })} />
+              </Row>
+            </Group>
+            <Group title={t("settings.builtinShortcuts")}>
+              <div className="settings-row">
+                <div className="shortcut-list">
+                  {[
+                    ["Ctrl+S", "cmd.save"],
+                    ["Ctrl+Shift+S", "cmd.saveAll"],
+                    ["Ctrl+P", "cmd.quickOpen"],
+                    ["Ctrl+Shift+P", "cmd.palette"],
+                    ["Ctrl+Shift+F", "cmd.findInProject"],
+                    ["Ctrl+N", "cmd.newFile"],
+                    ["Ctrl+O", "cmd.openProject"],
+                    ["Ctrl+J", "cmd.toggleProblems"],
+                    ["Ctrl+Shift+B", "fmt.bold"],
+                    ["Ctrl+= / Ctrl+- / Ctrl+0", "settings.zoomKeys"],
+                    ["Ctrl+,", "cmd.settings"],
+                  ].map(([k, label]) => (
+                    <Fragment key={k}>
+                      <span>{t(label)}</span>
+                      <span>
+                        <kbd>{k}</kbd>
+                      </span>
+                    </Fragment>
+                  ))}
+                </div>
               </div>
-              <p className="settings-hint">{t("settings.shortcutHint")}</p>
-            </div>
-            <div className="settings-card">
-              <h4>{t("settings.builtinShortcuts")}</h4>
-              <div className="shortcut-list" style={{ justifyContent: "start" }}>
-                {[
-                  ["Ctrl+S", "cmd.save"],
-                  ["Ctrl+Shift+S", "cmd.saveAll"],
-                  ["Ctrl+P", "cmd.quickOpen"],
-                  ["Ctrl+Shift+P", "cmd.palette"],
-                  ["Ctrl+N", "cmd.newFile"],
-                  ["Ctrl+O", "cmd.openProject"],
-                  ["Ctrl+J", "cmd.toggleProblems"],
-                  ["Ctrl+Shift+B", "fmt.bold"],
-                  ["Ctrl+,", "cmd.settings"],
-                ].map(([k, label]) => (
-                  <Fragment key={k}>
-                    <span>{t(label)}</span>
-                    <span>
-                      <kbd>{k}</kbd>
-                    </span>
-                  </Fragment>
-                ))}
-              </div>
-            </div>
+            </Group>
           </>
         )}
 
         {section === "compile" && (
           <>
-            <h3 className="settings-section-title">{t("settings.secCompile")}</h3>
-            <div className="settings-card">
-              <label className="check-row">
-                <input
-                  type="checkbox"
+            <Group title={t("engine.title")}>
+              <Row label="Tectonic" sub={engine?.tectonic ?? t("engine.notFound")}>
+                <span className={`pill ${engine?.tectonic ? "ok" : "warn"}`}>{engine?.tectonic ? t("settings.available") : t("settings.unavailable")}</span>
+              </Row>
+              <Row label={t("engine.system")} sub={engine?.system_engine ? `${engine.system_engine} · ${engine.system_path}` : t("engine.notFound")}>
+                <span className={`pill ${engine?.system_engine ? "ok" : "warn"}`}>
+                  {engine?.system_engine ? t("settings.available") : t("settings.unavailable")}
+                </span>
+              </Row>
+              <Row label={t("engine.manage")}>
+                <button className="btn btn-sm" onClick={() => useUiStore.getState().openModal({ kind: "engine" })}>
+                  <Wrench size={13} /> {t("engine.setup")}
+                </button>
+              </Row>
+            </Group>
+            <Group>
+              <Row label={t("settings.autoCompile")}>
+                <Switch
+                  label={t("settings.autoCompile")}
                   checked={flow.autoCompile}
-                  onChange={(e) => {
-                    saveFlow({ autoCompile: e.target.checked });
-                    setFlow({ ...flow, autoCompile: e.target.checked });
+                  onChange={(v) => {
+                    saveFlow({ autoCompile: v });
+                    setFlow({ ...flow, autoCompile: v });
                   }}
                 />
-                {t("settings.autoCompile")}
-              </label>
-              <div className="field-grid">
-                <label className="field">
-                  <span className="field-label">{t("settings.engineChoice")}</span>
-                  <select
-                    className="input"
-                    value={engine}
-                    onChange={(e) => {
-                      setEngine(e.target.value);
-                      void api.setEngine(e.target.value).catch(toast.error);
-                    }}
-                  >
-                    <option value="auto">{t("settings.engineAuto")}</option>
-                    <option value="tectonic">{t("settings.engineTectonic")}</option>
-                    <option value="system_texlive">{t("settings.engineSystem")}</option>
-                  </select>
-                </label>
-                <label className="field">
-                  <span className="field-label">{t("settings.passes")}</span>
-                  <select
-                    className="input"
-                    value={passes}
-                    onChange={(e) => {
-                      const v = Number(e.target.value);
-                      setPasses(v);
-                      void api.setTexlivePasses(v).catch(toast.error);
-                    }}
-                  >
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <option key={n} value={n}>
-                        {t(`settings.passes${n}`)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            </div>
-            <div className="settings-card">
-              <h4>{t("settings.bundleTitle")}</h4>
-              <p className="bundle-status">
-                {bundle
-                  ? t("settings.bundleStatus", {
-                      bundle: bundle.present ? t("settings.bundleReady", { mb: bundle.mb }) : t("settings.bundleMissing"),
-                      system: bundle.system ? t("settings.available") : t("settings.unavailable"),
-                    })
-                  : t("settings.bundleUnknown")}
-              </p>
-              <div className="modal-actions">
+              </Row>
+              <Row label={t("settings.engineChoice")}>
+                <select
+                  className="input compact"
+                  value={engineChoice}
+                  onChange={(e) => {
+                    setEngineChoice(e.target.value);
+                    void api.setEngine(e.target.value).catch(toast.error);
+                  }}
+                >
+                  <option value="auto">{t("settings.engineAuto")}</option>
+                  <option value="tectonic">{t("settings.engineTectonic")}</option>
+                  <option value="system_texlive">{t("settings.engineSystem")}</option>
+                </select>
+              </Row>
+              <Row label={t("settings.passes")}>
+                <select
+                  className="input compact settings-passes"
+                  value={passes}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    setPasses(v);
+                    void api.setTexlivePasses(v).catch(toast.error);
+                  }}
+                >
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <option key={n} value={n}>
+                      {t(`settings.passes${n}`)}
+                    </option>
+                  ))}
+                </select>
+              </Row>
+            </Group>
+            <Group title={t("settings.bundleTitle")}>
+              <Row
+                label={t("settings.bundle")}
+                sub={
+                  bundle
+                    ? t("settings.bundleStatus", {
+                        bundle: bundle.present ? t("settings.bundleReady", { mb: bundle.mb }) : t("settings.bundleMissing"),
+                        system: bundle.system ? t("settings.available") : t("settings.unavailable"),
+                      })
+                    : t("settings.bundleUnknown")
+                }
+              >
                 <button
                   className="btn btn-sm"
                   disabled={bundleBusy}
@@ -446,132 +518,112 @@ export default function SettingsModal({ initialSection, onClose }: { initialSect
                     setBundleBusy(false);
                   }}
                 >
-                  {bundleBusy ? t("settings.bundleDownloading") : t("settings.bundle")}
+                  {bundleBusy ? t("settings.bundleDownloading") : t("settings.bundleGo")}
                 </button>
+              </Row>
+            </Group>
+            <Group title={t("settings.fonts")} footer={t("settings.fontsNote")}>
+              <div className="settings-row">
+                <div className="font-grid">
+                  {fonts.map((f) => (
+                    <span key={f.name} className={`font-item ${f.available ? "font-ok" : "font-missing"}`}>
+                      {f.available ? "●" : "○"} {f.name}
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div className="settings-card">
-              <h4>{t("settings.fonts")}</h4>
-              <div className="font-grid">
-                {fonts.map((f) => (
-                  <span key={f.name} className={`font-item ${f.available ? "font-ok" : "font-missing"}`}>
-                    {f.available ? "●" : "○"} {f.name}
-                  </span>
-                ))}
-              </div>
-              <p className="settings-hint">{t("settings.fontsNote")}</p>
-            </div>
+            </Group>
           </>
         )}
 
         {section === "ai" && (
           <>
-            <h3 className="settings-section-title">{t("settings.secAi")}</h3>
-            <div className="settings-card">
-              <h4>{t("settings.presets")}</h4>
-              <div className="preset-row">
-                {PRESETS.map((p) => (
-                  <button
-                    key={p.label}
-                    className={`btn-mini ${presetActive(p) ? "active" : ""}`}
-                    onClick={() => {
-                      editAi(setProvider)(p.p);
-                      setModel(p.m);
-                    }}
-                  >
-                    {p.label}
-                  </button>
-                ))}
+            <Group title={t("settings.presets")}>
+              <div className="settings-row">
+                <div className="preset-row">
+                  {PRESETS.map((p) => (
+                    <button
+                      key={p.label}
+                      className={`chip ${presetActive(p) ? "active" : ""}`}
+                      onClick={() => {
+                        editAi(setProvider)(p.p);
+                        setModel(p.m);
+                      }}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div className="settings-card">
-              <div className="field-grid">
-                <label className="field">
-                  <span className="field-label">{t("settings.providerType")}</span>
-                  <select
-                    className="input"
-                    value={provider.kind}
-                    onChange={(e) => {
-                      const k = e.target.value as ProviderKind["kind"];
-                      if (k === "anthropic") editAi(setProvider)({ kind: "anthropic" });
-                      else if (k === "ollama") editAi(setProvider)({ kind: "ollama", base_url: "http://localhost:11434/v1" });
-                      else editAi(setProvider)({ kind: "open_ai_compatible", base_url: "https://api.openai.com/v1" });
-                    }}
-                  >
-                    <option value="open_ai_compatible">{t("settings.providerOpenAi")}</option>
-                    <option value="anthropic">Anthropic</option>
-                    <option value="ollama">{t("settings.providerOllama")}</option>
-                  </select>
-                </label>
-                <label className="field">
-                  <span className="field-label">{t("settings.model")}</span>
-                  <input className="input" value={model} onChange={(e) => editAi(setModel)(e.target.value)} />
-                </label>
-              </div>
+            </Group>
+            <Group footer={t("settings.apiKeyNote")}>
+              <Row label={t("settings.providerType")}>
+                <select
+                  className="input compact"
+                  value={provider.kind}
+                  onChange={(e) => {
+                    const k = e.target.value as ProviderKind["kind"];
+                    if (k === "anthropic") editAi(setProvider)({ kind: "anthropic" });
+                    else if (k === "ollama") editAi(setProvider)({ kind: "ollama", base_url: "http://localhost:11434/v1" });
+                    else editAi(setProvider)({ kind: "open_ai_compatible", base_url: "https://api.openai.com/v1" });
+                  }}
+                >
+                  <option value="open_ai_compatible">{t("settings.providerOpenAi")}</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="ollama">{t("settings.providerOllama")}</option>
+                </select>
+              </Row>
+              <Row label={t("settings.model")}>
+                <input className="input compact settings-model" value={model} onChange={(e) => editAi(setModel)(e.target.value)} />
+              </Row>
               {provider.kind !== "anthropic" && (
-                <label className="field">
-                  <span className="field-label">{t("settings.baseUrl")}</span>
+                <Row label={t("settings.baseUrl")}>
                   <input
-                    className="input"
+                    className="input compact settings-wide"
                     value={(provider as { base_url?: string | null }).base_url ?? ""}
                     onChange={(e) => editAi(setProvider)({ ...provider, base_url: e.target.value } as ProviderKind)}
                   />
-                </label>
+                </Row>
               )}
-              <label className="field">
-                <span className="field-label">
-                  {t("settings.apiKey")}
-                  {provider.kind === "ollama" && <small> {t("settings.apiKeyHint")}</small>}
-                </span>
+              <Row label={t("settings.apiKey")} sub={provider.kind === "ollama" ? t("settings.apiKeyHint") : undefined}>
                 <input
-                  className="input"
+                  className="input compact settings-wide"
                   type="password"
                   value={apiKey}
                   placeholder="sk-..."
                   autoComplete="off"
                   onChange={(e) => editAi(setApiKey)(e.target.value)}
                 />
-                <span className="field-hint">{t("settings.apiKeyNote")}</span>
-              </label>
+              </Row>
               {provider.kind === "open_ai_compatible" && (
-                <label className="check-row">
-                  <input type="checkbox" checked={disableThinking} onChange={(e) => editAi(setDisableThinking)(e.target.checked)} />
-                  {t("settings.thinking")}
-                </label>
+                <Row label={t("settings.thinkingShort")} sub={t("settings.thinking")}>
+                  <Switch label={t("settings.thinkingShort")} checked={disableThinking} onChange={(v) => editAi(setDisableThinking)(v)} />
+                </Row>
               )}
-              <div className="modal-actions">
+              <Row label={t("settings.test")} sub={testResult ? <span className={`test-result ${testResult.ok ? "ok" : "fail"}`}>{testResult.text}</span> : undefined}>
                 <button className="btn btn-sm" onClick={() => void test()} disabled={testing}>
                   {testing ? t("settings.testing") : aiDirty ? t("settings.saveAndTest") : t("settings.test")}
                 </button>
-                {testResult && <span className={`test-result ${testResult.ok ? "ok" : "fail"}`}>{testResult.text}</span>}
-              </div>
-            </div>
+              </Row>
+            </Group>
           </>
         )}
 
         {section === "rules" && (
-          <>
-            <h3 className="settings-section-title">{t("settings.secRules")}</h3>
-            <div className="settings-card">
-              <p className="settings-hint">{t("settings.rulesTitle")}</p>
-              <div className="rule-toggles">
-                {ruleStates.map((r) => (
-                  <label key={r.id} className="rule-toggle">
-                    <input
-                      type="checkbox"
-                      checked={r.enabled}
-                      onChange={(e) => {
-                        const next = e.target.checked;
-                        setRuleStates((prev) => prev.map((x) => (x.id === r.id ? { ...x, enabled: next } : x)));
-                        void api.setRuleEnabled(r.id, next).catch(toast.error);
-                      }}
-                    />
-                    <span>{r.name}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          </>
+          <Group footer={t("settings.rulesTitle")}>
+            {ruleStates.map((r) => (
+              <Row key={r.id} label={r.name}>
+                <Switch
+                  label={r.name}
+                  checked={r.enabled}
+                  onChange={(next) => {
+                    setRuleStates((prev) => prev.map((x) => (x.id === r.id ? { ...x, enabled: next } : x)));
+                    void api.setRuleEnabled(r.id, next).catch(toast.error);
+                  }}
+                />
+              </Row>
+            ))}
+          </Group>
         )}
       </div>
     </Modal>

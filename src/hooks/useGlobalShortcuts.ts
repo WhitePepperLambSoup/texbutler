@@ -1,8 +1,15 @@
 import { useEffect } from "react";
 import { keyCombo, loadKeymap } from "../store/keymap";
 import { useProjectStore } from "../store/projectStore";
-import { useUiStore } from "../store/uiStore";
+import { DEFAULT_EDITOR_PREFS, useUiStore } from "../store/uiStore";
+import { selectedText } from "../editorBridge";
 import * as actions from "../actions";
+
+/** A single-line selection seeds "find in project". */
+function selectedTextForSearch(): string {
+  const s = selectedText();
+  return s && !s.includes("\n") && s.length < 200 ? s : "";
+}
 
 /**
  * One keydown listener for every app-level shortcut. Editor-local keys
@@ -53,6 +60,16 @@ export function useGlobalShortcuts() {
           return hasProject ? run(() => ui.togglePanel("bottom")) : undefined;
         case "ctrl+,":
           return run(() => ui.openModal({ kind: "settings" }));
+        case "ctrl+shift+f":
+          return hasProject ? run(() => ui.searchInProject(selectedTextForSearch())) : undefined;
+        case "ctrl+=":
+        case "ctrl++":
+        case "ctrl+shift++":
+          return run(() => ui.setEditorPrefs({ fontSize: ui.editorPrefs.fontSize + 1 }));
+        case "ctrl+-":
+          return run(() => ui.setEditorPrefs({ fontSize: ui.editorPrefs.fontSize - 1 }));
+        case "ctrl+0":
+          return run(() => ui.setEditorPrefs({ fontSize: DEFAULT_EDITOR_PREFS.fontSize }));
         default:
           return undefined;
       }

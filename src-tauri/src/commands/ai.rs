@@ -328,6 +328,85 @@ pub async fn tb_fix_rule_issue(
     Ok(report)
 }
 
+fn base64_encode(bytes: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        out.push(T[(n >> 18) as usize & 63] as char);
+        out.push(T[(n >> 12) as usize & 63] as char);
+        out.push(if chunk.len() > 1 { T[(n >> 6) as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 2 { T[n as usize & 63] as char } else { '=' });
+    }
+    out
+}
+
+/// Strip fences / math delimiters the model may wrap around the formula.
+pub fn clean_formula(reply: &str) -> String {
+    let mut s = reply.trim().to_string();
+    if s.starts_with("```") {
+        s = s.lines().filter(|l| !l.trim_start().starts_with("```")).collect::<Vec<_>>().join("\n");
+    }
+    let mut s = s.trim().to_string();
+    for (open, close) in [("$$", "$$"), ("\\[", "\\]"), ("\\(", "\\)"), ("$", "$")] {
+        if s.starts_with(open) && s.ends_with(close) && s.len() >= open.len() + close.len() {
+            s = s[open.len()..s.len() - close.len()].trim().to_string();
+            break;
+        }
+    }
+    s
+}
+
+/// Formula OCR: send an image (file path from the picker, or a project
+/// image) to a vision-capable model and return the LaTeX of the formula.
+#[tauri::command]
+pub async fn tb_ai_image_to_latex(state: State<'_, AppState>, path: String) -> Result<String, String> {
+    let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
+    let abs = {
+        let p = std::path::PathBuf::from(&path);
+        if p.is_absolute() {
+            p
+        } else {
+            let guard = state.project.read().map_err(|e| e.to_string())?;
+            let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
+            proj.resolve(&path).ok_or_else(|| "路径越界".to_string())?
+        }
+    };
+    let ext = abs.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    let mime = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        _ => return Err("请选择 PNG / JPG / WEBP 图片".into()),
+    };
+    let bytes = std::fs::read(&abs).map_err(|e| format!("读取图片失败: {e}"))?;
+    if bytes.len() > 8 * 1024 * 1024 {
+        return Err("图片过大（上限 8 MB），请截取公式区域".into());
+    }
+    let system = "You convert images of mathematical formulas into LaTeX. Reply with ONLY the LaTeX source of the formula, \
+                  without $ delimiters, code fences or explanations. Use standard amsmath commands.";
+    match crate::core::ai::provider::chat_with_image(&settings, system, "Transcribe this formula to LaTeX.", mime, &base64_encode(&bytes)).await {
+        Ok(reply) => {
+            let formula = clean_formula(&reply);
+            if formula.is_empty() {
+                Err("模型没有识别出公式".into())
+            } else {
+                Ok(formula)
+            }
+        }
+        Err(crate::core::ai::AiError::Api { status, body }) if (400..500).contains(&status) && status != 401 && status != 403 && status != 429 => {
+            Err(format!(
+                "当前模型（{}）不支持图片输入。请在“设置 → AI 服务”中换用支持视觉的模型（如 GPT-4o、Claude、Qwen-VL）。\n服务返回: {}",
+                settings.model,
+                redact_key(&settings, body)
+            ))
+        }
+        Err(e) => Err(redact_key(&settings, e.to_string())),
+    }
+}
+
 /// Redact the API key from any error text before it reaches the UI.
 fn redact_key(s: &AiSettings, msg: String) -> String {
     match &s.api_key {
@@ -654,7 +733,7 @@ pub fn tb_ai_snapshots(
 /// Check GitHub for a newer TeXButler release. Returns the latest release
 /// info when a newer version exists, `null` otherwise.
 #[tauri::command]
-pub async fn tb_check_updates() -> Result<Option<serde_json::Value>, String> {
+pub async fn tb_check_updates(pretend_current: Option<String>) -> Result<Option<serde_json::Value>, String> {
     const REPO: &str = "https://api.github.com/repos/WhitePepperLambSoup/texbutler/releases/latest";
     let client = reqwest::Client::new();
     let resp = client
@@ -669,15 +748,31 @@ pub async fn tb_check_updates() -> Result<Option<serde_json::Value>, String> {
     }
     let v: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
     let latest = v["tag_name"].as_str().unwrap_or("").trim_start_matches('v');
-    let current = env!("CARGO_PKG_VERSION");
-    if latest.is_empty() || version_le(&latest, current) {
+    // debug builds only: let the end-to-end tests pretend to be older so the
+    // download/install flow can be exercised against the real release
+    let current = match pretend_current {
+        Some(p) if cfg!(debug_assertions) && !p.is_empty() => p,
+        _ => env!("CARGO_PKG_VERSION").to_string(),
+    };
+    if latest.is_empty() || version_le(&latest, &current) {
         return Ok(None);
     }
+    // installer asset for the in-app updater (NSIS setup preferred)
+    let assets = v["assets"].as_array().cloned().unwrap_or_default();
+    let pick = |suffix: &str| {
+        assets.iter().find(|a| {
+            a["name"].as_str().map(|n| n.to_ascii_lowercase().ends_with(suffix)).unwrap_or(false)
+        })
+    };
+    let asset = pick("-setup.exe").or_else(|| pick(".msi"));
     Ok(Some(serde_json::json!({
         "version": latest,
         "name": v["name"].as_str().unwrap_or(""),
         "body": v["body"].as_str().unwrap_or(""),
         "url": v["html_url"].as_str().unwrap_or(""),
+        "asset_url": asset.and_then(|a| a["browser_download_url"].as_str()),
+        "asset_name": asset.and_then(|a| a["name"].as_str()),
+        "asset_size": asset.and_then(|a| a["size"].as_u64()),
     })))
 }
 
@@ -973,6 +1068,23 @@ pub struct AiSettingsView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn base64_matches_known_vectors() {
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+    }
+
+    #[test]
+    fn formula_cleanup_strips_fences_and_delimiters() {
+        assert_eq!(clean_formula("```latex\n\\frac{a}{b}\n```"), "\\frac{a}{b}");
+        assert_eq!(clean_formula("$$ E = mc^2 $$"), "E = mc^2");
+        assert_eq!(clean_formula("\\[x^2\\]"), "x^2");
+        assert_eq!(clean_formula("  \\int_0^1 f  "), "\\int_0^1 f");
+    }
 
     #[test]
     fn ai_fix_input_loading_acquires_project_before_waiting_for_compile_result() {

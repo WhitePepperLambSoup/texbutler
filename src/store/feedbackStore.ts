@@ -30,6 +30,8 @@ export type DialogRequest =
       placeholder?: string;
       confirmLabel?: string;
       multiline?: boolean;
+      /** Accept an empty answer (e.g. "" = project root). */
+      allowEmpty?: boolean;
       resolve: (value: string | null) => void;
     }
   | {
@@ -107,6 +109,7 @@ export const dialog = {
     placeholder?: string;
     confirmLabel?: string;
     multiline?: boolean;
+    allowEmpty?: boolean;
   }): Promise<string | null> {
     return new Promise((resolve) => {
       useFeedbackStore.getState().pushDialog({ kind: "prompt", ...opts, resolve });

@@ -168,6 +168,15 @@ pub fn scan_labels(src: &str) -> Vec<(String, usize)> {
         .collect()
 }
 
+/// Public scanner for the reference report: every `\cmd{key}` use of the
+/// given commands (comments skipped) as `(command, key, 1-based line)`.
+pub fn scan_cmd_uses(src: &str, cmds: &[&str]) -> Vec<(String, String, usize)> {
+    collect_cmd_args(src, cmds)
+        .into_iter()
+        .map(|(cmd, key, line, _col)| (cmd, key, line))
+        .collect()
+}
+
 /// Scan a source file for `\cmd{...}` occurrences (single-line only, like
 /// the other rules), skipping comments. Returns (command, first-argument,
 /// 1-based line, 1-based column).

@@ -36,22 +36,39 @@ impl TectonicCompiler {
         TectonicCompiler { binary: None }
     }
 
+    /// Where the in-app installer puts tectonic (per-user, no admin rights):
+    /// `%LOCALAPPDATA%\TeXButler\bin\tectonic.exe`.
+    pub fn user_install_path() -> Option<PathBuf> {
+        dirs::data_local_dir().map(|d| d.join("TeXButler").join("bin").join("tectonic.exe"))
+    }
+
     /// Locate the tectonic executable:
-    /// 1. packaged resource (`resources/bin/tectonic.exe`), 2. PATH.
+    /// 1. packaged resource (`resources/bin/tectonic.exe`), 2. the per-user
+    /// install done from the onboarding dialog, 3. PATH.
     pub fn find_binary() -> Option<PathBuf> {
         // packaged resource relative to the exe's dir (dev: project root)
         let exe_dir = std::env::current_exe()
             .ok()
             .and_then(|p| p.parent().map(|d| d.to_path_buf()))
             .unwrap_or_default();
-        let candidates = [
+        let mut candidates = vec![
             exe_dir.join("resources").join("bin").join("tectonic.exe"),
             PathBuf::from("src-tauri").join("resources").join("bin").join("tectonic.exe"),
             PathBuf::from("resources").join("bin").join("tectonic.exe"),
             PathBuf::from("tectonic.exe"),
         ];
+        if let Some(user) = Self::user_install_path() {
+            candidates.push(user);
+        }
         for c in candidates {
             if c.exists() {
+                // compiles run with the project as cwd: a relative hit
+                // ("resources\bin\tectonic.exe") would no longer resolve
+                if c.is_relative() {
+                    if let Ok(cwd) = std::env::current_dir() {
+                        return Some(cwd.join(c));
+                    }
+                }
                 return Some(c);
             }
         }
@@ -105,13 +122,14 @@ impl TectonicCompiler {
     /// the polling loop never blocks on pipe reads.
     fn build_command(
         &self,
+        binary: &Path,
         project: &Project,
         main: &Path,
         build_dir: &Path,
         stdout_file: std::fs::File,
         stderr_file: std::fs::File,
     ) -> Command {
-        let mut cmd = Command::new(self.binary.clone().unwrap_or_else(|| PathBuf::from("tectonic")));
+        let mut cmd = Command::new(binary);
         crate::core::compiler::hide_console(&mut cmd);
         cmd.arg("--outdir").arg(build_dir);
         cmd.arg("--keep-logs");
@@ -169,7 +187,8 @@ impl Compiler for TectonicCompiler {
             .map_err(|e| CompileError::Io(e))?;
         let err_handle = std::fs::File::create(&stderr_file)
             .map_err(|e| CompileError::Io(e))?;
-        let mut cmd = self.build_command(project, main, &build_dir, out_handle, err_handle);
+        // use the binary resolved above — `self.binary` may still be unset
+        let mut cmd = self.build_command(&binary, project, main, &build_dir, out_handle, err_handle);
         let mut child = cmd
             .spawn()
             .map_err(|e| CompileError::Compile(format!("tectonic 启动失败: {e}")))?;
@@ -202,11 +221,12 @@ impl Compiler for TectonicCompiler {
 
         let pdf = build_dir.join(format!("{main_stem}.pdf"));
         let ok = status.success() && pdf.exists();
-        let issues = if log_path.exists() {
+        let mut issues = if log_path.exists() {
             crate::core::log_parser::parse_log(&log_path)
         } else {
             vec![]
         };
+        relocate_from_stderr(&mut issues, &stderr, project);
         let issues = if !ok && issues.is_empty() {
             let detail = stderr.lines().last().unwrap_or("").to_string();
             vec![Issue::new(
@@ -234,8 +254,58 @@ impl Compiler for TectonicCompiler {
     }
 }
 
+/// `error: chapters/a.tex:12: Undefined control sequence` lines of Tectonic's
+/// stderr, as (file, line). Tectonic runs without -file-line-error, so the
+/// log parser can only guess the file from the open-file stack (and picks
+/// e.g. `ts1cmr.fd` when a font was being loaded); stderr is exact.
+fn stderr_locations(stderr: &str) -> Vec<(String, usize)> {
+    stderr
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("error: "))
+        .filter_map(|rest| {
+            // the path may contain ':' (drive letter): split from the right
+            let mut parts = rest.rsplitn(3, ':');
+            let _msg = parts.next()?;
+            let line = parts.next()?.trim().parse::<usize>().ok()?;
+            let file = parts.next()?.trim().to_string();
+            (!file.is_empty()).then_some((file, line))
+        })
+        .collect()
+}
+
+/// Correct the file/line of the log's error issues with stderr's locations
+/// (both list the errors in the same order).
+fn relocate_from_stderr(issues: &mut [Issue], stderr: &str, project: &Project) {
+    let locs = stderr_locations(stderr);
+    let errors = issues.iter_mut().filter(|i| i.severity == Severity::Error);
+    for (issue, (file, line)) in errors.zip(locs) {
+        let path = Path::new(&file);
+        let rel = if path.is_absolute() {
+            match path.strip_prefix(&project.root) {
+                Ok(r) => r.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            }
+        } else {
+            file.replace('\\', "/")
+        };
+        if project.root.join(&rel).is_file() {
+            issue.file = Some(rel);
+            issue.line = Some(line);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reads_error_locations_from_stderr() {
+        let err = "Fontconfig error: Cannot load default config file\nerror: broken.tex:3: Undefined control sequence\nerror: D:/p/ch/a.tex:12: Missing $ inserted\nerror: halted on potentially-recoverable error as specified\n";
+        assert_eq!(
+            super::stderr_locations(err),
+            vec![("broken.tex".to_string(), 3), ("D:/p/ch/a.tex".to_string(), 12)]
+        );
+    }
+
     use super::*;
 
     #[test]
@@ -243,6 +313,9 @@ mod tests {
         // In CI (project checkout) the resource exists under src-tauri/resources.
         let found = TectonicCompiler::find_binary();
         assert!(found.is_some(), "packaged tectonic.exe should be findable");
+        // compiles run in the project dir: a resource hit must be absolute
+        let found = found.unwrap();
+        assert!(found.is_absolute() || found == PathBuf::from("tectonic"), "{}", found.display());
     }
 
     #[test]
