@@ -19,7 +19,8 @@ export type ModalState =
   | { kind: "newFile"; dir?: string }
   | { kind: "history"; file: string }
   | { kind: "engine" }
-  | { kind: "update"; info: UpdateInfo };
+  | { kind: "update"; info: UpdateInfo }
+  | { kind: "zotero" };
 
 export interface EditorPrefs {
   fontSize: number;

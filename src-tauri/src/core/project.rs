@@ -154,7 +154,9 @@ impl Project {
         roots
     }
 
-    /// All `.bib` files relative to the root (recursive).
+    /// All `.bib` files relative to the root (recursive, forward slashes).
+    /// Hidden folders are skipped: `.texbutler/backup` holds snapshot copies
+    /// of `.bib` files that must not count as a second bibliography.
     pub fn bib_files(&self) -> Vec<String> {
         let mut out = Vec::new();
         let mut stack = vec![self.root.clone()];
@@ -162,11 +164,45 @@ impl Project {
             let Ok(entries) = std::fs::read_dir(&dir) else { continue };
             for entry in entries.flatten() {
                 let path = entry.path();
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with('.') {
+                    continue;
+                }
                 if path.is_dir() {
-                    stack.push(path);
+                    if name != "node_modules" && name != "target" {
+                        stack.push(path);
+                    }
                 } else if path.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("bib")) == Some(true) {
                     if let Ok(rel) = path.strip_prefix(&self.root) {
-                        out.push(rel.to_string_lossy().to_string());
+                        out.push(rel.to_string_lossy().replace('\\', "/"));
+                    }
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// Text files whose encoding matters (`.tex`, `.bib`, `.sty`, …),
+    /// relative with forward slashes; hidden folders are skipped.
+    pub fn text_files(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut stack = vec![self.root.clone()];
+        while let Some(dir) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with('.') {
+                    continue;
+                }
+                if path.is_dir() {
+                    if name != "node_modules" {
+                        stack.push(path);
+                    }
+                } else if crate::core::encoding::is_text_file(&name) {
+                    if let Ok(rel) = path.strip_prefix(&self.root) {
+                        out.push(rel.to_string_lossy().replace('\\', "/"));
                     }
                 }
             }
@@ -293,16 +329,25 @@ impl Project {
         p.to_string()
     }
 
-    /// Read a file as UTF-8 (with BOM/encoding tolerance for Windows files).
+    /// Read a text file: UTF-8 (BOM stripped) or GBK/GB18030, decoded to a
+    /// string (saving writes UTF-8, i.e. converts the file).
     /// The canonical path must stay inside the canonical project root —
     /// a symlink inside the project cannot redirect the read outside it.
     pub fn read_file(&self, rel: &str) -> Result<String, String> {
         let p = self.resolve(rel).ok_or_else(|| "路径越界".to_string())?;
         let cp = self.canonical_inside(&p)?;
         let bytes = std::fs::read(&cp).map_err(|e| e.to_string())?;
-        // Strip UTF-8 BOM if present.
-        let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
-        String::from_utf8(bytes.to_vec()).map_err(|_| "文件不是 UTF-8 编码（中文 LaTeX 请保存为 UTF-8）".to_string())
+        crate::core::encoding::decode(&bytes)
+            .map(|(text, _)| text)
+            .ok_or_else(|| "文件编码无法识别（既不是 UTF-8 也不是 GBK）。中文 LaTeX 请保存为 UTF-8".to_string())
+    }
+
+    /// Encoding of a project file on disk (None = unreadable/unknown).
+    pub fn file_encoding(&self, rel: &str) -> Option<crate::core::encoding::TextEncoding> {
+        let p = self.resolve(rel)?;
+        let cp = self.canonical_inside(&p).ok()?;
+        let bytes = std::fs::read(&cp).ok()?;
+        crate::core::encoding::decode(&bytes).map(|(_, enc)| enc)
     }
 
     /// Canonicalize an absolute project-internal path and verify the result
@@ -1115,6 +1160,20 @@ mod tests {
             "uppercase .TEX must be found: {files:?}"
         );
         assert!(!files.iter().any(|f| f.ends_with(".md")), "md must be excluded: {files:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bib_files_skip_hidden_backup_copies() {
+        let dir = std::env::temp_dir().join(format!("tb-bibhidden-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".texbutler").join("backup").join("1")).unwrap();
+        std::fs::create_dir_all(dir.join("bib")).unwrap();
+        std::fs::write(dir.join("main.tex"), "\\documentclass{article}").unwrap();
+        std::fs::write(dir.join("bib").join("refs.bib"), "@book{a, title={A}}").unwrap();
+        std::fs::write(dir.join(".texbutler").join("backup").join("1").join("refs.bib"), "@book{a, title={A}}").unwrap();
+        let proj = Project::open(&dir).unwrap();
+        assert_eq!(proj.bib_files(), vec!["bib/refs.bib".to_string()]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

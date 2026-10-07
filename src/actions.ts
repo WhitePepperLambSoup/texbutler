@@ -280,6 +280,64 @@ export function showHistory(file?: string | null) {
   if (target) useUiStore.getState().openModal({ kind: "history", file: target });
 }
 
+// --------------------------------------------------------- encoding
+
+/** Convert GBK files to UTF-8 (originals backed up by the backend). */
+export async function convertToUtf8(paths: string[]): Promise<void> {
+  if (paths.length === 0) return;
+  try {
+    // unsaved buffers of these files would be written back as UTF-8 anyway;
+    // save them first so the conversion sees the latest text
+    const st = useProjectStore.getState();
+    for (const tab of st.tabs) if (tab.dirty && paths.includes(tab.path)) await st.saveFile(tab.path);
+    const r = await api.convertToUtf8(paths);
+    for (const f of r.converted) {
+      if (useProjectStore.getState().tabs.some((tab) => tab.path === f)) await useProjectStore.getState().reloadTab(f);
+    }
+    if (r.converted.length) toast.success(t("encoding.converted", { n: r.converted.length }));
+    if (r.failed.length) toast.error(t("encoding.failed", { files: r.failed.join(", ") }));
+    void useCompileStore.getState().runCheck();
+  } catch (e) {
+    toast.error(e);
+  }
+}
+
+const encodingAsked = new Set<string>();
+
+/** Scan now (command palette): report the result even when all is UTF-8. */
+export function scanEncodingNow(): Promise<void> {
+  return checkProjectEncoding(true);
+}
+
+/** After opening a project: offer to convert GBK files (once per session). */
+export async function checkProjectEncoding(force = false): Promise<void> {
+  const root = useProjectStore.getState().root;
+  if (!root || (!force && encodingAsked.has(root))) return;
+  encodingAsked.add(root);
+  let files: { path: string; encoding: string }[] = [];
+  try {
+    files = await api.encodingScan();
+  } catch (e) {
+    if (force) toast.error(e);
+    return;
+  }
+  const gbk = files.filter((f) => f.encoding === "gbk").map((f) => f.path);
+  const unknown = files.filter((f) => f.encoding === "unknown").map((f) => f.path);
+  if (force && unknown.length) toast.error(t("encoding.unknown", { files: unknown.join(", ") }));
+  if (gbk.length === 0) {
+    if (force && unknown.length === 0) toast.success(t("encoding.allUtf8"));
+    return;
+  }
+  if (useProjectStore.getState().root !== root) return;
+  const list = gbk.slice(0, 8).join("\n") + (gbk.length > 8 ? `\n… (+${gbk.length - 8})` : "");
+  const ok = await dialog.confirm({
+    title: t("encoding.title"),
+    message: t("encoding.message", { n: gbk.length, list }),
+    confirmLabel: t("encoding.convertAll"),
+  });
+  if (ok) await convertToUtf8(gbk);
+}
+
 // ---------------------------------------------------------- updater
 
 /** Check for an update; `interactive` reports "up to date" as well. */

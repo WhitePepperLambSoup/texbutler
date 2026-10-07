@@ -9,3 +9,4 @@ pub mod files;
 pub mod project;
 pub mod templates;
 pub mod workspace;
+pub mod zotero;

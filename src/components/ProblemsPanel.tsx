@@ -26,7 +26,9 @@ import { useT } from "../i18n";
 import * as actions from "../actions";
 
 /** Rule ids the backend repairs deterministically (no AI call). */
-const DETERMINISTIC_RULES = new Set(["paragraph", "cjk_spacing"]);
+const DETERMINISTIC_RULES = new Set(["paragraph", "cjk_spacing", "bib_format"]);
+/** Rule ids that need the author's own data: no automatic fix offered. */
+const MANUAL_RULES = new Set(["bib_fields"]);
 
 function SeverityIcon({ severity }: { severity: Issue["severity"] }) {
   const props = { size: 15, className: "problem-sev-icon", "aria-label": severityLabel(severity) };
@@ -205,7 +207,16 @@ export default function ProblemsPanel() {
                         <Wrench size={13} /> {t("problems.aiFix")}
                       </button>
                     </>
-                  ) : (
+                  ) : issue.rule_id === "encoding" ? (
+                    <button
+                      className="btn btn-sm btn-primary problem-convert-utf8"
+                      disabled={busyIdx === i || !issue.file}
+                      onClick={() => void withBusy(i, () => actions.convertToUtf8(issue.file ? [issue.file] : []))}
+                    >
+                      {busyIdx === i ? <Loader2 size={12} className="spinner" /> : <Wrench size={13} />}
+                      {t("encoding.convert")}
+                    </button>
+                  ) : MANUAL_RULES.has(issue.rule_id ?? "") ? null : (
                     <button
                       className="btn btn-sm btn-primary"
                       disabled={aiBusy}

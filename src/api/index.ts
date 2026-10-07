@@ -260,6 +260,36 @@ export interface UpdateInfo {
   asset_size?: number | null;
 }
 
+export type KeyKind = "label" | "cite";
+
+export interface RenameKeyResult {
+  files: string[];
+  count: number;
+  /** Edits for the file open in the editor (applied there, undoable). */
+  skipped_edits: { line: number; start_col: number; end_col: number }[];
+}
+
+export interface ZoteroItem {
+  citekey: string;
+  title: string;
+  authors: string;
+  year: string;
+  container: string;
+  item_type: string;
+  library: string;
+  in_project: boolean;
+}
+
+export interface ReviewItem {
+  line: number;
+  start_col: number;
+  end_col: number;
+  quote: string;
+  problem: string;
+  suggestion: string;
+  category: string;
+}
+
 export interface DownloadProgress {
   stage: "download" | "extract" | "done";
   downloaded: number;
@@ -360,6 +390,20 @@ export const api = {
   synctexReverse: (page: number, x: number, y: number) =>
     invoke<{ file: string; line: number } | null>("tb_synctex_reverse", { page, x, y }),
   aiImageToLatex: (path: string) => invoke<string>("tb_ai_image_to_latex", { path }),
+  renameKey: (kind: KeyKind, old: string, newKey: string, skipFile?: string | null) =>
+    invoke<RenameKeyResult>("tb_rename_key", { kind, old, new: newKey, skipFile: skipFile ?? null }),
+  encodingScan: () => invoke<{ path: string; encoding: "gbk" | "unknown" }[]>("tb_encoding_scan"),
+  convertToUtf8: (paths: string[]) =>
+    invoke<{ converted: string[]; failed: string[]; backup_dir: string }>("tb_convert_to_utf8", { paths }),
+  zoteroStatus: (url?: string | null) => invoke<{ zotero: string; betterbibtex: string }>("tb_zotero_status", { url: url ?? null }),
+  zoteroSearch: (query: string, url?: string | null) => invoke<ZoteroItem[]>("tb_zotero_search", { query, url: url ?? null }),
+  zoteroAdd: (citekeys: string[], bibFile?: string | null, url?: string | null) =>
+    invoke<{ added: string[]; existing: string[]; bib_file: string; created: boolean }>("tb_zotero_add", {
+      citekeys,
+      bibFile: bibFile ?? null,
+      url: url ?? null,
+    }),
+  aiReview: (file: string, english: boolean) => invoke<ReviewItem[]>("tb_ai_review", { file, english }),
   getUpdateCheck: () => invoke<boolean>("tb_get_update_check"),
   setUpdateCheck: (enabled: boolean) => invoke<void>("tb_set_update_check", { enabled }),
   importDocx: (sourcePath: string) =>

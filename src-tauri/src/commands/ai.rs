@@ -150,6 +150,44 @@ pub async fn tb_ai_polish(
     .map_err(|e| redact_key(&settings, e.to_string()))
 }
 
+/// AI full-document review: located findings (quote → suggestion) for one
+/// file. Read-only — the editor applies accepted findings itself.
+#[tauri::command]
+pub async fn tb_ai_review(
+    state: State<'_, AppState>,
+    file: String,
+    english: Option<bool>,
+) -> Result<Vec<crate::core::ai::review::ReviewItem>, String> {
+    use crate::core::ai::review;
+    let settings = state.settings.read().map_err(|e| e.to_string())?.ai.clone();
+    if settings.api_key.is_none() && !matches!(settings.provider, crate::core::ai::ProviderKind::Ollama { .. }) {
+        return Err("尚未配置 AI API Key。请在“设置”中填写 provider 配置。".into());
+    }
+    let (rel, content) = {
+        let guard = state.project.read().map_err(|e| e.to_string())?;
+        let proj = guard.as_ref().ok_or_else(|| "尚未打开项目".to_string())?;
+        let rel = proj.relative_path(&file).replace('\\', "/");
+        let content = proj.read_file(&rel)?;
+        (rel, content)
+    };
+    if content.trim().is_empty() {
+        return Err("文件是空的，没有可审阅的内容".into());
+    }
+    if content.chars().count() > review::MAX_CHARS {
+        return Err(format!("文件超过 {} 字，请拆分章节后逐个审阅", review::MAX_CHARS));
+    }
+    let reply = crate::core::ai::chat(
+        &settings,
+        &[
+            crate::core::ai::ChatMsg { role: "system".into(), content: review::system_prompt(english.unwrap_or(false)) },
+            crate::core::ai::ChatMsg { role: "user".into(), content: review::user_prompt(&rel, &content) },
+        ],
+    )
+    .await
+    .map_err(|e| redact_key(&settings, e.to_string()))?;
+    review::parse_items(&reply, &content)
+}
+
 /// AI-diagnose one compile issue (by index into the last result's issues).
 /// Refuse to diagnose/fix files outside the project (e.g. MiKTeX system
 /// files like `umsb.fd` that the log parser picks up): we cannot read or
@@ -279,8 +317,15 @@ pub async fn tb_ai_fix(
 fn is_deterministic_rule_issue(issue: &Issue) -> bool {
     matches!(
         issue.rule_id.as_deref(),
-        Some("paragraph") | Some("cjk_spacing")
+        Some("paragraph") | Some("cjk_spacing") | Some("bib_format")
     )
+}
+
+/// Rule issues that need the author's own data (missing bibliography
+/// fields) or a dedicated action (encoding conversion): neither a
+/// deterministic edit nor the AI may "fix" them.
+fn is_manual_rule_issue(issue: &Issue) -> bool {
+    matches!(issue.rule_id.as_deref(), Some("bib_fields") | Some("encoding"))
 }
 
 /// Fix a RULE issue (e.g. paragraph gluing, dangling refs): the issue is
@@ -310,6 +355,13 @@ pub async fn tb_fix_rule_issue(
             crate::core::ai::ProviderKind::Ollama { .. }
         );
     let apply = apply.unwrap_or(true);
+    if is_manual_rule_issue(&issue) {
+        return Err(if issue.rule_id.as_deref() == Some("encoding") {
+            "编码问题请用“转换为 UTF-8”处理".into()
+        } else {
+            "缺少的文献信息需要按原始文献手动补全（AI 不会编造出版信息）".into()
+        });
+    }
     // Deterministic fixes (paragraph gluing etc.) never call the AI, so a
     // missing key is fine for them; only the AI fallback needs one.
     if !has_key && !is_deterministic_rule_issue(&issue) {

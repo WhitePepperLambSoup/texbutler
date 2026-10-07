@@ -65,6 +65,199 @@ pub async fn tb_replace_in_project(
     Ok(result)
 }
 
+// ------------------------------------------------------------ key rename
+
+#[derive(serde::Serialize)]
+pub struct KeyEdit {
+    pub line: usize,
+    pub start_col: usize,
+    pub end_col: usize,
+}
+
+#[derive(serde::Serialize)]
+pub struct RenameKeyResult {
+    /// Files rewritten on disk.
+    pub files: Vec<String>,
+    /// Total occurrences renamed (including `skip_file`).
+    pub count: usize,
+    /// Edits for `skip_file`, applied by the editor itself (undoable there).
+    pub skipped_edits: Vec<KeyEdit>,
+}
+
+/// Rename a `\label` key (with all `\ref`-family uses) or a citation key
+/// (with all `\cite`-family uses and its `.bib` entry) across the project.
+/// `skip_file` (the file open in the editor) is not written: its edits are
+/// returned so the editor applies them as one undoable step.
+#[tauri::command]
+pub async fn tb_rename_key(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    kind: crate::core::rename::KeyKind,
+    old: String,
+    new: String,
+    skip_file: Option<String>,
+) -> Result<RenameKeyResult, String> {
+    use crate::core::rename::{self, KeyKind};
+    let proj = project(&state)?;
+    let (old, new) = (old.trim().to_string(), new.trim().to_string());
+    if !rename::valid_key(&new) {
+        return Err("新键名不能为空，也不能包含空格、逗号、花括号、% # \\ ~ 或引号".into());
+    }
+    if old == new {
+        return Err("新键名与原键名相同".into());
+    }
+    let skip = skip_file.map(|s| s.replace('\\', "/"));
+    let result = tokio::task::spawn_blocking(move || -> Result<RenameKeyResult, String> {
+        let tex: Vec<String> = proj.tex_files().into_iter().map(|p| p.replace('\\', "/")).collect();
+        let bibs: Vec<String> = proj.bib_files().into_iter().map(|p| p.replace('\\', "/")).collect();
+        // plan every change before writing anything
+        let mut plans: Vec<(String, String, Vec<rename::KeySpan>)> = Vec::new();
+        let mut defined = false;
+        let mut clash = false;
+        for rel in &tex {
+            let Ok(content) = proj.read_file(rel) else { continue };
+            let spans = rename::find_key_spans(&content, kind.commands(), &old);
+            if kind == KeyKind::Label {
+                defined |= !rename::find_key_spans(&content, &["label"], &old).is_empty();
+                clash |= !rename::find_key_spans(&content, &["label"], &new).is_empty();
+            }
+            if !spans.is_empty() {
+                plans.push((rel.clone(), content, spans));
+            }
+        }
+        if kind == KeyKind::Cite {
+            for rel in &bibs {
+                let Ok(content) = proj.read_file(rel) else { continue };
+                let keys: Vec<String> = crate::core::bib::parse_bib(&content).into_iter().map(|e| e.key).collect();
+                defined |= keys.contains(&old);
+                clash |= keys.contains(&new);
+                let spans = rename::find_bib_key_spans(&content, &old);
+                if !spans.is_empty() {
+                    plans.push((rel.clone(), content, spans));
+                }
+            }
+        }
+        if plans.is_empty() {
+            return Err(format!("项目中没有找到键 `{old}`"));
+        }
+        if clash {
+            return Err(format!("键 `{new}` 已存在，重命名会造成重复"));
+        }
+        let _ = defined; // renaming a dangling key (no definition) is allowed
+        let mut out = RenameKeyResult { files: Vec::new(), count: 0, skipped_edits: Vec::new() };
+        for (rel, content, spans) in plans {
+            out.count += spans.len();
+            if skip.as_deref() == Some(rel.as_str()) {
+                out.skipped_edits = spans
+                    .iter()
+                    .map(|s| {
+                        let (line, start_col, end_col) = rename::span_to_utf16(&content, s);
+                        KeyEdit { line, start_col, end_col }
+                    })
+                    .collect();
+                continue;
+            }
+            let next = rename::apply_spans(&content, &spans, &new);
+            crate::core::history::record(&proj, &rel, &content, true)?;
+            proj.write_file(&rel, &next)?;
+            out.files.push(rel);
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    if !result.files.is_empty() {
+        emit_project_changed(&app);
+    }
+    Ok(result)
+}
+
+// -------------------------------------------------------------- encoding
+
+#[derive(serde::Serialize)]
+pub struct EncodingInfo {
+    pub path: String,
+    /// "gbk" (convertible) or "unknown".
+    pub encoding: String,
+}
+
+/// Text files of the project that are not UTF-8.
+#[tauri::command]
+pub async fn tb_encoding_scan(state: State<'_, AppState>) -> Result<Vec<EncodingInfo>, String> {
+    let proj = project(&state)?;
+    tokio::task::spawn_blocking(move || {
+        let mut out = Vec::new();
+        for rel in proj.text_files() {
+            let Some(path) = proj.resolve(&rel) else { continue };
+            let Ok(bytes) = std::fs::read(&path) else { continue };
+            let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
+            if std::str::from_utf8(bytes).is_ok() {
+                continue;
+            }
+            let encoding = if crate::core::encoding::decode_gb18030(bytes).is_some() { "gbk" } else { "unknown" };
+            out.push(EncodingInfo { path: rel, encoding: encoding.into() });
+        }
+        out
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+pub struct ConvertResult {
+    pub converted: Vec<String>,
+    pub failed: Vec<String>,
+    /// Where the original bytes were saved.
+    pub backup_dir: String,
+}
+
+/// Convert GBK files to UTF-8 in place; the original bytes are kept under
+/// `.texbutler/backup/encoding-<millis>/`.
+#[tauri::command]
+pub async fn tb_convert_to_utf8(app: AppHandle, state: State<'_, AppState>, paths: Vec<String>) -> Result<ConvertResult, String> {
+    let proj = project(&state)?;
+    let result = tokio::task::spawn_blocking(move || -> Result<ConvertResult, String> {
+        let millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let backup = proj.backup_dir().join(format!("encoding-{millis}"));
+        let mut out = ConvertResult { converted: Vec::new(), failed: Vec::new(), backup_dir: backup.to_string_lossy().to_string() };
+        for p in paths {
+            let rel = crate::commands::files::clean_rel(&proj, &p)?;
+            let Some(path) = proj.resolve(&rel) else {
+                out.failed.push(rel);
+                continue;
+            };
+            let Ok(bytes) = std::fs::read(&path) else {
+                out.failed.push(rel);
+                continue;
+            };
+            if std::str::from_utf8(bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes)).is_ok() {
+                continue; // already UTF-8
+            }
+            let Some(text) = crate::core::encoding::decode_gb18030(&bytes) else {
+                out.failed.push(rel);
+                continue;
+            };
+            let dest = backup.join(&rel);
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            std::fs::write(&dest, &bytes).map_err(|e| format!("备份失败: {e}"))?;
+            proj.write_file(&rel, &text)?;
+            out.converted.push(rel);
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    if !result.converted.is_empty() {
+        emit_project_changed(&app);
+    }
+    Ok(result)
+}
+
 // --------------------------------------------------------------- history
 
 #[tauri::command]

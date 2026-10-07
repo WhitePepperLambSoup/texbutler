@@ -72,6 +72,56 @@ function Group({ title, footer, children }: { title?: ReactNode; footer?: ReactN
   );
 }
 
+/** Zotero (Better BibTeX) connection: address + connection test. */
+function ZoteroSettings() {
+  const t = useT();
+  const [url, setUrl] = useState(() => {
+    try {
+      return localStorage.getItem("tb-zotero-url") ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [testing, setTesting] = useState(false);
+  const save = (v: string) => {
+    setUrl(v);
+    try {
+      if (v.trim()) localStorage.setItem("tb-zotero-url", v.trim());
+      else localStorage.removeItem("tb-zotero-url");
+    } catch {
+      /* best-effort */
+    }
+  };
+  const test = async () => {
+    setTesting(true);
+    try {
+      const s = await api.zoteroStatus(url.trim() || null);
+      setResult({ ok: true, text: t("zotero.connected", { zotero: s.zotero, bbt: s.betterbibtex }) });
+    } catch (e) {
+      setResult({ ok: false, text: String(e) });
+    } finally {
+      setTesting(false);
+    }
+  };
+  return (
+    <Group title="Zotero" footer={t("zotero.settingsNote")}>
+      <Row label={t("zotero.address")} sub={result ? <span className={`test-result ${result.ok ? "ok" : "fail"}`}>{result.text}</span> : undefined}>
+        <input
+          className="input compact settings-zotero-url"
+          value={url}
+          placeholder="http://127.0.0.1:23119"
+          spellCheck={false}
+          onChange={(e) => save(e.target.value)}
+        />
+        <button className="btn btn-sm settings-zotero-test" disabled={testing} onClick={() => void test()}>
+          {testing ? t("common.loading") : t("zotero.test")}
+        </button>
+      </Row>
+    </Group>
+  );
+}
+
 function ShortcutField({ value, onChange }: { value: string; onChange: (combo: string) => void }) {
   const t = useT();
   const [listening, setListening] = useState(false);
@@ -393,6 +443,7 @@ export default function SettingsModal({ initialSection, onClose }: { initialSect
                 />
               </Row>
             </Group>
+            <ZoteroSettings />
             <Group title={t("settings.shortcuts")} footer={t("settings.shortcutHint")}>
               <Row label={t("settings.shortcutCompile")}>
                 <ShortcutField value={keymap.compileMain} onChange={(combo) => applyKeymap({ ...keymap, compileMain: combo })} />
@@ -612,9 +663,9 @@ export default function SettingsModal({ initialSection, onClose }: { initialSect
         {section === "rules" && (
           <Group footer={t("settings.rulesTitle")}>
             {ruleStates.map((r) => (
-              <Row key={r.id} label={r.name}>
+              <Row key={r.id} label={t(`rule.${r.id}`) === `rule.${r.id}` ? r.name : t(`rule.${r.id}`)}>
                 <Switch
-                  label={r.name}
+                  label={t(`rule.${r.id}`) === `rule.${r.id}` ? r.name : t(`rule.${r.id}`)}
                   checked={r.enabled}
                   onChange={(next) => {
                     setRuleStates((prev) => prev.map((x) => (x.id === r.id ? { ...x, enabled: next } : x)));

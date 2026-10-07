@@ -15,6 +15,7 @@ import CommandPalette from "./components/CommandPalette";
 import HistoryModal from "./components/HistoryModal";
 import EngineSetupModal from "./components/EngineSetupModal";
 import UpdateModal from "./components/UpdateModal";
+import ZoteroModal from "./components/ZoteroModal";
 import { DialogHost, Toasts } from "./components/ui/Feedback";
 import { useProjectStore } from "./store/projectStore";
 import { useAiStore } from "./store/aiStore";
@@ -135,6 +136,7 @@ export default function App() {
       {modal?.kind === "history" && root && <HistoryModal file={modal.file} onClose={closeModal} />}
       {modal?.kind === "engine" && <EngineSetupModal onClose={closeModal} />}
       {modal?.kind === "update" && <UpdateModal info={modal.info} onClose={closeModal} />}
+      {modal?.kind === "zotero" && <ZoteroModal onClose={closeModal} />}
       {palette && <CommandPalette mode={palette} />}
       <DialogHost />
       <Toasts />

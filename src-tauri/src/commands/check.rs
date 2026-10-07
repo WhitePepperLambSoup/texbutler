@@ -72,6 +72,7 @@ pub async fn tb_run_check(
     // Full scans also run the project-wide checks (dangling refs/cites).
     let mut project_files: Vec<(String, String)> = Vec::new();
     let mut bib_keys: Vec<String> = Vec::new();
+    let mut bibs: Vec<(String, String)> = Vec::new();
     if only_file.is_none() {
         for rel in proj.bib_files() {
             let Ok(content) = proj.read_file(&rel) else { continue };
@@ -79,6 +80,22 @@ pub async fn tb_run_check(
                 if !bib_keys.contains(&entry.key) {
                     bib_keys.push(entry.key);
                 }
+            }
+            bibs.push((rel.replace('\\', "/"), content));
+        }
+        // files saved as GBK compile to garbage with XeLaTeX / Tectonic
+        for rel in proj.text_files() {
+            if proj.file_encoding(&rel) == Some(crate::core::encoding::TextEncoding::Gb18030) {
+                issues.push(
+                    Issue::new(
+                        crate::core::Severity::Warning,
+                        crate::core::IssueKind::RuleCheck,
+                        "文件是 GBK 编码：XeLaTeX / Tectonic 只读 UTF-8，编译会乱码或报错。",
+                    )
+                    .with_file(rel.clone())
+                    .with_line(1)
+                    .with_rule("encoding", "转换为 UTF-8（原文件自动备份）"),
+                );
             }
         }
     }
@@ -103,7 +120,7 @@ pub async fn tb_run_check(
         }
     }
     if only_file.is_none() && !project_files.is_empty() {
-        let ctx = rules::ProjectCtx { files: project_files, bib_keys };
+        let ctx = rules::ProjectCtx { files: project_files, bib_keys, bibs };
         rules::check_project(&ctx, &enabled_base, &mut issues);
     }
     // sort: errors first, then by file/line

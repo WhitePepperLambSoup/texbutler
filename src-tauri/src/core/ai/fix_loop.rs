@@ -398,6 +398,12 @@ fn deterministic_fix(content: &str, issue: &Issue) -> Option<String> {
         return if fixed != content { Some(fixed) } else { None };
     }
 
+    // 6) Bibliography formatting (rule "bib_format"): author separators and
+    //    DOI URL prefixes in the .bib file (deterministic, whole file).
+    if issue.rule_id.as_deref() == Some("bib_format") {
+        return crate::core::rules::bib_check::fix_bib_format(content);
+    }
+
     None
 }
 
@@ -651,7 +657,7 @@ fn is_unrepairable_engine_failure(issue: &Issue) -> bool {
 
 /// Whitespace-only typography rules with a deterministic fix.
 fn is_typography_rule(issue: &Issue) -> bool {
-    matches!(issue.rule_id.as_deref(), Some("paragraph") | Some("cjk_spacing"))
+    matches!(issue.rule_id.as_deref(), Some("paragraph") | Some("cjk_spacing") | Some("bib_format"))
 }
 
 /// Compile the project's main document on a blocking thread.

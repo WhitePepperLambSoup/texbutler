@@ -2,6 +2,7 @@
 //! `Issue`s. Rules are registered in a table so new ones can be added
 //! without touching the engine (extensibility is a hard requirement).
 
+pub mod bib_check;
 pub mod bold;
 pub mod bom;
 pub mod cjk_spacing;
@@ -22,6 +23,8 @@ pub struct ProjectCtx {
     pub files: Vec<(String, String)>,
     /// Every bib key found in the project's `.bib` files.
     pub bib_keys: Vec<String>,
+    /// (relative path, content) for every `.bib` file in the project.
+    pub bibs: Vec<(String, String)>,
 }
 
 /// A single check over one source file.
@@ -54,6 +57,8 @@ pub fn all_rules() -> Vec<Box<dyn Rule>> {
         Box::new(bom::BomRule),
         Box::new(refs::RefsRule),
         Box::new(cjk_spacing::CjkSpacingRule),
+        Box::new(bib_check::BibFormatRule),
+        Box::new(bib_check::BibFieldsRule),
     ]
 }
 
@@ -158,9 +163,9 @@ mod tests {
     }
 
     #[test]
-    fn registry_has_eleven_rules() {
+    fn registry_has_thirteen_rules() {
         let rules = all_rules();
-        assert_eq!(rules.len(), 11);
+        assert_eq!(rules.len(), 13);
         let ids: Vec<_> = rules.iter().map(|r| r.id()).collect();
         for expected in [
             "percent",
@@ -173,6 +178,8 @@ mod tests {
             "missing_end",
             "bom",
             "refs",
+            "bib_format",
+            "bib_fields",
         ] {
             assert!(ids.contains(&expected), "missing rule {}", expected);
         }

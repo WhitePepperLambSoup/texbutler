@@ -1,7 +1,9 @@
 import { create } from "zustand";
-import { api, onEvent, events, type AiDiagnosis, type AiSettings, type FixReport, type Issue } from "../api";
+import { api, onEvent, events, type AiDiagnosis, type AiSettings, type FixReport, type Issue, type ReviewItem } from "../api";
 import { useI18n } from "../i18n";
 import { useProjectStore } from "./projectStore";
+import { activeEditor } from "../editorBridge";
+import { toast } from "./feedbackStore";
 import {
   bindingKey,
   defaultSessionName,
@@ -10,11 +12,19 @@ import {
   persistScopedBindings,
 } from "./aiSessionBindings";
 
+/** One AI review finding with its decision. */
+export interface ReviewEntry extends ReviewItem {
+  status: "pending" | "accepted" | "dismissed";
+}
+
 export interface AiMessage {
   id: number;
   role: "user" | "assistant" | "system";
   text: string;
-  kind: "diagnosis" | "fix" | "plain" | "error";
+  kind: "diagnosis" | "fix" | "plain" | "error" | "review";
+  /** Review findings (kind "review") and the file they belong to. */
+  review?: ReviewEntry[];
+  reviewFile?: string;
   raw?: string | null;
   diff?: string | null;
   issue?: Issue | null;
@@ -102,6 +112,12 @@ interface AiState {
   fixIssue: (issue: Issue, index: number) => Promise<void>;
   /** Fix every compile error in turn (each compile-verified). */
   fixAllIssues: () => Promise<void>;
+  /** AI full-document review of the active file (findings to accept/dismiss). */
+  reviewDocument: () => Promise<void>;
+  /** Apply one finding in the editor (undoable); false when it no longer matches. */
+  acceptReviewItem: (messageId: number, index: number) => Promise<boolean>;
+  dismissReviewItem: (messageId: number, index: number) => void;
+  acceptAllReview: (messageId: number) => Promise<number>;
   acceptDiff: () => Promise<void>;
   rejectDiff: () => void;
   applyHunk: (file: string, patch: string) => Promise<void>;
@@ -749,6 +765,68 @@ export const useAiStore = create<AiState>((set, get) => ({
     }
   },
 
+  async reviewDocument() {
+    const file = useProjectStore.getState().activeTab;
+    if (!file || get().busy) return;
+    const t = useI18n.getState().t;
+    const context = captureRequestContext();
+    set({ busy: true, busyKind: "diagnose" });
+    try {
+      await saveBeforeAi();
+      get().recordFileBinding();
+      appendMessageToRequest(context, { role: "user", kind: "plain", text: t("review.request", { file }) });
+      const items = await api.aiReview(file, useI18n.getState().lang === "en");
+      appendMessageToRequest(context, {
+        role: "assistant",
+        kind: "review",
+        text: items.length ? t("review.found", { n: items.length }) : t("review.none"),
+        review: items.map((item) => ({ ...item, status: "pending" as const })),
+        reviewFile: file,
+      });
+    } catch (e) {
+      appendMessageToRequest(context, { role: "assistant", kind: "error", text: t("review.failed", { e: String(e) }) });
+    } finally {
+      set({ busy: false, busyKind: null });
+    }
+  },
+
+  async acceptReviewItem(messageId, index) {
+    const msg = get().messages.find((m) => m.id === messageId);
+    const item = msg?.review?.[index];
+    if (!msg || !item || !msg.reviewFile || item.status !== "pending" || !item.suggestion) return false;
+    const ed = await editorFor(msg.reviewFile);
+    if (!ed) return false;
+    if (!applyReviewEdit(ed, item)) {
+      toast.error(useI18n.getState().t("review.stale"));
+      return false;
+    }
+    setReviewStatus(messageId, [index], "accepted");
+    return true;
+  },
+
+  dismissReviewItem(messageId, index) {
+    setReviewStatus(messageId, [index], "dismissed");
+  },
+
+  async acceptAllReview(messageId) {
+    const msg = get().messages.find((m) => m.id === messageId);
+    if (!msg?.review || !msg.reviewFile) return 0;
+    const ed = await editorFor(msg.reviewFile);
+    if (!ed) return 0;
+    // bottom-up so earlier edits do not shift the positions of later ones
+    const order = msg.review
+      .map((item, index) => ({ item, index }))
+      .filter(({ item }) => item.status === "pending" && item.suggestion)
+      .sort((a, b) => b.item.line - a.item.line || b.item.start_col - a.item.start_col);
+    const done: number[] = [];
+    for (const { item, index } of order) {
+      if (applyReviewEdit(ed, item)) done.push(index);
+    }
+    setReviewStatus(messageId, done, "accepted");
+    if (done.length < order.length) toast.info(useI18n.getState().t("review.someStale", { n: order.length - done.length }));
+    return done.length;
+  },
+
   async fixAllIssues() {
     if (get().busy) return;
     const t = useI18n.getState().t;
@@ -927,6 +1005,69 @@ async function saveBeforeAi() {
   } catch {
     /* a failed save surfaces on the next explicit save; do not block the AI */
   }
+}
+
+type CodeEditor = NonNullable<ReturnType<typeof activeEditor>>;
+
+/** The main editor once it shows `file` (opening it if needed). */
+async function editorFor(file: string): Promise<CodeEditor | null> {
+  const st = useProjectStore.getState();
+  if (st.activeTab !== file) {
+    try {
+      await st.openFile(file);
+    } catch {
+      return null;
+    }
+  }
+  for (let i = 0; i < 40; i++) {
+    const ed = activeEditor();
+    const path = ed?.getModel()?.uri.path.replace(/^\/+/, "");
+    if (ed && path && (path === file || decodeURIComponent(path) === file)) return ed;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return null;
+}
+
+/** Replace a finding's quote with its suggestion. The text may have moved
+ *  since the review: the quote is searched near its original line. */
+function applyReviewEdit(ed: CodeEditor, item: ReviewItem): boolean {
+  const model = ed.getModel();
+  if (!model) return false;
+  const len = item.quote.length; // UTF-16, like Monaco columns
+  const lines = model.getLineCount();
+  const at = (line: number, col: number) =>
+    model.getValueInRange({ startLineNumber: line, startColumn: col, endLineNumber: line, endColumn: col + len }) === item.quote;
+  let range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number } | null = null;
+  if (item.line <= lines && at(item.line, item.start_col)) {
+    range = { startLineNumber: item.line, startColumn: item.start_col, endLineNumber: item.line, endColumn: item.start_col + len };
+  } else {
+    for (let d = 0; d <= 20 && !range; d++) {
+      for (const ln of d === 0 ? [item.line] : [item.line - d, item.line + d]) {
+        if (ln < 1 || ln > lines) continue;
+        const idx = model.getLineContent(ln).indexOf(item.quote);
+        if (idx >= 0) {
+          range = { startLineNumber: ln, startColumn: idx + 1, endLineNumber: ln, endColumn: idx + 1 + len };
+          break;
+        }
+      }
+    }
+  }
+  if (!range) return false;
+  // stops on both sides: one Ctrl+Z reverts exactly this finding
+  ed.pushUndoStop();
+  ed.executeEdits("ai-review", [{ range, text: item.suggestion, forceMoveMarkers: true }]);
+  ed.pushUndoStop();
+  return true;
+}
+
+function setReviewStatus(messageId: number, indices: number[], status: ReviewEntry["status"]) {
+  if (indices.length === 0) return;
+  updateRequestMessage(
+    captureRequestContext(),
+    messageId,
+    (m) => ({ ...m, review: m.review?.map((item, i) => (indices.includes(i) ? { ...item, status } : item)) }),
+    true,
+  );
 }
 
 async function useCompileStoreRefresh() {

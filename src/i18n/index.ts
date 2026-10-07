@@ -3,6 +3,7 @@
 
 import { create } from "zustand";
 import { en080, zh080 } from "./v080";
+import { en090, zh090 } from "./v090";
 
 export type Lang = "zh" | "en";
 
@@ -989,8 +990,8 @@ const en: Dict = {
   "editor.externalReloaded": "{file} changed on disk; the editor was updated",
 };
 
-const zhAll: Dict = { ...zh, ...zh080 };
-const dicts: Record<Lang, Dict> = { zh: zhAll, en: { ...en, ...en080 } };
+const zhAll: Dict = { ...zh, ...zh080, ...zh090 };
+const dicts: Record<Lang, Dict> = { zh: zhAll, en: { ...en, ...en080, ...en090 } };
 
 interface I18nState {
   lang: Lang;

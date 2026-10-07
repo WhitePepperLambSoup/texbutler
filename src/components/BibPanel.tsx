@@ -1,9 +1,10 @@
 // Bibliography panel: parsed .bib entries (click to insert \cite) plus a
 // DOI / arXiv → BibTeX fetcher.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, BookMarked, Copy, Download, Search } from "lucide-react";
+import { AlertTriangle, BookMarked, Copy, Download, Library, Search } from "lucide-react";
 import { api, type BibEntry, type ReferenceReport } from "../api";
 import { useProjectStore } from "../store/projectStore";
+import { useUiStore } from "../store/uiStore";
 import { insertText, revealLocation } from "../editorBridge";
 import { toast } from "../store/feedbackStore";
 import { useT } from "../i18n";
@@ -106,6 +107,14 @@ export default function BibPanel() {
           onClick={() => void fetchBib()}
         >
           <Download size={15} className={fetching ? "spinner" : undefined} />
+        </button>
+        <button
+          className="icon-btn bib-zotero"
+          title={t("zotero.title")}
+          aria-label={t("zotero.title")}
+          onClick={() => useUiStore.getState().openModal({ kind: "zotero" })}
+        >
+          <Library size={15} />
         </button>
       </div>
       {fetched && (

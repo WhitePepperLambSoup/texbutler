@@ -211,6 +211,7 @@ pub fn run() {
             commands::check::tb_get_texlive_passes,
             commands::check::tb_get_cjk_fonts,
             commands::ai::tb_ai_image_to_latex,
+            commands::ai::tb_ai_review,
             // files
             commands::files::tb_create_dir,
             commands::files::tb_rename_path,
@@ -226,6 +227,12 @@ pub fn run() {
             commands::workspace::tb_history_snapshot,
             commands::workspace::tb_git_status,
             commands::workspace::tb_reference_report,
+            commands::workspace::tb_rename_key,
+            commands::workspace::tb_encoding_scan,
+            commands::workspace::tb_convert_to_utf8,
+            commands::zotero::tb_zotero_status,
+            commands::zotero::tb_zotero_search,
+            commands::zotero::tb_zotero_add,
             commands::workspace::tb_synctex_forward_pos,
             commands::workspace::tb_synctex_reverse,
             // engines + updater

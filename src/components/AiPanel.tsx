@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpenText,
   Bot,
+  Check,
+  CheckCheck,
   Eraser,
   FileText,
   History,
@@ -18,7 +20,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { aiEditBelongsToScope, sessionIsMeaningful, useAiStore } from "../store/aiStore";
+import { aiEditBelongsToScope, sessionIsMeaningful, useAiStore, type AiMessage } from "../store/aiStore";
+import { revealLocation } from "../editorBridge";
 import { useUiStore } from "../store/uiStore";
 import { dialog, toast } from "../store/feedbackStore";
 import { usePopover } from "../hooks/usePopover";
@@ -132,6 +135,61 @@ function DiffHighlight({ diff }: { diff: string }) {
   return <div className="diff-view">{rows}</div>;
 }
 
+/** Findings of an AI review: accept (edit applied in the editor) or dismiss. */
+function ReviewList({ message }: { message: AiMessage }) {
+  const t = useT();
+  const items = message.review ?? [];
+  const pendingFixes = items.filter((i) => i.status === "pending" && i.suggestion).length;
+  const store = useAiStore.getState();
+  return (
+    <div className="review-list">
+      {pendingFixes > 1 && (
+        <button className="btn btn-sm btn-primary review-accept-all" onClick={() => void store.acceptAllReview(message.id)}>
+          <CheckCheck size={13} /> {t("review.acceptAll", { n: pendingFixes })}
+        </button>
+      )}
+      {items.map((item, i) => (
+        <div key={i} className={`review-item status-${item.status}`}>
+          <div className="review-head">
+            <span className={`review-cat cat-${item.category}`}>{t(`review.cat.${item.category}`) === `review.cat.${item.category}` ? item.category : t(`review.cat.${item.category}`)}</span>
+            <button
+              className="review-loc"
+              onClick={() => void revealLocation(message.reviewFile ?? null, item.line, item.start_col).catch(toast.error)}
+            >
+              {(message.reviewFile ?? "").split("/").pop()}:{item.line}
+            </button>
+          </div>
+          <div className="review-problem">{item.problem}</div>
+          {item.suggestion ? (
+            <div className="review-change">
+              <del>{item.quote}</del>
+              <ins>{item.suggestion}</ins>
+            </div>
+          ) : (
+            <div className="review-quote">“{item.quote}”</div>
+          )}
+          <div className="review-actions">
+            {item.status === "pending" ? (
+              <>
+                {item.suggestion && (
+                  <button className="btn btn-sm btn-primary review-accept" onClick={() => void store.acceptReviewItem(message.id, i)}>
+                    <Check size={13} /> {t("review.accept")}
+                  </button>
+                )}
+                <button className="btn btn-sm review-dismiss" onClick={() => store.dismissReviewItem(message.id, i)}>
+                  {item.suggestion ? t("review.dismiss") : t("review.noted")}
+                </button>
+              </>
+            ) : (
+              <span className="review-state">{item.status === "accepted" ? t("review.accepted") : t("review.dismissed")}</span>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
   const {
     messages, busy, busyKind, diffPending, acceptDiff, rejectDiff, applyHunk, clearMessages, suggestMode,
@@ -227,8 +285,8 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
     }
   };
 
-  const suggestions = [
-    { icon: ScanSearch, text: t("ai.suggest.review") },
+  const suggestions: { icon: typeof ScanSearch; text: string; run?: () => void }[] = [
+    { icon: ScanSearch, text: t("review.chip"), run: () => void useAiStore.getState().reviewDocument() },
     { icon: ListChecks, text: t("ai.suggest.structure") },
     { icon: Sparkles, text: t("ai.suggest.abstract") },
   ];
@@ -310,6 +368,10 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
                   <span>{t("ai.sessionDelete")}</span>
                 </button>
                 <div className="ai-menu-separator" />
+                <button className="ai-menu-item ai-menu-review" disabled={busy || !activeFile} onClick={pick(() => void useAiStore.getState().reviewDocument())}>
+                  <ScanSearch size={14} aria-hidden="true" />
+                  <span>{t("review.command")}</span>
+                </button>
                 <button className="ai-menu-item" onClick={pick(() => void loadSnapshots())}>
                   <History size={14} aria-hidden="true" />
                   <span>{t("ai.timeline")}</span>
@@ -389,8 +451,8 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
               </div>
             ) : (
               <div className="ai-suggestions">
-                {suggestions.map(({ icon: Icon, text }) => (
-                  <button key={text} className="ai-chip" disabled={busy || !activeFile} onClick={() => send(text)}>
+                {suggestions.map(({ icon: Icon, text, run }) => (
+                  <button key={text} className={`ai-chip ${run ? "ai-chip-review" : ""}`} disabled={busy || !activeFile} onClick={() => (run ? run() : send(text))}>
                     <Icon size={14} /> {text}
                   </button>
                 ))}
@@ -410,6 +472,7 @@ export default function AiPanel({ onCollapse }: { onCollapse: () => void }) {
               <div className="ai-text" dangerouslySetInnerHTML={{ __html: renderText(m.text) }} />
             )}
             {m.diff && <DiffHighlight diff={m.diff} />}
+            {m.kind === "review" && m.review && m.review.length > 0 && <ReviewList message={m} />}
             {/* collaborative edit: the AI changed a file — roll back right
                 inside the message bubble. Only the newest applied message
                 shows the buttons. */}

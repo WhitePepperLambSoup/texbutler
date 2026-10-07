@@ -8,6 +8,7 @@ import { toast } from "../store/feedbackStore";
 import { loadFlow, saveFlow } from "../flow";
 import { removeRecent } from "../store/recent";
 import { useI18n } from "../i18n";
+import { checkProjectEncoding } from "../actions";
 
 /**
  * App-wide background behaviour that used to be spread over several
@@ -26,6 +27,14 @@ export function useAppLifecycle() {
   useEffect(() => {
     document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
   }, [lang]);
+
+  // a freshly opened project with GBK files: offer the UTF-8 conversion
+  const root = useProjectStore((s) => s.root);
+  useEffect(() => {
+    if (!root) return;
+    const id = window.setTimeout(() => void checkProjectEncoding(), 600);
+    return () => window.clearTimeout(id);
+  }, [root]);
 
   useEffect(() => {
     // ---- session restore

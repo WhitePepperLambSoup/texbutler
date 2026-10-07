@@ -38,6 +38,7 @@ import { dialog, toast } from "../store/feedbackStore";
 import { saveDraft } from "../store/drafts";
 import { registerEditor, revealLocation } from "../editorBridge";
 import { attachSpellcheck, registerSpellActions } from "../spell";
+import { registerKeyRename } from "../keyRename";
 import { useT } from "../i18n";
 import * as actions from "../actions";
 import ImageInsertModal from "./ImageInsertModal";
@@ -237,6 +238,9 @@ export const beforeMount: BeforeMount = (monaco) => {
       };
     },
   });
+
+  // F2: rename a \label / citation key across the project
+  registerKeyRename(monaco);
 
   // Ctrl+Click navigation: \ref{key} → \label{key}; \cite{key} → .bib entry
   monaco.languages.registerLinkProvider("latex", {

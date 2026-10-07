@@ -266,7 +266,7 @@ mod tests {
         let mut issues = Vec::new();
         let files: Vec<(String, String)> = files.iter().map(|(p, c)| (p.to_string(), c.to_string())).collect();
         let bib_keys: Vec<String> = bib.iter().map(|s| s.to_string()).collect();
-        let ctx = ProjectCtx { files, bib_keys };
+        let ctx = ProjectCtx { files, bib_keys, bibs: vec![] };
         RefsRule.check_project(&ctx, &mut issues);
         issues
     }

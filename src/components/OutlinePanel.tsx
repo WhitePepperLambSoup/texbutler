@@ -1,13 +1,14 @@
 // Outline: sections of the current file or the whole document (following
 // \input / \include from the main file), plus a label/reference report.
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CornerDownLeft, ListTree, Tag } from "lucide-react";
+import { AlertTriangle, CornerDownLeft, ListTree, Pencil, Tag } from "lucide-react";
 import { api, type ProjectFileNode, type ReferenceReport } from "../api";
 import { useProjectStore } from "../store/projectStore";
 import { useUiStore } from "../store/uiStore";
 import { insertText, revealLocation } from "../editorBridge";
 import { toast } from "../store/feedbackStore";
 import { useT } from "../i18n";
+import { renameKeyInteractive } from "../keyRename";
 
 interface OutlineItem {
   level: number;
@@ -125,7 +126,9 @@ function OutlineList({ items, currentKey }: { items: OutlineItem[]; currentKey: 
 function LabelsView() {
   const t = useT();
   const [report, setReport] = useState<ReferenceReport | null>(null);
+  const [nonce, setNonce] = useState(0);
   const files = useProjectStore((s) => s.files);
+  const reload = () => setNonce((n) => n + 1);
 
   useEffect(() => {
     let alive = true;
@@ -140,7 +143,7 @@ function LabelsView() {
       alive = false;
       window.removeEventListener("tb:file-saved", load);
     };
-  }, [files]);
+  }, [files, nonce]);
 
   if (!report) return <div className="panel-empty">{t("common.loading")}</div>;
   const groups = new Map<string, ReferenceReport["labels"]>();
@@ -193,6 +196,14 @@ function LabelsView() {
               <button className="report-row" onClick={() => jump(l.file, l.line)} title={`${l.file}:${l.line}`}>
                 <code>{l.key}</code>
                 {l.refs === 0 ? <span className="pill warn">{t("refs.unused")}</span> : <span className="pill">{t("refs.refCount", { n: l.refs })}</span>}
+              </button>
+              <button
+                className="icon-btn icon-btn-sm label-rename"
+                title={t("rename.labelTitle")}
+                aria-label={t("rename.labelTitle")}
+                onClick={() => void renameKeyInteractive("label", l.key).then((ok) => ok && reload())}
+              >
+                <Pencil size={13} />
               </button>
               <button
                 className="icon-btn icon-btn-sm"
