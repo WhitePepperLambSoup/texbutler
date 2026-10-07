@@ -1,6 +1,6 @@
 [package]
 name = "texbutler"
-version = "0.8.0"
+version = "0.9.0"
 description = "TeXButler - local LaTeX compiler + AI assistant for Chinese academic documents"
 authors = ["WhitePepperLambSoup"]
 edition = "2021"

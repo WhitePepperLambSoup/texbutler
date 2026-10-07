@@ -4,6 +4,21 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-07
+
+### 新功能 / New
+
+- **标签与引用键重命名（F2）**：在 `\label`、`\ref`、`\eqref`、`\cref` 等的键上按 F2，全项目同步改名；对 `\cite` 的键按 F2 时连同 `.bib` 条目（含 `crossref`）一起改。当前文件的修改可直接 Ctrl+Z 撤销，其他文件改动前自动留存历史版本；新键名已存在或含非法字符时拒绝。大纲“标签”视图也可一键重命名。 **Rename labels and citation keys (F2)** across the project, including `.bib` entries; undoable in the editor, history kept for other files.
+- **GBK 文件支持**：GBK / GB18030 编码的文件可以直接打开（自动解码）；打开项目时检测到 GBK 文件会提示一键转换为 UTF-8（XeLaTeX / Tectonic 只认 UTF-8），原文件备份到 `.texbutler/backup`；规则检查也会列出未转换的文件。 **GBK files** open decoded and can be converted to UTF-8 in one click (originals backed up).
+- **参考文献检查（GB/T 7714）**：两条新规则。“著录格式”检查作者用 `，` `、` `;` 或逗号分隔（BibTeX 会当成一个人）、DOI 带网址前缀，可一键确定性修复；“必备字段”按条目类型检查缺少的字段、年份格式和重复的文献键，使用 `gbt7714` / `gb7714-2015` 样式时还会检查出版地、卷期、页码、电子资源的引用日期。缺少的信息只提示不自动填写，AI 也不会编造。 **Bibliography checks (GB/T 7714)**: auto-fixable formatting problems plus report-only missing-field checks.
+- **Zotero 集成**：通过 Better BibTeX 插件搜索 Zotero 文献库，勾选后插入 `\cite{…}`，项目中缺少的条目自动写入 `.bib`（没有时新建 `refs.bib`）；已在项目中的文献会标出。设置中可修改地址并测试连接，只连接本机。 **Zotero integration** via Better BibTeX: search, cite, and append missing BibTeX entries.
+- **AI 全文审阅（逐条批注）**：AI 逐条指出语法、措辞、逻辑、LaTeX 用法和排版问题，给出原文与修改建议；每条可接受（编辑器内修改，可撤销）或忽略，也可全部接受。原文找不到的建议会被丢弃，不会误改。 **AI full-document review** with per-finding accept / dismiss.
+
+### 修复 / Fixed
+
+- 项目的 `.bib` 列表会包含 `.texbutler/backup` 中的快照副本，导致文献条目重复、规则检查重复报告。 **Bibliography backups are no longer counted as a second `.bib`.**
+- 英文界面下“规则检查”设置中的规则名显示为中文。 **Rule names are translated in the English UI.**
+
 ## [0.8.0] - 2026-10-04
 
 ### 新功能 / New
